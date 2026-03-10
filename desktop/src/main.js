@@ -3,18 +3,14 @@ const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const { startServer } = require('./server/index.js');
-const { initDb, searchSongs, addSong, updateSong, deleteSong, getNextId, getSong, getSchedule, addToSchedule, removeFromSchedule, reorderSchedule, getDbStatus, syncSongs } = require('./database/db.js');
+const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs } = require('./database/db.js');
 
 const gotTheLock = app.requestSingleInstanceLock();
 
 let mainWindow;
 let io; // Declare io in module scope
 let projectorWindow = null;
-let currentServerStatus = { status: 'Stopped', ip: 'Unknown', connections: 0 };
-try {
-    const { getLocalIP } = require('./server/index.js');
-    currentServerStatus.ip = getLocalIP();
-} catch (e) { }
+let currentServerStatus = { status: 'Disconnected', ip: 'Unknown', connections: 0 };
 
 if (!gotTheLock) {
     app.quit();
@@ -112,16 +108,6 @@ if (!gotTheLock) {
         }
         nativeTheme.themeSource = 'light';
         initDb();
-
-        // Start server before creating window to ensure status is ready
-        io = startServer((data) => {
-            console.log("Server Status:", data);
-            currentServerStatus = data;
-            BrowserWindow.getAllWindows().forEach(win => {
-                if (!win.isDestroyed()) win.webContents.send('status-update', data);
-            });
-        });
-
         createWindow();
         console.log("App Ready");
 
@@ -224,55 +210,47 @@ if (!gotTheLock) {
             return addSong(songData);
         });
 
-        ipcMain.handle('update-song', async (event, songData) => {
-            const { updateSong } = require('./database/db.js');
-            // updateSong takes songData directly
-            return updateSong(songData);
-        });
-
-        ipcMain.handle('get-song', async (event, id) => {
-            const { getSong } = require('./database/db.js');
-            return getSong(id);
-        });
-
-        ipcMain.handle('delete-song', async (event, id) => {
-            const { deleteSong } = require('./database/db.js');
-            return deleteSong(id);
-        });
+        ipcMain.handle('update-song', async (event, songData) => updateSong(songData));
+        ipcMain.handle('get-song', async (event, id) => getSong(id));
+        ipcMain.handle('delete-song', async (event, id) => deleteSong(id));
 
         // Schedule Handlers
-        const { getSchedule, addToSchedule, removeFromSchedule, reorderSchedule, clearSchedule } = require('./database/db.js');
-
         ipcMain.handle('get-schedule', async () => getSchedule());
         ipcMain.handle('add-to-schedule', async (event, songId) => addToSchedule(songId));
         ipcMain.handle('remove-from-schedule', async (event, instanceId) => removeFromSchedule(instanceId));
         ipcMain.handle('reorder-schedule', async (event, newOrder) => reorderSchedule(newOrder));
         ipcMain.handle('clear-schedule', async () => clearSchedule());
-        ipcMain.handle('get-db-status', async () => {
-            const { getDbStatus } = require('./database/db.js');
-            return getDbStatus();
+        ipcMain.handle('get-db-status', async () => getDbStatus());
+        ipcMain.handle('sync-songs', async () => syncSongs());
+
+        // Category Handlers
+        ipcMain.handle('get-categories', async () => getCategories());
+        ipcMain.handle('add-category', async (event, name) => addCategory(name));
+        ipcMain.handle('update-category', async (event, oldName, newName) => updateCategory(oldName, newName));
+        ipcMain.handle('delete-category', async (event, name) => deleteCategory(name));
+        ipcMain.handle('get-uncategorized-songs', async () => getUncategorizedSongs());
+
+        // Admin Handlers
+        ipcMain.handle('get-admin-credentials', async () => {
+            const creds = getAdminCredentials();
+            return { username: creds.username }; // Never send hash to renderer
         });
-        ipcMain.handle('sync-songs', async () => {
-            const { syncSongs } = require('./database/db.js');
-            return syncSongs();
-        });
+        ipcMain.handle('verify-admin', async (event, username, password) => verifyAdminCredentials(username, password));
+        ipcMain.handle('set-admin-credentials', async (event, username, password) => setAdminCredentials(username, password));
+
+        // Bulk & Recategorize Handlers
+        ipcMain.handle('bulk-delete-songs', async (event, ids) => bulkDeleteSongs(ids));
+        ipcMain.handle('recategorize-song', async (event, songId, newCategory) => recategorizeSong(songId, newCategory));
 
         ipcMain.handle('refresh-ip', async () => {
-            try {
-                const { getLocalIP } = require('./server/index.js');
-                const ip = getLocalIP();
-                currentServerStatus.ip = ip;
-                if (io) {
-                    const status = { ...currentServerStatus, connections: io.engine.clientsCount };
-                    BrowserWindow.getAllWindows().forEach(win => {
-                        if (!win.isDestroyed()) win.webContents.send('status-update', status);
-                    });
-                }
-                return currentServerStatus.ip;
-            } catch (e) {
-                console.error("Failed to refresh IP:", e);
-                return 'Unknown';
-            }
+            const { getLocalIP } = require('./server/index.js');
+            const ip = getLocalIP();
+            currentServerStatus.ip = ip;
+            const updatedStatus = { ...currentServerStatus, ip: ip };
+            BrowserWindow.getAllWindows().forEach(win => {
+                win.webContents.send('status-update', updatedStatus);
+            });
+            return updatedStatus;
         });
 
         ipcMain.handle('search-lyrics', async (event, query) => {
@@ -358,17 +336,11 @@ if (!gotTheLock) {
             return false;
         });
 
-        ipcMain.handle('open-projector-window', () => {
-            if (projectorWindow && !projectorWindow.isDestroyed()) {
-                return true;
-            }
-            return ipcMain.handlers['toggle-projector-window'] ? ipcMain.handlers['toggle-projector-window']() /* Hacky fallback */ : true; // We'll just copy the logic or call the internal
-        });
-
-        // Actually better to exact exactly the same logic
-        const openProjectorLogic = () => {
+        ipcMain.handle('toggle-projector-window', () => {
             if (projectorWindow) {
-                return true;
+                projectorWindow.close();
+                // The close event handler will notify clients and nullify the variable
+                return false;
             }
 
             const displays = screen.getAllDisplays();
@@ -385,13 +357,15 @@ if (!gotTheLock) {
                 icon: path.join(__dirname, '../public/icon.ico'),
                 webPreferences: {
                     preload: path.join(__dirname, 'preload.js'),
-                    nodeIntegration: true,
-                    contextIsolation: true
+                    contextIsolation: true,
+                    nodeIntegration: false
                 }
             };
 
             if (externalDisplay) {
+                winOptions.x = externalDisplay.bounds.x + 50;
                 winOptions.y = externalDisplay.bounds.y + 50;
+                winOptions.fullscreen = true;
             }
 
             projectorWindow = new BrowserWindow(winOptions);
@@ -402,28 +376,19 @@ if (!gotTheLock) {
 
             projectorWindow.loadFile(path.join(__dirname, '../public/projector.html'));
 
-            // Handle Esc key
+            // Handle Native Keys on Projector Window
             projectorWindow.webContents.on('before-input-event', (event, input) => {
                 if (input.key === 'Escape' && projectorWindow) {
                     projectorWindow.close();
-                }
-            });
-
-            // Handle arrow keys
-            projectorWindow.webContents.on('before-input-event', (event, input) => {
-                if (input.type === 'keyDown' && ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'].includes(input.key)) {
+                    event.preventDefault();
+                } else if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(input.key)) {
+                    // Forward slide navigation keys back to main window
                     BrowserWindow.getAllWindows().forEach(win => {
                         if (win !== projectorWindow && !win.isDestroyed()) {
                             win.webContents.send('projector-key-press', input.key);
                         }
                     });
-                }
-            });
-
-            // Notify main window
-            BrowserWindow.getAllWindows().forEach(win => {
-                if (win !== projectorWindow && !win.isDestroyed()) {
-                    win.webContents.send('projector-state-changed', true);
+                    event.preventDefault();
                 }
             });
 
@@ -437,20 +402,7 @@ if (!gotTheLock) {
             });
 
             return true;
-        };
-
-        ipcMain.handle('open-projector-window', openProjectorLogic);
-
-        ipcMain.handle('toggle-projector-window', () => {
-            if (projectorWindow) {
-                projectorWindow.close();
-                // The close event handler will notify clients and nullify the variable
-                return false;
-            }
-            return openProjectorLogic();
         });
-
-
 
         ipcMain.handle('fetch-lyrics-content', async (event, url) => {
             let fetchWindow = new BrowserWindow({
@@ -555,7 +507,15 @@ if (!gotTheLock) {
             }
         });
 
+        io = startServer((data) => {
+            console.log("Server Status:", data);
+            currentServerStatus = data;
+            BrowserWindow.getAllWindows().forEach(win => {
+                win.webContents.send('status-update', data);
+            });
+        });
 
+        ipcMain.handle('get-server-status', () => currentServerStatus);
 
         let globalMaxDevices = 1;
 

@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
 import QRCode from 'react-qr-code';
 
-// Helper to normalize whitespace without destroying deliberate numbers.
-const cleanText = (text) => text ? text.trim() : '';
+// Helper to strip leading numbers (e.g. "1. Title" -> "Title")
+const cleanText = (text) => text ? text.replace(/^\d+\.?\s*/, '') : '';
 
 function App() {
     const [status, setStatus] = useState('Disconnected');
@@ -24,6 +24,7 @@ function App() {
     const [customAlert, setCustomAlert] = useState(null);
     const [songToDelete, setSongToDelete] = useState(null);
     const [overwritePrompt, setOverwritePrompt] = useState(null);
+    const [confirmPrompt, setConfirmPrompt] = useState(null);
     const [dbStatus, setDbStatus] = useState({ status: 'connecting', authenticated: false });
     const searchQueryRef = useRef('');
     const activeFilterRef = useRef('All');
@@ -38,7 +39,7 @@ function App() {
     const [updateProgress, setUpdateProgress] = useState(0);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
-    const [appVersion, setAppVersion] = useState('1.3.4');
+    const [appVersion, setAppVersion] = useState('1.2.5');
     const [isSyncing, setIsSyncing] = useState(false);
 
     const confirmOverwrite = (title) => {
@@ -72,19 +73,39 @@ function App() {
     const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
     // Library Categories
-    const allCategories = ['English Choruses', 'English Hymns', 'Telugu Songs', 'Hindi Songs', 'Special Songs', 'Marathi Songs'];
+    const [allCategories, setAllCategories] = useState(['English Choruses', 'English Hymns', 'Telugu Songs', 'Hindi Songs', 'Marathi Songs', 'Special Songs', 'Children Songs']);
     const [visibleCategories, setVisibleCategories] = useState(() => {
         const saved = localStorage.getItem('setting_visibleCategories');
-        return saved ? JSON.parse(saved) : allCategories;
+        return saved ? JSON.parse(saved) : ['English Choruses', 'English Hymns', 'Telugu Songs', 'Hindi Songs', 'Marathi Songs', 'Special Songs', 'Children Songs'];
     });
     const [favourites, setFavourites] = useState(() => {
         const saved = localStorage.getItem('setting_favourites');
         return saved ? JSON.parse(saved) : [];
     });
 
-    const stateRef = useRef({ slides: [], index: 0, currentSong: null, isModalOpen: false, schedule: [], isProjectorOpen: false });
+    // Admin Panel State
+    const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+    const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
+    const [adminUsernameInput, setAdminUsernameInput] = useState('');
+    const [adminPasswordInput, setAdminPasswordInput] = useState('');
+    const [adminLoginError, setAdminLoginError] = useState('');
+    const [adminTab, setAdminTab] = useState('categories'); // categories, uncategorized, bulk_delete, church_profile, projector, app_behavior
 
-    useEffect(() => { stateRef.current = { slides, index: currentSlideIndex, currentSong, isModalOpen: showAddModal || !!songToDelete, schedule, isProjectorOpen }; }, [slides, currentSlideIndex, currentSong, showAddModal, songToDelete, schedule, isProjectorOpen]);
+    // Admin Categories Manager State
+    const [newCategoryInput, setNewCategoryInput] = useState('');
+    const [editingCategory, setEditingCategory] = useState(null);
+
+    // Admin Bulk Delete State
+    const [bulkCategory, setBulkCategory] = useState('');
+    const [bulkSongsList, setBulkSongsList] = useState([]);
+    const [bulkSelectedIds, setBulkSelectedIds] = useState([]);
+
+    // Admin Uncategorized State
+    const [uncategorizedSongs, setUncategorizedSongs] = useState([]);
+
+    const stateRef = useRef({ slides: [], index: 0, currentSong: null, isModalOpen: false, schedule: [] });
+
+    useEffect(() => { stateRef.current = { slides, index: currentSlideIndex, currentSong, isModalOpen: showAddModal || !!songToDelete, schedule }; }, [slides, currentSlideIndex, currentSong, showAddModal, songToDelete, schedule]);
 
     // Save settings to localStorage whenever they change
     useEffect(() => {
@@ -134,8 +155,19 @@ function App() {
                 if (status) setDbStatus(status);
             });
 
+            // Fetch dynamic categories
+            window.electron.invoke('get-categories').then(cats => {
+                if (cats && Array.isArray(cats)) setAllCategories(cats);
+            });
+
             const unsubDbStatusUpdate = window.electron.onDbStatus((event, status) => {
                 setDbStatus(status);
+                // Refresh categories when DB status changes (e.g. initial connection)
+                if (status.status === 'connected') {
+                    window.electron.invoke('get-categories').then(cats => {
+                        if (cats && Array.isArray(cats)) setAllCategories(cats);
+                    });
+                }
             });
 
             const unsubProjectorState = window.electron.onProjectorStateChanged((event, isOpen) => {
@@ -175,9 +207,7 @@ function App() {
                 if (cmd.action === 'next-slide') { if (index < slides.length - 1) setCurrentSlideIndex(index + 1); }
                 else if (cmd.action === 'prev-slide') { if (index > 0) setCurrentSlideIndex(index - 1); }
                 else if (cmd.action === 'blank-screen') { setIsBlack(prev => !prev); }
-                else if (cmd.action === 'set-song') {
-                    selectSong(cmd.song);
-                }
+                else if (cmd.action === 'set-song') { selectSong(cmd.song); }
                 else if (cmd.action === 'next-song') {
                     const { schedule, currentSong } = stateRef.current;
                     if (schedule.length > 1) {
@@ -354,8 +384,11 @@ function App() {
                 setCustomAlert('This song is already in the schedule!');
                 return;
             }
+
+            // Add directly and show toast
             const newSchedule = await window.electron.invoke('add-to-schedule', songId);
             setSchedule(newSchedule);
+            setCustomAlert(`Added to schedule`);
         }
     };
 
@@ -398,7 +431,7 @@ function App() {
                 let titleNode = xmlDoc.getElementsByTagName('title')[0] || xmlDoc.getElementsByTagNameNS('*', 'title')[0];
                 let rawTitle = titleNode ? titleNode.textContent : file.name.replace(/\.xml$/i, "");
                 // Use the same cleaning logic as the rest of the app
-                const title = cleanText(rawTitle.replace(/\s+/g, ' '));
+                const title = cleanText(rawTitle.replace(/^[-_]+/, '').replace(/\s+/g, ' ').trim());
 
                 // Get Verses
                 const verses = xmlDoc.querySelectorAll("song lyrics verse lines");
@@ -609,65 +642,350 @@ function App() {
 
                         <div className="space-y-6">
 
-                            {/* Church Profile Group */}
+                            {/* Admin Access Panel */}
                             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                <div className="flex justify-between items-center mb-3">
+                                <div className="flex justify-between items-center">
                                     <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                        <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg">
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                                        <span className={clsx("p-1.5 rounded-lg", isAdminLoggedIn ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-600")}>
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                                         </span>
-                                        Church Profile
+                                        Admin Panel Access
                                     </h3>
-                                    <button
-                                        onClick={() => setIsEditingProfile(!isEditingProfile)}
-                                        className={clsx(
-                                            "px-4 py-1.5 rounded-lg text-sm font-bold transition-all border",
-                                            isEditingProfile
-                                                ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20"
-                                                : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                                        )}
-                                    >
-                                        {isEditingProfile ? 'Save' : 'Edit'}
-                                    </button>
+                                    {!isAdminLoggedIn ? (
+                                        <button
+                                            onClick={() => setShowAdminLoginModal(true)}
+                                            className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-bold shadow-md shadow-slate-800/20 transition-all"
+                                        >
+                                            Login as Admin
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => setIsAdminLoggedIn(false)}
+                                            className="px-4 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg text-sm font-bold transition-all border border-rose-200"
+                                        >
+                                            Logout
+                                        </button>
+                                    )}
                                 </div>
-                                <div className="text-sm text-slate-500 italic mb-4">
-                                    Details entered here will appear on the splash screen when starting the application and as a watermark on the projector window.
-                                </div>
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div>
-                                        <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Church Name</label>
-                                        <input
-                                            type="text"
-                                            placeholder="e.g., Grace Community Church"
-                                            value={churchName}
-                                            onChange={(e) => setChurchName(e.target.value)}
-                                            disabled={!isEditingProfile}
-                                            className={clsx(
-                                                "w-full p-2.5 rounded-lg text-sm transition-all duration-300 font-medium border italic",
-                                                isEditingProfile
-                                                    ? "bg-white border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-sm"
-                                                    : "bg-slate-50/50 border-slate-200 text-slate-800 cursor-default opacity-80"
-                                            )}
-                                        />
+                                {!isAdminLoggedIn && (
+                                    <div className="text-sm text-slate-500 italic mt-3">
+                                        Login to manage categories, perform bulk deletions, and access restricted app settings.
                                     </div>
-                                    <div>
-                                        <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Location / Place</label>
-                                        <input
-                                            type="text"
-                                            placeholder="e.g., New York, NY"
-                                            value={churchPlace}
-                                            onChange={(e) => setChurchPlace(e.target.value)}
-                                            disabled={!isEditingProfile}
-                                            className={clsx(
-                                                "w-full p-2.5 rounded-lg text-sm transition-all duration-300 font-medium border italic",
-                                                isEditingProfile
-                                                    ? "bg-white border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-sm"
-                                                    : "bg-slate-50/50 border-slate-200 text-slate-800 cursor-default opacity-80"
-                                            )}
-                                        />
+                                )}
+
+                                {isAdminLoggedIn && (
+                                    <div className="mt-5 border-t border-slate-100 pt-4">
+                                        <div className="flex gap-2 flex-wrap">
+                                            {[
+                                                { id: 'categories', label: 'Categories' },
+                                                { id: 'uncategorized', label: 'Uncategorized' },
+                                                { id: 'bulk_delete', label: 'Bulk Delete' },
+                                                { id: 'church_profile', label: 'Church Profile' },
+                                                { id: 'projector', label: 'Projector Styling' },
+                                                { id: 'app_behavior', label: 'App Behavior' }
+                                            ].map(tab => (
+                                                <button
+                                                    key={tab.id}
+                                                    onClick={() => setAdminTab(tab.id)}
+                                                    className={clsx(
+                                                        "px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all border",
+                                                        adminTab === tab.id
+                                                            ? "bg-slate-800 text-white border-slate-800 shadow-md shadow-slate-900/20"
+                                                            : "bg-slate-50 text-slate-600 hover:bg-slate-100 border-slate-200"
+                                                    )}
+                                                >
+                                                    {tab.label}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                             </div>
+
+                            {/* Categories Management Panel */}
+                            {isAdminLoggedIn && adminTab === 'categories' && (
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                        <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg">
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                                        </span>
+                                        Category Management
+                                    </h3>
+
+                                    <div className="flex gap-2 mb-4">
+                                        <input
+                                            type="text"
+                                            value={newCategoryInput}
+                                            onChange={(e) => setNewCategoryInput(e.target.value)}
+                                            placeholder="New Category Name..."
+                                            className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                        />
+                                        <button
+                                            onClick={async () => {
+                                                if (newCategoryInput.trim()) {
+                                                    await window.electron.invoke('add-category', newCategoryInput.trim());
+                                                    setNewCategoryInput('');
+                                                }
+                                            }}
+                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition"
+                                        >
+                                            Add
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                                        {allCategories.map((cat, i) => (
+                                            <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-lg">
+                                                {editingCategory === cat ? (
+                                                    <div className="flex flex-1 gap-2 mr-2">
+                                                        <input
+                                                            type="text"
+                                                            defaultValue={cat}
+                                                            autoFocus
+                                                            onBlur={() => setEditingCategory(null)}
+                                                            onKeyDown={async (e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    const targetCat = e.target.value.trim();
+                                                                    if (targetCat && targetCat !== cat) {
+                                                                        await window.electron.invoke('update-category', { oldName: cat, newName: targetCat });
+                                                                    }
+                                                                    setEditingCategory(null);
+                                                                } else if (e.key === 'Escape') {
+                                                                    setEditingCategory(null);
+                                                                }
+                                                            }}
+                                                            className="flex-1 px-2 py-1 border border-blue-400 rounded text-sm outline-none"
+                                                        />
+                                                        <span className="text-[10px] text-slate-400 self-center italic">Press Enter to save</span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="font-medium text-slate-700 text-sm">{cat}</span>
+                                                )}
+
+                                                <div className="flex gap-1">
+                                                    <button onClick={() => setEditingCategory(cat)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition" title="Rename">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                    </button>
+                                                    <button onClick={() => {
+                                                        setConfirmPrompt({
+                                                            title: 'Delete Category',
+                                                            message: `Delete category "${cat}"? Songs in it will become Uncategorized.`,
+                                                            confirmText: 'Delete',
+                                                            confirmStyle: 'red',
+                                                            onConfirm: async () => {
+                                                                await window.electron.invoke('delete-category', cat);
+                                                                if (defaultCategory === cat) setDefaultCategory('Special Songs');
+                                                            }
+                                                        });
+                                                    }} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition" title="Delete">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Uncategorized Songs Panel */}
+                            {isAdminLoggedIn && adminTab === 'uncategorized' && (
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                            <span className="p-1.5 bg-amber-100 text-amber-600 rounded-lg">
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                            </span>
+                                            Uncategorized Songs
+                                        </h3>
+                                        <button onClick={async () => {
+                                            const res = await window.electron.invoke('get-uncategorized-songs');
+                                            setUncategorizedSongs(res || []);
+                                        }} className="text-sm font-bold text-blue-600 hover:text-blue-800">Refresh List</button>
+                                    </div>
+                                    <p className="text-sm text-slate-500 italic mb-4">Songs with a missing or deleted category end up here. Assign them to a valid category.</p>
+
+                                    {uncategorizedSongs.length === 0 ? (
+                                        <div className="text-center p-6 bg-slate-50 border border-slate-100 rounded-lg text-slate-400 italic">No uncategorized songs found.</div>
+                                    ) : (
+                                        <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                                            {uncategorizedSongs.map(song => (
+                                                <div key={song.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                                                    <div className="font-bold text-slate-800 text-sm mb-2"><span className="text-slate-500 font-mono text-xs mr-2">{song.id}</span>{song.title}</div>
+                                                    <div className="flex gap-2">
+                                                        <select
+                                                            className="flex-1 px-3 py-1.5 bg-white border border-slate-300 rounded text-sm shadow-sm"
+                                                            onChange={async (e) => {
+                                                                if (e.target.value) {
+                                                                    await window.electron.invoke('recategorize-song', song.id, e.target.value);
+                                                                    // Refresh list
+                                                                    const res = await window.electron.invoke('get-uncategorized-songs');
+                                                                    setUncategorizedSongs(res || []);
+                                                                }
+                                                            }}
+                                                            defaultValue=""
+                                                        >
+                                                            <option value="" disabled>Assign to Category...</option>
+                                                            {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Bulk Delete Panel */}
+                            {isAdminLoggedIn && adminTab === 'bulk_delete' && (
+                                <div className="bg-white rounded-xl shadow-sm border border-red-100 p-5">
+                                    <h3 className="text-lg font-bold text-red-700 mb-4 flex items-center gap-2">
+                                        <span className="p-1.5 bg-red-100 text-red-600 rounded-lg">
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                        </span>
+                                        Bulk Delete Mode
+                                    </h3>
+                                    <div className="p-4 bg-red-50 border border-red-100 rounded-lg mb-4">
+                                        <p className="text-sm text-red-800 font-medium mb-2 flex items-center gap-2">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                            Danger Zone
+                                        </p>
+                                        <p className="text-xs text-red-600 italic">Select a category below to load songs for deletion. Multiple songs can be selected.</p>
+                                    </div>
+
+                                    <div className="mb-4">
+                                        <select
+                                            value={bulkCategory}
+                                            onChange={async (e) => {
+                                                setBulkCategory(e.target.value);
+                                                const res = await window.electron.invoke('search-songs', '', e.target.value);
+                                                setBulkSongsList(res || []);
+                                                setBulkSelectedIds([]);
+                                            }}
+                                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-red-200 focus:border-red-400 outline-none"
+                                        >
+                                            <option value="" disabled>Select a category...</option>
+                                            {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                        </select>
+                                    </div>
+
+                                    {bulkCategory && bulkSongsList.length > 0 && (
+                                        <>
+                                            <div className="flex justify-between items-center mb-2 px-1">
+                                                <span className="text-xs font-bold text-slate-500 uppercase">{bulkSongsList.length} Songs Found</span>
+                                                <button
+                                                    onClick={() => {
+                                                        if (bulkSelectedIds.length === bulkSongsList.length) setBulkSelectedIds([]);
+                                                        else setBulkSelectedIds(bulkSongsList.map(s => s.id));
+                                                    }}
+                                                    className="text-xs font-bold text-blue-600 hover:text-blue-800"
+                                                >
+                                                    {bulkSelectedIds.length === bulkSongsList.length ? 'Deselect All' : 'Select All'}
+                                                </button>
+                                            </div>
+                                            <div className="space-y-1 mb-4 max-h-60 overflow-y-auto border border-slate-200 rounded-lg p-1 bg-slate-50">
+                                                {bulkSongsList.map(song => (
+                                                    <label key={song.id} className={clsx("flex items-center gap-3 p-2 rounded cursor-pointer transition-colors", bulkSelectedIds.includes(song.id) ? "bg-red-100" : "hover:bg-slate-200/50")}>
+                                                        <input
+                                                            type="checkbox"
+                                                            className="w-4 h-4 text-red-600 rounded focus:ring-red-500"
+                                                            checked={bulkSelectedIds.includes(song.id)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) setBulkSelectedIds([...bulkSelectedIds, song.id]);
+                                                                else setBulkSelectedIds(bulkSelectedIds.filter(id => id !== song.id));
+                                                            }}
+                                                        />
+                                                        <div className="flex-1 pr-2 truncate text-sm text-slate-800 font-medium">
+                                                            <span className="text-slate-500 font-mono text-xs w-12 inline-block">{song.id}</span>
+                                                            {song.title}
+                                                        </div>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                            <button
+                                                disabled={bulkSelectedIds.length === 0}
+                                                onClick={async () => {
+                                                    if (confirm(`Are you sure you want to PERMANENTLY delete ${bulkSelectedIds.length} songs?`)) {
+                                                        await window.electron.invoke('bulk-delete-songs', bulkSelectedIds);
+                                                        // Refresh
+                                                        const res = await window.electron.invoke('search-songs', '', bulkCategory);
+                                                        setBulkSongsList(res || []);
+                                                        setBulkSelectedIds([]);
+                                                        setCustomAlert(`Successfully deleted ${bulkSelectedIds.length} songs.`);
+                                                    }
+                                                }}
+                                                className="w-full py-2.5 bg-red-600 text-white rounded-lg text-sm font-bold shadow-lg shadow-red-500/20 hover:bg-red-700 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Delete Selected ({bulkSelectedIds.length})
+                                            </button>
+                                        </>
+                                    )}
+                                    {bulkCategory && bulkSongsList.length === 0 && (
+                                        <div className="text-center p-6 bg-slate-50 border border-slate-100 rounded-lg text-slate-400 italic">No songs in this category.</div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Church Profile Group */}
+                            {isAdminLoggedIn && adminTab === 'church_profile' && (
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                            <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg">
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                                            </span>
+                                            Church Profile
+                                        </h3>
+                                        <button
+                                            onClick={() => setIsEditingProfile(!isEditingProfile)}
+                                            className={clsx(
+                                                "px-4 py-1.5 rounded-lg text-sm font-bold transition-all border",
+                                                isEditingProfile
+                                                    ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20"
+                                                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                                            )}
+                                        >
+                                            {isEditingProfile ? 'Save' : 'Edit'}
+                                        </button>
+                                    </div>
+                                    <div className="text-sm text-slate-500 italic mb-4">
+                                        Details entered here will appear on the splash screen when starting the application and as a watermark on the projector window.
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div>
+                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Church Name</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g., Grace Community Church"
+                                                value={churchName}
+                                                onChange={(e) => setChurchName(e.target.value)}
+                                                disabled={!isEditingProfile}
+                                                className={clsx(
+                                                    "w-full p-2.5 rounded-lg text-sm transition-all duration-300 font-medium border italic",
+                                                    isEditingProfile
+                                                        ? "bg-white border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-sm"
+                                                        : "bg-slate-50/50 border-slate-200 text-slate-800 cursor-default opacity-80"
+                                                )}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Location / Place</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g., New York, NY"
+                                                value={churchPlace}
+                                                onChange={(e) => setChurchPlace(e.target.value)}
+                                                disabled={!isEditingProfile}
+                                                className={clsx(
+                                                    "w-full p-2.5 rounded-lg text-sm transition-all duration-300 font-medium border italic",
+                                                    isEditingProfile
+                                                        ? "bg-white border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-sm"
+                                                        : "bg-slate-50/50 border-slate-200 text-slate-800 cursor-default opacity-80"
+                                                )}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Database Connection Status Group */}
                             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
@@ -830,230 +1148,233 @@ function App() {
                             </div>
 
                             {/* Projector Styling Group */}
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                    <span className="p-1.5 bg-indigo-100 text-indigo-600 rounded-lg">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
-                                    </span>
-                                    Projector Styling
-                                </h3>
-                                <div className="space-y-4">
-                                    {/* Font Size & Bold */}
-                                    <div className="grid grid-cols-2 gap-6">
-                                        <div>
-                                            <div className="flex justify-between mb-2">
-                                                <label className="font-semibold text-slate-700 text-xs uppercase">Font Size</label>
-                                                <span className="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-500">{fontSize}vw</span>
+                            {isAdminLoggedIn && adminTab === 'projector' && (
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
+                                        <span className="p-1.5 bg-indigo-100 text-indigo-600 rounded-lg">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
+                                        </span>
+                                        Projector Styling
+                                    </h3>
+                                    <div className="space-y-4">
+                                        {/* Font Size & Bold */}
+                                        <div className="grid grid-cols-2 gap-6">
+                                            <div>
+                                                <div className="flex justify-between mb-2">
+                                                    <label className="font-semibold text-slate-700 text-xs uppercase">Font Size</label>
+                                                    <span className="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-500">{fontSize}vw</span>
+                                                </div>
+                                                <input type="range" min="2" max="15" step="0.5" value={fontSize} onChange={(e) => setFontSize(parseFloat(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
                                             </div>
-                                            <input type="range" min="2" max="15" step="0.5" value={fontSize} onChange={(e) => setFontSize(parseFloat(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
+                                            <div>
+                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Emphasis</label>
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input type="checkbox" checked={isBold} onChange={(e) => setIsBold(e.target.checked)} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+                                                    <span className="text-sm text-slate-600 font-medium">Bold Text</span>
+                                                </label>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Emphasis</label>
-                                            <label className="flex items-center gap-2 cursor-pointer">
-                                                <input type="checkbox" checked={isBold} onChange={(e) => setIsBold(e.target.checked)} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
-                                                <span className="text-sm text-slate-600 font-medium">Bold Text</span>
-                                            </label>
-                                        </div>
-                                    </div>
 
-                                    {/* Colors & Background */}
-                                    <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-50">
-                                        <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Text Color</label>
-                                            <div className="flex items-center gap-2">
-                                                <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-9 w-16 p-0 border border-slate-200 rounded cursor-pointer" />
-                                                <span className="text-xs font-mono text-slate-400">{color}</span>
+                                        {/* Colors & Background */}
+                                        <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-50">
+                                            <div>
+                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Text Color</label>
+                                                <div className="flex items-center gap-2">
+                                                    <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-9 w-16 p-0 border border-slate-200 rounded cursor-pointer" />
+                                                    <span className="text-xs font-mono text-slate-400">{color}</span>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Background Color</label>
+                                                <div className="flex items-center gap-2">
+                                                    <input type="color" value={backgroundColor} onChange={(e) => { setBackgroundColor(e.target.value); setBackgroundImage(''); }} className="h-9 w-16 p-0 border border-slate-200 rounded cursor-pointer" />
+                                                    <span className="text-xs font-mono text-slate-400">{backgroundColor}</span>
+                                                </div>
                                             </div>
                                         </div>
-                                        <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Background Color</label>
-                                            <div className="flex items-center gap-2">
-                                                <input type="color" value={backgroundColor} onChange={(e) => { setBackgroundColor(e.target.value); setBackgroundImage(''); }} className="h-9 w-16 p-0 border border-slate-200 rounded cursor-pointer" />
-                                                <span className="text-xs font-mono text-slate-400">{backgroundColor}</span>
-                                            </div>
-                                        </div>
-                                    </div>
 
-                                    {/* Background Image */}
-                                    <div className="pt-4 border-t border-slate-50">
-                                        <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Background Wallpaper</label>
-                                        <div className="flex items-center gap-3">
-                                            <button
-                                                onClick={async () => {
-                                                    if (window.electron) {
-                                                        const path = await window.electron.invoke('select-image-file');
-                                                        if (path) setBackgroundImage(path);
-                                                    }
-                                                }}
-                                                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors border border-slate-200"
-                                            >
-                                                Upload Image...
-                                            </button>
+                                        {/* Background Image */}
+                                        <div className="pt-4 border-t border-slate-50">
+                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Background Wallpaper</label>
+                                            <div className="flex items-center gap-3">
+                                                <button
+                                                    onClick={async () => {
+                                                        if (window.electron) {
+                                                            const path = await window.electron.invoke('select-image-file');
+                                                            if (path) setBackgroundImage(path);
+                                                        }
+                                                    }}
+                                                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors border border-slate-200"
+                                                >
+                                                    Upload Image...
+                                                </button>
+                                                {backgroundImage && (
+                                                    <button onClick={() => setBackgroundImage('')} className="text-xs text-red-500 font-medium hover:text-red-700">Remove</button>
+                                                )}
+                                            </div>
                                             {backgroundImage && (
-                                                <button onClick={() => setBackgroundImage('')} className="text-xs text-red-500 font-medium hover:text-red-700">Remove</button>
+                                                <div className="mt-2 h-24 w-full rounded-lg bg-cover bg-center border border-slate-200" style={{ backgroundImage: `url("${backgroundImage}")` }}></div>
                                             )}
                                         </div>
-                                        {backgroundImage && (
-                                            <div className="mt-2 h-24 w-full rounded-lg bg-cover bg-center border border-slate-200" style={{ backgroundImage: `url("${backgroundImage}")` }}></div>
-                                        )}
-                                    </div>
 
-                                    {/* Alignment & Font Family */}
-                                    <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-50">
+                                        {/* Alignment & Font Family */}
+                                        <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-50">
+                                            <div>
+                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Align Text</label>
+                                                <div className="flex gap-1 bg-slate-100 p-1 rounded-lg inline-flex">
+                                                    {['left', 'center', 'right'].map(align => (
+                                                        <button
+                                                            key={align}
+                                                            onClick={() => setTextAlign(align)}
+                                                            className={clsx("p-1.5 rounded-md transition-all", textAlign === align ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-600")}
+                                                        >
+                                                            <div className="w-5 h-5 flex items-center justify-center">
+                                                                {align === 'left' && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10M4 18h8" /></svg>}
+                                                                {align === 'center' && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M7 12h10M9 18h6" /></svg>}
+                                                                {align === 'right' && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M10 12h10M12 18h8" /></svg>}
+                                                            </div>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Font Family</label>
+                                                <select
+                                                    value={fontFamily}
+                                                    onChange={(e) => setFontFamily(e.target.value)}
+                                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
+                                                >
+                                                    <option value="sans-serif">Modern (Sans)</option>
+                                                    <option value="serif">Classic (Serif)</option>
+                                                    <option value="monospace">Typewriter</option>
+                                                    <option value="'Courier New', Courier, monospace">Courier</option>
+                                                    <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                                                    <option value="'Arial', sans-serif">Arial</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* App Behavior Group */}
+                            {isAdminLoggedIn && adminTab === 'app_behavior' && (
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
+                                        <span className="p-1.5 bg-orange-100 text-orange-600 rounded-lg">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+                                        </span>
+                                        Application Behavior
+                                    </h3>
+                                    <div className="space-y-4">
                                         <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Align Text</label>
-                                            <div className="flex gap-1 bg-slate-100 p-1 rounded-lg inline-flex">
-                                                {['left', 'center', 'right'].map(align => (
-                                                    <button
-                                                        key={align}
-                                                        onClick={() => setTextAlign(align)}
-                                                        className={clsx("p-1.5 rounded-md transition-all", textAlign === align ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-600")}
-                                                    >
-                                                        <div className="w-5 h-5 flex items-center justify-center">
-                                                            {align === 'left' && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10M4 18h8" /></svg>}
-                                                            {align === 'center' && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M7 12h10M9 18h6" /></svg>}
-                                                            {align === 'right' && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M10 12h10M12 18h8" /></svg>}
-                                                        </div>
-                                                    </button>
+                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Default Category</label>
+                                            <p className="text-xs text-slate-400 italic mb-2">Category selected by default when adding new songs.</p>
+                                            <select
+                                                value={defaultCategory}
+                                                onChange={(e) => setDefaultCategory(e.target.value)}
+                                                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
+                                            >
+                                                <option value="English Choruses">English Choruses</option>
+                                                <option value="English Hymns">English Hymns</option>
+                                                <option value="Telugu Songs">Telugu Songs</option>
+                                                <option value="Hindi Songs">Hindi Songs</option>
+                                                <option value="Special Songs">Special Songs</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-50">
+                                            <div>
+                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Lyrics Preview Layout</label>
+                                                <p className="text-xs text-slate-400 italic mb-2">Choose how slides are displayed in the main preview window.</p>
+                                                <select
+                                                    value={previewMode}
+                                                    onChange={(e) => {
+                                                        setPreviewMode(e.target.value);
+                                                        localStorage.setItem('setting_previewMode', e.target.value);
+                                                    }}
+                                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
+                                                >
+                                                    <option value="single">Single Slide (Large Text)</option>
+                                                    <option value="grid">Grid View (All Slides Interactive)</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Preview Font</label>
+                                                <p className="text-xs text-slate-400 italic mb-2">Choose the font for the lyrics preview pane.</p>
+                                                <select
+                                                    value={previewFont}
+                                                    onChange={(e) => {
+                                                        setPreviewFont(e.target.value);
+                                                        localStorage.setItem('setting_previewFont', e.target.value);
+                                                    }}
+                                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
+                                                >
+                                                    <option value="lyrics">Classic (Lora Serif)</option>
+                                                    <option value="sans">Modern (Inter Sans)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                                            <div>
+                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-1">Auto-Format Lyrics</label>
+                                                <p className="text-xs text-slate-400 italic">Automatically try to format pasted lyrics into stanzas.</p>
+                                            </div>
+                                            <label className="relative inline-flex items-center cursor-pointer">
+                                                <input type="checkbox" checked={autoFormat} onChange={(e) => setAutoFormat(e.target.checked)} className="sr-only peer" />
+                                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                            </label>
+                                        </div>
+
+                                        <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                                            <div>
+                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-1">Show Application Controls</label>
+                                                <p className="text-xs text-slate-400 italic">Show or hide the system refresh, zoom, and developer tools.</p>
+                                            </div>
+                                            <label className="relative inline-flex items-center cursor-pointer">
+                                                <input type="checkbox" checked={showAppControls} onChange={(e) => setShowAppControls(e.target.checked)} className="sr-only peer" />
+                                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                            </label>
+                                        </div>
+
+                                        <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                                            <div>
+                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-1">Show Database Management</label>
+                                                <p className="text-xs text-slate-400 italic">Show or hide the XML import and database tools.</p>
+                                            </div>
+                                            <label className="relative inline-flex items-center cursor-pointer">
+                                                <input type="checkbox" checked={showDatabaseManagement} onChange={(e) => setShowDatabaseManagement(e.target.checked)} className="sr-only peer" />
+                                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                            </label>
+                                        </div>
+
+                                        <div className="pt-4 border-t border-slate-50">
+                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-3">Visible Library Categories</label>
+                                            <p className="text-xs text-slate-400 italic mb-4">Select which categories appear as tabs in the Song Library.</p>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {allCategories.map(cat => (
+                                                    <label key={cat} className="flex items-center gap-3 cursor-pointer group">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={visibleCategories.includes(cat)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setVisibleCategories([...visibleCategories, cat]);
+                                                                } else {
+                                                                    setVisibleCategories(visibleCategories.filter(c => c !== cat));
+                                                                }
+                                                            }}
+                                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-slate-300 transition-all"
+                                                        />
+                                                        <span className="text-xs font-medium text-slate-600 group-hover:text-slate-800 transition-colors">{cat}</span>
+                                                    </label>
                                                 ))}
                                             </div>
                                         </div>
-                                        <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Font Family</label>
-                                            <select
-                                                value={fontFamily}
-                                                onChange={(e) => setFontFamily(e.target.value)}
-                                                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
-                                            >
-                                                <option value="sans-serif">Modern (Sans)</option>
-                                                <option value="serif">Classic (Serif)</option>
-                                                <option value="monospace">Typewriter</option>
-                                                <option value="'Courier New', Courier, monospace">Courier</option>
-                                                <option value="'Times New Roman', Times, serif">Times New Roman</option>
-                                                <option value="'Arial', sans-serif">Arial</option>
-                                            </select>
-                                        </div>
                                     </div>
                                 </div>
-                            </div>
-
-                            {/* App Behavior Group */}
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                    <span className="p-1.5 bg-orange-100 text-orange-600 rounded-lg">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
-                                    </span>
-                                    Application Behavior
-                                </h3>
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Default Category</label>
-                                        <p className="text-xs text-slate-400 italic mb-2">Category selected by default when adding new songs.</p>
-                                        <select
-                                            value={defaultCategory}
-                                            onChange={(e) => setDefaultCategory(e.target.value)}
-                                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
-                                        >
-                                            <option value="English Choruses">English Choruses</option>
-                                            <option value="English Hymns">English Hymns</option>
-                                            <option value="Telugu Songs">Telugu Songs</option>
-                                            <option value="Hindi Songs">Hindi Songs</option>
-                                            <option value="Marathi">Marathi</option>
-                                            <option value="Special Songs">Special Songs</option>
-                                        </select>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-50">
-                                        <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Lyrics Preview Layout</label>
-                                            <p className="text-xs text-slate-400 italic mb-2">Choose how slides are displayed in the main preview window.</p>
-                                            <select
-                                                value={previewMode}
-                                                onChange={(e) => {
-                                                    setPreviewMode(e.target.value);
-                                                    localStorage.setItem('setting_previewMode', e.target.value);
-                                                }}
-                                                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
-                                            >
-                                                <option value="single">Single Slide (Large Text)</option>
-                                                <option value="grid">Grid View (All Slides Interactive)</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Preview Font</label>
-                                            <p className="text-xs text-slate-400 italic mb-2">Choose the font for the lyrics preview pane.</p>
-                                            <select
-                                                value={previewFont}
-                                                onChange={(e) => {
-                                                    setPreviewFont(e.target.value);
-                                                    localStorage.setItem('setting_previewFont', e.target.value);
-                                                }}
-                                                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
-                                            >
-                                                <option value="lyrics">Classic (Lora Serif)</option>
-                                                <option value="sans">Modern (Inter Sans)</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                                        <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-1">Auto-Format Lyrics</label>
-                                            <p className="text-xs text-slate-400 italic">Automatically try to format pasted lyrics into stanzas.</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" checked={autoFormat} onChange={(e) => setAutoFormat(e.target.checked)} className="sr-only peer" />
-                                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                        </label>
-                                    </div>
-
-                                    <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                                        <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-1">Show Application Controls</label>
-                                            <p className="text-xs text-slate-400 italic">Show or hide the system refresh, zoom, and developer tools.</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" checked={showAppControls} onChange={(e) => setShowAppControls(e.target.checked)} className="sr-only peer" />
-                                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                        </label>
-                                    </div>
-
-                                    <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                                        <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-1">Show Database Management</label>
-                                            <p className="text-xs text-slate-400 italic">Show or hide the XML import and database tools.</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" checked={showDatabaseManagement} onChange={(e) => setShowDatabaseManagement(e.target.checked)} className="sr-only peer" />
-                                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                        </label>
-                                    </div>
-
-                                    <div className="pt-4 border-t border-slate-50">
-                                        <label className="font-semibold text-slate-700 text-xs uppercase block mb-3">Visible Library Categories</label>
-                                        <p className="text-xs text-slate-400 italic mb-4">Select which categories appear as tabs in the Song Library.</p>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            {allCategories.map(cat => (
-                                                <label key={cat} className="flex items-center gap-3 cursor-pointer group">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={visibleCategories.includes(cat)}
-                                                        onChange={(e) => {
-                                                            if (e.target.checked) {
-                                                                setVisibleCategories([...visibleCategories, cat]);
-                                                            } else {
-                                                                setVisibleCategories(visibleCategories.filter(c => c !== cat));
-                                                            }
-                                                        }}
-                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-slate-300 transition-all"
-                                                    />
-                                                    <span className="text-xs font-medium text-slate-600 group-hover:text-slate-800 transition-colors">{cat}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                            )}
 
                             {/* App Version & Updates Group */}
                             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
@@ -1210,12 +1531,12 @@ function App() {
                                 {/* List */}
                                 <div className="flex-1 overflow-y-auto w-full">
                                     <div className="text-[10px] font-bold text-slate-400 px-4 py-2 uppercase tracking-wider bg-slate-50/50 sticky top-0 z-10 backdrop-blur-md italic">
-                                        Showing all results
+                                        Showing top results
                                     </div>
                                     {searchResults.filter(song => {
                                         if (activeTab === 'favourites') return favourites.includes(song.id);
                                         return activeFilter === 'All' ? visibleCategories.includes(song.category) : true;
-                                    }).map(song => (
+                                    }).slice(0, 100).map(song => (
                                         <div
                                             key={song.id}
                                             onClick={() => selectSong(song)}
@@ -1264,8 +1585,12 @@ function App() {
                                 onRefresh={() => { fetchSchedule(); setCustomAlert("Schedule synced successfully."); }}
                                 onSelect={(song) => {
                                     selectSong(song);
+                                    if (!isProjectorOpen) {
+                                        handleToggleProjector();
+                                    }
                                 }}
                                 currentSongId={currentSong?.id}
+                                isAdminLoggedIn={isAdminLoggedIn}
                             />
                         )}
 
@@ -1296,7 +1621,7 @@ function App() {
                                 const lyrics = slides.join('\n\n');
                                 setAddSongInitialData({
                                     id: currentSong.id,
-                                    title: currentSong.title || currentSong.preview,
+                                    title: currentSong.preview || currentSong.title,
                                     category: currentSong.category,
                                     lyrics: lyrics,
                                     isEdit: true
@@ -1320,6 +1645,46 @@ function App() {
                             }
                         }}
                     />
+                )}
+
+                {/* Generic Confirm Modal */}
+                {confirmPrompt && (
+                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-[110] flex items-center justify-center p-4">
+                        <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100">
+                            <div className="flex items-start gap-4">
+                                <div className={clsx(
+                                    "shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner mt-0.5",
+                                    confirmPrompt.confirmStyle === 'red' ? "bg-red-50 text-red-500" : "bg-blue-50 text-blue-500"
+                                )}>
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                </div>
+                                <div className="flex-1">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-1">{confirmPrompt.title || "Confirm Action"}</h3>
+                                    <p className="text-sm text-slate-500 leading-relaxed italic">{confirmPrompt.message}</p>
+                                </div>
+                            </div>
+                            <div className="mt-6 flex gap-3">
+                                <button
+                                    onClick={() => setConfirmPrompt(null)}
+                                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (confirmPrompt.onConfirm) confirmPrompt.onConfirm();
+                                        setConfirmPrompt(null);
+                                    }}
+                                    className={clsx(
+                                        "flex-1 py-2.5 text-white rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95",
+                                        confirmPrompt.confirmStyle === 'red' ? "bg-red-600 hover:bg-red-700 shadow-red-500/20" : "bg-blue-600 hover:bg-blue-700 shadow-blue-500/20"
+                                    )}
+                                >
+                                    {confirmPrompt.confirmText || "Confirm"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                 {/* Custom Alert Modal */}
@@ -1378,6 +1743,8 @@ function App() {
                     </div>
                 )}
 
+                {/* Schedule Add Confirmation Modal has been replaced by a toast */}
+
                 {/* Delete Confirmation Modal */}
                 {songToDelete && (
                     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -1410,6 +1777,89 @@ function App() {
                 )}
 
                 {/* Exit Confirmation Modal */}
+
+                {/* Admin Login Modal */}
+                {showAdminLoginModal && (
+                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+                        <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center shadow-inner">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                </div>
+                                <h3 className="text-xl font-black text-slate-800">Admin Login</h3>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Username</label>
+                                    <input
+                                        type="text"
+                                        value={adminUsernameInput}
+                                        onChange={(e) => setAdminUsernameInput(e.target.value)}
+                                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-800 transition-all font-medium"
+                                        placeholder="Enter admin username"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Password</label>
+                                    <input
+                                        type="password"
+                                        value={adminPasswordInput}
+                                        onChange={(e) => setAdminPasswordInput(e.target.value)}
+                                        onKeyDown={async (e) => {
+                                            if (e.key === 'Enter') {
+                                                const valid = await window.electron.invoke('verify-admin', { user: adminUsernameInput, pass: adminPasswordInput });
+                                                if (valid) {
+                                                    setIsAdminLoggedIn(true);
+                                                    setShowAdminLoginModal(false);
+                                                    setAdminPasswordInput('');
+                                                    setAdminLoginError('');
+                                                } else {
+                                                    setAdminLoginError('Invalid username or password.');
+                                                }
+                                            }
+                                        }}
+                                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-800 transition-all font-medium"
+                                        placeholder="Enter admin password"
+                                    />
+                                </div>
+                                {adminLoginError && (
+                                    <p className="text-xs text-red-500 font-bold bg-red-50 py-2 px-3 rounded-lg border border-red-100">{adminLoginError}</p>
+                                )}
+                            </div>
+
+                            <div className="mt-6 flex gap-3">
+                                <button
+                                    onClick={() => {
+                                        setShowAdminLoginModal(false);
+                                        setAdminPasswordInput('');
+                                        setAdminLoginError('');
+                                    }}
+                                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        const valid = await window.electron.invoke('verify-admin', { user: adminUsernameInput, pass: adminPasswordInput });
+                                        if (valid) {
+                                            setIsAdminLoggedIn(true);
+                                            setShowAdminLoginModal(false);
+                                            setAdminPasswordInput('');
+                                            setAdminLoginError('');
+                                        } else {
+                                            setAdminLoginError('Invalid username or password.');
+                                        }
+                                    }}
+                                    className="flex-1 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20 transition-all active:scale-95"
+                                >
+                                    Login
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {showCloseConfirm && (
                     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
                         <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center text-center">
@@ -1806,7 +2256,7 @@ function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurren
     )
 }
 
-function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh, currentSongId }) {
+function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh, currentSongId, isAdminLoggedIn }) {
     if (schedule.length === 0) {
         return (
             <div className="w-[320px] bg-slate-50 flex flex-col items-center justify-center text-slate-400 section-split-border">
@@ -1839,6 +2289,25 @@ function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh,
                     Sunday Service
                 </h2>
                 <div className="flex items-center gap-2">
+                    {isAdminLoggedIn && (
+                        <button
+                            onClick={() => {
+                                setConfirmPrompt({
+                                    title: 'Clear Schedule',
+                                    message: 'Are you sure you want to clear the entire schedule? This will remove all songs from the Sunday Service list.',
+                                    confirmText: 'Clear All',
+                                    confirmStyle: 'red',
+                                    onConfirm: () => {
+                                        onRefresh && window.electron?.invoke('clear-schedule').then(() => onRefresh(true));
+                                    }
+                                });
+                            }}
+                            className="p-1.5 hover:bg-red-100 text-red-500 rounded-lg transition-colors"
+                            title="Clear Schedule"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                    )}
                     <button
                         onClick={() => onRefresh && onRefresh(true)}
                         className="p-1.5 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors"
@@ -1958,33 +2427,36 @@ function AddSongModal({ onClose, onSave, initialData, defaultCategory, onConfirm
     }, [category, initialData, isEdit]);
 
     const handleSave = async () => {
-        const cleanedTitle = (title || '').trim();
-        if (!id || !lyrics || !cleanedTitle) {
-            setCustomAlert('Song Title, ID and Lyrics are mandatory.');
-            setLoading(false);
-            return;
-        }
+        if (!id || !lyrics || !title.trim()) return;
         setLoading(true);
 
-        const rawLines = lyrics.split('\n');
+        const rawLines = lyrics.split('\n'); // Don't trim/filter yet, we need to respect double newlines
         const slides = [];
         let currentSlide = [];
+
+        let buildingSlide = false;
+
+        // Smart split logic:
+        // Use double newlines (\n\n) as explicit slide separators.
+        // If no double newlines, use default 6-line buffer.
 
         const hasDoubleNewlines = lyrics.includes('\n\n');
 
         if (hasDoubleNewlines) {
+            // Split by double newline to get distinct slides
             const rawSlides = lyrics.split(/\n\s*\n/);
             rawSlides.forEach(slideText => {
                 const cleanedLines = slideText.split('\n')
                     .map(l => l.trim())
                     .filter(l => l)
-                    .map(l => l.replace(/^\d+\.?\s*/, ''));
+                    .map(l => l.replace(/^\d+\.?\s*/, '')); // Strip leading numbers
 
                 if (cleanedLines.length > 0) {
                     slides.push(cleanedLines.join('\n'));
                 }
             });
         } else {
+            // Fallback to line-count splitting
             const lines = lyrics.split('\n').map(l => l.trim()).filter(l => l);
             lines.forEach((line, i) => {
                 const cleanLine = line.replace(/^\d+\.?\s*/, '');
@@ -2001,31 +2473,40 @@ function AddSongModal({ onClose, onSave, initialData, defaultCategory, onConfirm
         const songData = {
             id,
             category,
-            title: cleanedTitle,
+            title: cleanText(title || 'Unknown Song'),
             slides
         };
 
+        // If not explicit title, infer from first slide
+        if (!title && slides.length > 0) {
+            songData.title = cleanText(slides[0].split('\n')[0]);
+        }
+
+        const resolvedTitle = songData.title;
+
         try {
             if (window.electron) {
-                // Duplicate check
+                // Duplicate check for New Songs (and Title changes in Edit)
                 const existingSongs = await window.electron.invoke('search-songs', '', 'All');
                 const sanitizeTitle = t => (t || "").replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
                 const duplicateSong = existingSongs.find(s =>
                     s.id !== id &&
                     s.title &&
-                    sanitizeTitle(s.title) === sanitizeTitle(cleanedTitle)
+                    sanitizeTitle(s.title) === sanitizeTitle(resolvedTitle)
                 );
 
                 if (duplicateSong) {
-                    const shouldOverwrite = await onConfirmOverwrite(cleanedTitle);
+                    const shouldOverwrite = await onConfirmOverwrite(resolvedTitle);
                     if (!shouldOverwrite) {
                         setLoading(false);
-                        return;
+                        return; // Abort save
                     }
+                    // If overwrite, we actually update the duplicate song's ID's slides
                     songData.id = duplicateSong.id;
-                    songData.category = duplicateSong.category;
+                    songData.category = duplicateSong.category; // Keep original category
                     await window.electron.invoke('update-song', songData);
                 } else {
+                    // Normal behavior
                     if (isEdit) {
                         await window.electron.invoke('update-song', songData);
                     } else {
@@ -2033,9 +2514,6 @@ function AddSongModal({ onClose, onSave, initialData, defaultCategory, onConfirm
                     }
                 }
 
-                // Important: we need to ensure local state in App.jsx reflects the update
-                // Usually onSave(songData) updates it, but if IDs shifted it might be complex.
-                // For now, onSave is enough if the DB broadcast works.
                 onSave(songData);
                 onClose();
             }
@@ -2064,12 +2542,13 @@ function AddSongModal({ onClose, onSave, initialData, defaultCategory, onConfirm
                                 value={category}
                                 onChange={e => setCategory(e.target.value)}
                             >
-                                <option value="English Choruses">English Choruses</option>
-                                <option value="English Hymns">English Hymns</option>
-                                <option value="Telugu Songs">Telugu Songs</option>
-                                <option value="Hindi Songs">Hindi Songs</option>
-                                <option value="Marathi Songs">Marathi Songs</option>
-                                <option value="Special Songs">Special Songs</option>
+                                {window.electron && JSON.parse(localStorage.getItem('setting_visibleCategories') || '[]').map(cat => (
+                                    <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                                {/* Fallback if no local storage yet */}
+                                {!window.electron && ['English Choruses', 'English Hymns', 'Telugu Songs', 'Hindi Songs', 'Marathi Songs', 'Special Songs', 'Children Songs'].map(cat => (
+                                    <option key={cat} value={cat}>{cat}</option>
+                                ))}
                             </select>
                         </div>
                         <div>
@@ -2091,11 +2570,23 @@ function AddSongModal({ onClose, onSave, initialData, defaultCategory, onConfirm
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Title <span className="text-red-500">*</span></label>
                         <input
                             type="text"
-                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
+                            required
+                            className={clsx(
+                                "w-full p-2 bg-slate-50 border rounded-lg text-sm italic",
+                                !title.trim() ? "border-red-300 focus:ring-red-500/20 focus:border-red-500 bg-red-50" : "border-slate-200"
+                            )}
                             placeholder="Song Title"
                             value={title}
-                            onChange={e => setTitle(e.target.value)}
+                            onChange={e => {
+                                const val = e.target.value;
+                                if (val.length > 0) {
+                                    setTitle(val.charAt(0).toUpperCase() + val.slice(1));
+                                } else {
+                                    setTitle(val);
+                                }
+                            }}
                         />
+                        {!title.trim() && <p className="text-xs text-red-500 mt-1 italic">Title is required.</p>}
                     </div>
 
                     <div>
