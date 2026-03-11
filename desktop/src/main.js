@@ -30,8 +30,8 @@ if (!gotTheLock) {
             height: 800,
             titleBarStyle: 'hidden',
             titleBarOverlay: {
-                color: '#4f46e5',
-                symbolColor: '#ffffff',
+                color: '#ffffff',
+                symbolColor: '#000000',
                 height: 40
             },
             autoHideMenuBar: true,
@@ -310,6 +310,16 @@ if (!gotTheLock) {
             } finally {
                 if (searchWindow && !searchWindow.isDestroyed()) {
                     searchWindow.destroy();
+                }
+            }
+        });
+        ipcMain.handle('set-titlebar-theme', (event, theme) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                if (theme === 'dark') {
+                    // Match the slate-900/60 color to hide controls during modal
+                    mainWindow.setTitleBarOverlay({ color: '#1e293b', symbolColor: '#475569' });
+                } else {
+                    mainWindow.setTitleBarOverlay({ color: '#ffffff', symbolColor: '#000000' });
                 }
             }
         });

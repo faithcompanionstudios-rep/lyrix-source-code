@@ -27,4 +27,5 @@ contextBridge.exposeInMainWorld('electron', {
     invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
     deleteSong: (id) => ipcRenderer.invoke('delete-song', id),
     appControl: (command) => ipcRenderer.invoke('app-control', command),
+    setTitlebarTheme: (theme) => ipcRenderer.invoke('set-titlebar-theme', theme),
 });

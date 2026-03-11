@@ -95,7 +95,7 @@ function App() {
     const [updateProgress, setUpdateProgress] = useState(0);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
-    const [appVersion, setAppVersion] = useState('1.4.0');
+    const [appVersion, setAppVersion] = useState('1.4.1');
     const [isSyncing, setIsSyncing] = useState(false);
 
     const confirmOverwrite = (title) => {
@@ -127,6 +127,13 @@ function App() {
     const [showDatabaseManagement, setShowDatabaseManagement] = useState(() => localStorage.getItem('setting_showDatabaseManagement') !== 'false');
     const [showMobileDownloadQR, setShowMobileDownloadQR] = useState(false);
     const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+
+    useEffect(() => {
+        if (window.electron && window.electron.setTitlebarTheme) {
+            window.electron.setTitlebarTheme(showCloseConfirm ? 'dark' : 'light');
+        }
+    }, [showCloseConfirm]);
+
 
     // Library Categories
     const [allCategories, setAllCategories] = useState(['English Choruses', 'English Hymns', 'Telugu Songs', 'Hindi Songs', 'Marathi Songs', 'Special Songs', 'Children Songs']);
@@ -204,7 +211,7 @@ function App() {
 
             // Fetch app version
             window.electron.invoke('get-app-version').then(v => {
-                setAppVersion('1.4.0');
+                setAppVersion('1.4.1');
             });
 
             // DB Status Listener
