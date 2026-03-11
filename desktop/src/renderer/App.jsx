@@ -5,6 +5,62 @@ import QRCode from 'react-qr-code';
 // Helper to strip leading numbers (e.g. "1. Title" -> "Title")
 const cleanText = (text) => text ? text.replace(/^\d+\.?\s*/, '') : '';
 
+const CustomSelect = ({ value, onChange, options, className, placeholder = "Select..." }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const selectRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (selectRef.current && !selectRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const selectedOption = options.find(o => o.value === value) || options[0];
+
+    return (
+        <div className="relative w-full" ref={selectRef}>
+            <div
+                className={clsx("flex items-center justify-between cursor-pointer focus:outline-none transition-all group", className)}
+                onClick={() => setIsOpen(!isOpen)}
+                tabIndex={0}
+            >
+                <span className="truncate">{selectedOption ? selectedOption.label : placeholder}</span>
+                <div className="ml-2 w-5 h-5 rounded-full bg-slate-100/50 group-hover:bg-slate-200/50 flex items-center justify-center transition-colors">
+                    <svg className={clsx("w-3.5 h-3.5 text-slate-500 transition-transform duration-200", isOpen ? "rotate-180 text-indigo-500" : "")} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
+                </div>
+            </div>
+            {isOpen && (
+                <div className="absolute z-[100] w-full mt-2 bg-white/95 backdrop-blur-xl border border-slate-200/60 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-y-auto max-h-56 p-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    {options.map((option, idx) => (
+                        <div
+                            key={idx}
+                            className={clsx(
+                                "px-3 py-2.5 my-0.5 text-sm cursor-pointer transition-all rounded-xl flex items-center justify-between",
+                                value === option.value
+                                    ? "bg-indigo-50/80 text-indigo-700 font-bold shadow-sm italic"
+                                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium italic"
+                            )}
+                            onClick={() => {
+                                onChange({ target: { value: option.value } });
+                                setIsOpen(false);
+                            }}
+                        >
+                            <span className="truncate pr-4">{option.label}</span>
+                            {value === option.value && (
+                                <svg className="w-4 h-4 text-indigo-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 function App() {
     const [status, setStatus] = useState('Disconnected');
     const [ip, setIp] = useState('Unknown');
@@ -39,7 +95,7 @@ function App() {
     const [updateProgress, setUpdateProgress] = useState(0);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
-    const [appVersion, setAppVersion] = useState('1.2.5');
+    const [appVersion, setAppVersion] = useState('1.4.0');
     const [isSyncing, setIsSyncing] = useState(false);
 
     const confirmOverwrite = (title) => {
@@ -120,13 +176,14 @@ function App() {
         localStorage.setItem('setting_defaultCategory', defaultCategory);
         localStorage.setItem('setting_autoFormat', autoFormat);
         localStorage.setItem('setting_previewMode', previewMode);
+        localStorage.setItem('setting_previewFont', previewFont);
         localStorage.setItem('setting_maxRemoteDevices', maxRemoteDevices);
         localStorage.setItem('setting_churchName', churchName);
         localStorage.setItem('setting_churchPlace', churchPlace);
         localStorage.setItem('setting_visibleCategories', JSON.stringify(visibleCategories));
         localStorage.setItem('setting_showAppControls', showAppControls);
         localStorage.setItem('setting_showDatabaseManagement', showDatabaseManagement);
-    }, [favourites, fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, defaultCategory, autoFormat, previewMode, maxRemoteDevices, churchName, churchPlace, visibleCategories, showAppControls, showDatabaseManagement]);
+    }, [favourites, fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, defaultCategory, autoFormat, previewMode, previewFont, maxRemoteDevices, churchName, churchPlace, visibleCategories, showAppControls, showDatabaseManagement]);
 
     useEffect(() => {
         if (window.electron) {
@@ -147,7 +204,7 @@ function App() {
 
             // Fetch app version
             window.electron.invoke('get-app-version').then(v => {
-                if (v) setAppVersion(v);
+                setAppVersion('1.4.0');
             });
 
             // DB Status Listener
@@ -597,15 +654,30 @@ function App() {
                     </div>
 
                     <div className="flex-1 py-6 px-3 space-y-1">
-                        <button
-                            onClick={() => { setAddSongInitialData(null); setShowAddModal(true); }}
-                            className="w-full flex items-center gap-3 px-3 py-3 mb-4 rounded-xl text-sm font-bold transition-all duration-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-[1.02]"
-                        >
-                            <div className="w-5 h-5 bg-white/20 rounded-full flex items-center justify-center">
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
-                            </div>
-                            Add New Song
-                        </button>
+                        <div className="flex gap-2 mb-4">
+                            <button
+                                onClick={() => { setAddSongInitialData(null); setShowAddModal(true); }}
+                                className="flex-1 flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-sm font-bold transition-all duration-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-[1.02]"
+                            >
+                                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
+                                New Song
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    const res = await window.electron.invoke('import-pptx');
+                                    if (res && res.success) {
+                                        setAddSongInitialData({ title: res.filename, preview: res.slides.join('\n\n\n') });
+                                        setShowAddModal(true);
+                                    } else if (res && res.error) {
+                                        setCustomAlert("Error importing PPTX: " + res.error);
+                                    }
+                                }}
+                                className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-700 hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-300 transition-all font-bold shadow-sm flex items-center justify-center group"
+                                title="Import from PowerPoint (.pptx)"
+                            >
+                                <svg className="w-5 h-5 group-hover:scale-110 transition-transform text-orange-600" fill="currentColor" viewBox="0 0 24 24"><path d="M19.5 3h-15C3.12 3 2 4.12 2 5.5v13C2 19.88 3.12 21 4.5 21h15c1.38 0 2.5-1.12 2.5-2.5v-13C22 4.12 20.88 3 19.5 3zm-9 14.5c0 .28-.22.5-.5.5h-5c-.28 0-.5-.22-.5-.5v-11c0-.28.22-.5.5-.5h5c.28 0 .5.22.5.5v11zm8 0c0 .28-.22.5-.5.5h-6c-.28 0-.5-.22-.5-.5v-11c0-.28.22-.5.5-.5h6c.28 0 .5.22.5.5v11zM7.5 10c-.83 0-1.5.67-1.5 1.5S6.67 13 7.5 13 9 12.33 9 11.5 8.33 10 7.5 10z" /></svg>
+                            </button>
+                        </div>
 
                         <NavItem icon={<LibraryIcon />} label="Song Library" active={activeTab === 'library'} onClick={() => setActiveTab('library')} />
                         <NavItem icon={<HeartIcon />} label="Favourites" active={activeTab === 'favourites'} onClick={() => setActiveTab('favourites')} />
@@ -637,875 +709,638 @@ function App() {
                 {activeTab === 'web' ? (
                     <WebSearch onImport={(data) => { setAddSongInitialData(data); setShowAddModal(true); }} setCustomAlert={setCustomAlert} />
                 ) : activeTab === 'settings' ? (
-                    <div className="flex-1 flex flex-col bg-slate-50 p-8 overflow-y-auto">
-                        <h2 className="font-display text-3xl font-bold text-slate-800 mb-6">Settings</h2>
-
-                        <div className="space-y-6">
-
-                            {/* Admin Access Panel */}
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                <div className="flex justify-between items-center">
-                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                        <span className={clsx("p-1.5 rounded-lg", isAdminLoggedIn ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-600")}>
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                                        </span>
-                                        Admin Panel Access
-                                    </h3>
-                                    {!isAdminLoggedIn ? (
-                                        <button
-                                            onClick={() => setShowAdminLoginModal(true)}
-                                            className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-bold shadow-md shadow-slate-800/20 transition-all"
-                                        >
-                                            Login as Admin
-                                        </button>
-                                    ) : (
-                                        <button
-                                            onClick={() => setIsAdminLoggedIn(false)}
-                                            className="px-4 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg text-sm font-bold transition-all border border-rose-200"
-                                        >
-                                            Logout
-                                        </button>
-                                    )}
-                                </div>
-                                {!isAdminLoggedIn && (
-                                    <div className="text-sm text-slate-500 italic mt-3">
-                                        Login to manage categories, perform bulk deletions, and access restricted app settings.
-                                    </div>
-                                )}
-
-                                {isAdminLoggedIn && (
-                                    <div className="mt-5 border-t border-slate-100 pt-4">
-                                        <div className="flex gap-2 flex-wrap">
-                                            {[
-                                                { id: 'categories', label: 'Categories' },
-                                                { id: 'uncategorized', label: 'Uncategorized' },
-                                                { id: 'bulk_delete', label: 'Bulk Delete' },
-                                                { id: 'church_profile', label: 'Church Profile' },
-                                                { id: 'projector', label: 'Projector Styling' },
-                                                { id: 'app_behavior', label: 'App Behavior' }
-                                            ].map(tab => (
-                                                <button
-                                                    key={tab.id}
-                                                    onClick={() => setAdminTab(tab.id)}
-                                                    className={clsx(
-                                                        "px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all border",
-                                                        adminTab === tab.id
-                                                            ? "bg-slate-800 text-white border-slate-800 shadow-md shadow-slate-900/20"
-                                                            : "bg-slate-50 text-slate-600 hover:bg-slate-100 border-slate-200"
-                                                    )}
-                                                >
-                                                    {tab.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
+                    <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
+                        {/* Settings Header - Always show logout/login */}
+                        <div className="bg-white border-b border-slate-200 p-6 flex justify-between items-center shrink-0 shadow-sm z-10">
+                            <div>
+                                <h2 className="font-display text-3xl font-bold text-slate-800">{isAdminLoggedIn ? 'Admin Panel' : 'Settings'}</h2>
+                                {isAdminLoggedIn ? (
+                                    <p className="text-xs text-indigo-500 italic mt-1 font-bold">Logged in as Administrator</p>
+                                ) : (
+                                    <p className="text-xs text-slate-400 italic mt-1 font-medium italic">Configure LyriX Desktop to your needs</p>
                                 )}
                             </div>
+                            <div className="flex gap-3">
+                                {!isAdminLoggedIn ? (
+                                    <button
+                                        onClick={() => setShowAdminLoginModal(true)}
+                                        className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                        Admin Login
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => setIsAdminLoggedIn(false)}
+                                        className="px-6 py-2.5 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-xl text-sm font-bold transition-all shadow-sm flex items-center gap-2"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                                        Exit Admin
+                                    </button>
+                                )}
+                            </div>
+                        </div>
 
-                            {/* Categories Management Panel */}
-                            {isAdminLoggedIn && adminTab === 'categories' && (
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                        <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg">
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                                        </span>
-                                        Category Management
-                                    </h3>
 
-                                    <div className="flex gap-2 mb-4">
-                                        <input
-                                            type="text"
-                                            value={newCategoryInput}
-                                            onChange={(e) => setNewCategoryInput(e.target.value)}
-                                            placeholder="New Category Name..."
-                                            className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                                        />
-                                        <button
-                                            onClick={async () => {
-                                                if (newCategoryInput.trim()) {
-                                                    await window.electron.invoke('add-category', newCategoryInput.trim());
-                                                    setNewCategoryInput('');
-                                                }
-                                            }}
-                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition"
-                                        >
-                                            Add
-                                        </button>
-                                    </div>
-
-                                    <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                                        {allCategories.map((cat, i) => (
-                                            <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-lg">
-                                                {editingCategory === cat ? (
-                                                    <div className="flex flex-1 gap-2 mr-2">
-                                                        <input
-                                                            type="text"
-                                                            defaultValue={cat}
-                                                            autoFocus
-                                                            onBlur={() => setEditingCategory(null)}
-                                                            onKeyDown={async (e) => {
-                                                                if (e.key === 'Enter') {
-                                                                    const targetCat = e.target.value.trim();
-                                                                    if (targetCat && targetCat !== cat) {
-                                                                        await window.electron.invoke('update-category', { oldName: cat, newName: targetCat });
-                                                                    }
-                                                                    setEditingCategory(null);
-                                                                } else if (e.key === 'Escape') {
-                                                                    setEditingCategory(null);
-                                                                }
-                                                            }}
-                                                            className="flex-1 px-2 py-1 border border-blue-400 rounded text-sm outline-none"
-                                                        />
-                                                        <span className="text-[10px] text-slate-400 self-center italic">Press Enter to save</span>
-                                                    </div>
-                                                ) : (
-                                                    <span className="font-medium text-slate-700 text-sm">{cat}</span>
+                        <div className="flex-1 overflow-y-auto p-8">
+                            {isAdminLoggedIn ? (
+                                /* ADMIN VIEW CONTENTS */
+                                <div className="space-y-6 animate-fade-in w-full max-w-6xl mx-auto">
+                                    <div className="flex gap-2 flex-wrap mb-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
+                                        {[
+                                            { id: 'categories', label: 'Categories' },
+                                            { id: 'uncategorized', label: 'Uncategorized' },
+                                            { id: 'bulk_delete', label: 'Bulk Delete' },
+                                            { id: 'security', label: 'Security' }
+                                        ].map(tab => (
+                                            <button
+                                                key={tab.id}
+                                                onClick={() => setAdminTab(tab.id)}
+                                                className={clsx(
+                                                    "px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all",
+                                                    adminTab === tab.id
+                                                        ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20"
+                                                        : "bg-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100"
                                                 )}
-
-                                                <div className="flex gap-1">
-                                                    <button onClick={() => setEditingCategory(cat)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition" title="Rename">
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                                    </button>
-                                                    <button onClick={() => {
-                                                        setConfirmPrompt({
-                                                            title: 'Delete Category',
-                                                            message: `Delete category "${cat}"? Songs in it will become Uncategorized.`,
-                                                            confirmText: 'Delete',
-                                                            confirmStyle: 'red',
-                                                            onConfirm: async () => {
-                                                                await window.electron.invoke('delete-category', cat);
-                                                                if (defaultCategory === cat) setDefaultCategory('Special Songs');
-                                                            }
-                                                        });
-                                                    }} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition" title="Delete">
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                    </button>
-                                                </div>
-                                            </div>
+                                            >
+                                                {tab.label}
+                                            </button>
                                         ))}
                                     </div>
-                                </div>
-                            )}
-
-                            {/* Uncategorized Songs Panel */}
-                            {isAdminLoggedIn && adminTab === 'uncategorized' && (
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                    <div className="flex justify-between items-center mb-4">
-                                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                            <span className="p-1.5 bg-amber-100 text-amber-600 rounded-lg">
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                            </span>
-                                            Uncategorized Songs
-                                        </h3>
-                                        <button onClick={async () => {
-                                            const res = await window.electron.invoke('get-uncategorized-songs');
-                                            setUncategorizedSongs(res || []);
-                                        }} className="text-sm font-bold text-blue-600 hover:text-blue-800">Refresh List</button>
-                                    </div>
-                                    <p className="text-sm text-slate-500 italic mb-4">Songs with a missing or deleted category end up here. Assign them to a valid category.</p>
-
-                                    {uncategorizedSongs.length === 0 ? (
-                                        <div className="text-center p-6 bg-slate-50 border border-slate-100 rounded-lg text-slate-400 italic">No uncategorized songs found.</div>
-                                    ) : (
-                                        <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
-                                            {uncategorizedSongs.map(song => (
-                                                <div key={song.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                                                    <div className="font-bold text-slate-800 text-sm mb-2"><span className="text-slate-500 font-mono text-xs mr-2">{song.id}</span>{song.title}</div>
-                                                    <div className="flex gap-2">
+                                    <div className="pt-2">
+                                        {adminTab === 'categories' && (
+                                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+                                                <h3 className="text-lg font-bold text-slate-800 mb-4 font-display">Category Management</h3>
+                                                <div className="flex gap-2 mb-4">
+                                                    <input type="text" value={newCategoryInput} onChange={(e) => setNewCategoryInput(e.target.value)} placeholder="New Category Name..." className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm" />
+                                                    <button onClick={async () => { if (newCategoryInput.trim()) { await window.electron.invoke('add-category', newCategoryInput.trim()); setNewCategoryInput(''); } }} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold">Add</button>
+                                                </div>
+                                                <div className="space-y-2 max-h-60 overflow-y-auto">
+                                                    {allCategories.map((cat, i) => (
+                                                        <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-lg">
+                                                            <span className="font-medium text-slate-700 text-sm">{cat}</span>
+                                                            <div className="flex gap-1">
+                                                                <button onClick={() => setEditingCategory(cat)} className="p-1.5 text-slate-400 hover:text-blue-600"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
+                                                                <button onClick={async () => await window.electron.invoke('delete-category', cat)} className="p-1.5 text-slate-400 hover:text-red-600"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {adminTab === 'uncategorized' && (
+                                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+                                                <h3 className="text-lg font-bold text-slate-800 mb-4 font-display">Uncategorized Songs</h3>
+                                                {uncategorizedSongs.length === 0 ? <p className="text-slate-400 italic">No uncategorized songs.</p> : (
+                                                    <div className="space-y-3">
+                                                        {uncategorizedSongs.map(song => (
+                                                            <div key={song.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex justify-between items-center">
+                                                                <div className="font-bold text-sm text-slate-800">{song.title}</div>
+                                                                <select className="px-3 py-1 bg-white border border-slate-300 rounded text-sm" onChange={async (e) => { if (e.target.value) await window.electron.invoke('recategorize-song', song.id, e.target.value); }}>
+                                                                    <option value="">Assign...</option>
+                                                                    {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                                                </select>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                        {adminTab === 'bulk_delete' && (
+                                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+                                                <h3 className="text-lg font-bold text-slate-800 mb-4 font-display">Bulk Delete Songs</h3>
+                                                <div className="mb-4 flex gap-4 items-end">
+                                                    <div className="flex-1">
+                                                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">Select Category</label>
                                                         <select
-                                                            className="flex-1 px-3 py-1.5 bg-white border border-slate-300 rounded text-sm shadow-sm"
-                                                            onChange={async (e) => {
+                                                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold"
+                                                            value={bulkCategory}
+                                                            onChange={(e) => {
+                                                                setBulkCategory(e.target.value);
                                                                 if (e.target.value) {
-                                                                    await window.electron.invoke('recategorize-song', song.id, e.target.value);
-                                                                    // Refresh list
-                                                                    const res = await window.electron.invoke('get-uncategorized-songs');
-                                                                    setUncategorizedSongs(res || []);
+                                                                    window.electron.invoke('search-songs', '', e.target.value).then(setBulkSongsList);
+                                                                } else {
+                                                                    setBulkSongsList([]);
                                                                 }
+                                                                setBulkSelectedIds([]);
                                                             }}
-                                                            defaultValue=""
                                                         >
-                                                            <option value="" disabled>Assign to Category...</option>
-                                                            {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                                            <option value="">Choose category...</option>
+                                                            {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
                                                         </select>
                                                     </div>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
 
-                            {/* Bulk Delete Panel */}
-                            {isAdminLoggedIn && adminTab === 'bulk_delete' && (
-                                <div className="bg-white rounded-xl shadow-sm border border-red-100 p-5">
-                                    <h3 className="text-lg font-bold text-red-700 mb-4 flex items-center gap-2">
-                                        <span className="p-1.5 bg-red-100 text-red-600 rounded-lg">
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                        </span>
-                                        Bulk Delete Mode
-                                    </h3>
-                                    <div className="p-4 bg-red-50 border border-red-100 rounded-lg mb-4">
-                                        <p className="text-sm text-red-800 font-medium mb-2 flex items-center gap-2">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                                            Danger Zone
-                                        </p>
-                                        <p className="text-xs text-red-600 italic">Select a category below to load songs for deletion. Multiple songs can be selected.</p>
-                                    </div>
-
-                                    <div className="mb-4">
-                                        <select
-                                            value={bulkCategory}
-                                            onChange={async (e) => {
-                                                setBulkCategory(e.target.value);
-                                                const res = await window.electron.invoke('search-songs', '', e.target.value);
-                                                setBulkSongsList(res || []);
-                                                setBulkSelectedIds([]);
-                                            }}
-                                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-red-200 focus:border-red-400 outline-none"
-                                        >
-                                            <option value="" disabled>Select a category...</option>
-                                            {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                        </select>
-                                    </div>
-
-                                    {bulkCategory && bulkSongsList.length > 0 && (
-                                        <>
-                                            <div className="flex justify-between items-center mb-2 px-1">
-                                                <span className="text-xs font-bold text-slate-500 uppercase">{bulkSongsList.length} Songs Found</span>
-                                                <button
-                                                    onClick={() => {
-                                                        if (bulkSelectedIds.length === bulkSongsList.length) setBulkSelectedIds([]);
-                                                        else setBulkSelectedIds(bulkSongsList.map(s => s.id));
-                                                    }}
-                                                    className="text-xs font-bold text-blue-600 hover:text-blue-800"
-                                                >
-                                                    {bulkSelectedIds.length === bulkSongsList.length ? 'Deselect All' : 'Select All'}
-                                                </button>
-                                            </div>
-                                            <div className="space-y-1 mb-4 max-h-60 overflow-y-auto border border-slate-200 rounded-lg p-1 bg-slate-50">
-                                                {bulkSongsList.map(song => (
-                                                    <label key={song.id} className={clsx("flex items-center gap-3 p-2 rounded cursor-pointer transition-colors", bulkSelectedIds.includes(song.id) ? "bg-red-100" : "hover:bg-slate-200/50")}>
-                                                        <input
-                                                            type="checkbox"
-                                                            className="w-4 h-4 text-red-600 rounded focus:ring-red-500"
-                                                            checked={bulkSelectedIds.includes(song.id)}
-                                                            onChange={(e) => {
-                                                                if (e.target.checked) setBulkSelectedIds([...bulkSelectedIds, song.id]);
-                                                                else setBulkSelectedIds(bulkSelectedIds.filter(id => id !== song.id));
-                                                            }}
-                                                        />
-                                                        <div className="flex-1 pr-2 truncate text-sm text-slate-800 font-medium">
-                                                            <span className="text-slate-500 font-mono text-xs w-12 inline-block">{song.id}</span>
-                                                            {song.title}
+                                                {bulkSongsList.length > 0 && (
+                                                    <div className="space-y-3">
+                                                        <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                                                            <div className="text-xs font-bold text-slate-500 italic">{bulkSelectedIds.length} of {bulkSongsList.length} selected</div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => setBulkSelectedIds(bulkSongsList.map(s => s.id))} className="text-[10px] font-bold text-indigo-600 hover:underline px-2">Select All</button>
+                                                                <button onClick={() => setBulkSelectedIds([])} className="text-[10px] font-bold text-slate-400 hover:underline px-2">Clear</button>
+                                                            </div>
                                                         </div>
-                                                    </label>
-                                                ))}
-                                            </div>
-                                            <button
-                                                disabled={bulkSelectedIds.length === 0}
-                                                onClick={async () => {
-                                                    if (confirm(`Are you sure you want to PERMANENTLY delete ${bulkSelectedIds.length} songs?`)) {
-                                                        await window.electron.invoke('bulk-delete-songs', bulkSelectedIds);
-                                                        // Refresh
-                                                        const res = await window.electron.invoke('search-songs', '', bulkCategory);
-                                                        setBulkSongsList(res || []);
-                                                        setBulkSelectedIds([]);
-                                                        setCustomAlert(`Successfully deleted ${bulkSelectedIds.length} songs.`);
-                                                    }
-                                                }}
-                                                className="w-full py-2.5 bg-red-600 text-white rounded-lg text-sm font-bold shadow-lg shadow-red-500/20 hover:bg-red-700 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                Delete Selected ({bulkSelectedIds.length})
-                                            </button>
-                                        </>
-                                    )}
-                                    {bulkCategory && bulkSongsList.length === 0 && (
-                                        <div className="text-center p-6 bg-slate-50 border border-slate-100 rounded-lg text-slate-400 italic">No songs in this category.</div>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Church Profile Group */}
-                            {isAdminLoggedIn && adminTab === 'church_profile' && (
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                    <div className="flex justify-between items-center mb-3">
-                                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                            <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg">
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-                                            </span>
-                                            Church Profile
-                                        </h3>
-                                        <button
-                                            onClick={() => setIsEditingProfile(!isEditingProfile)}
-                                            className={clsx(
-                                                "px-4 py-1.5 rounded-lg text-sm font-bold transition-all border",
-                                                isEditingProfile
-                                                    ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20"
-                                                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                                            )}
-                                        >
-                                            {isEditingProfile ? 'Save' : 'Edit'}
-                                        </button>
-                                    </div>
-                                    <div className="text-sm text-slate-500 italic mb-4">
-                                        Details entered here will appear on the splash screen when starting the application and as a watermark on the projector window.
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-6">
-                                        <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Church Name</label>
-                                            <input
-                                                type="text"
-                                                placeholder="e.g., Grace Community Church"
-                                                value={churchName}
-                                                onChange={(e) => setChurchName(e.target.value)}
-                                                disabled={!isEditingProfile}
-                                                className={clsx(
-                                                    "w-full p-2.5 rounded-lg text-sm transition-all duration-300 font-medium border italic",
-                                                    isEditingProfile
-                                                        ? "bg-white border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-sm"
-                                                        : "bg-slate-50/50 border-slate-200 text-slate-800 cursor-default opacity-80"
+                                                        <div className="max-h-64 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                                                            {bulkSongsList.map(song => (
+                                                                <label key={song.id} className="flex items-center gap-3 p-2 hover:bg-indigo-50/50 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-indigo-100">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={bulkSelectedIds.includes(song.id)}
+                                                                        onChange={(e) => {
+                                                                            if (e.target.checked) setBulkSelectedIds([...bulkSelectedIds, song.id]);
+                                                                            else setBulkSelectedIds(bulkSelectedIds.filter(id => id !== song.id));
+                                                                        }}
+                                                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                                    />
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="text-sm font-bold text-slate-700 truncate">{song.title}</div>
+                                                                        <div className="text-[10px] text-slate-400 italic">ID: {song.id}</div>
+                                                                    </div>
+                                                                </label>
+                                                            ))}
+                                                        </div>
+                                                        <div className="pt-4 mt-4 border-t border-slate-100 flex justify-end">
+                                                            <button
+                                                                disabled={bulkSelectedIds.length === 0}
+                                                                onClick={() => {
+                                                                    setConfirmPrompt({
+                                                                        title: 'Bulk Delete',
+                                                                        message: `Are you sure you want to delete ${bulkSelectedIds.length} selected songs? This cannot be undone!`,
+                                                                        confirmText: `Delete ${bulkSelectedIds.length} Songs`,
+                                                                        confirmStyle: 'red',
+                                                                        onConfirm: async () => {
+                                                                            await window.electron.invoke('bulk-delete-songs', bulkSelectedIds);
+                                                                            setBulkSongsList(prev => prev.filter(s => !bulkSelectedIds.includes(s.id)));
+                                                                            setBulkSelectedIds([]);
+                                                                            setCustomAlert(`Successfully deleted ${bulkSelectedIds.length} songs.`);
+                                                                            handleSearch('', activeFilter); // Refresh library
+                                                                        }
+                                                                    });
+                                                                }}
+                                                                className="px-6 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-200 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/20 transition-all active:scale-95"
+                                                            >
+                                                                Delete Selected
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 )}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Location / Place</label>
-                                            <input
-                                                type="text"
-                                                placeholder="e.g., New York, NY"
-                                                value={churchPlace}
-                                                onChange={(e) => setChurchPlace(e.target.value)}
-                                                disabled={!isEditingProfile}
-                                                className={clsx(
-                                                    "w-full p-2.5 rounded-lg text-sm transition-all duration-300 font-medium border italic",
-                                                    isEditingProfile
-                                                        ? "bg-white border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-sm"
-                                                        : "bg-slate-50/50 border-slate-200 text-slate-800 cursor-default opacity-80"
-                                                )}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Database Connection Status Group */}
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-3">
-                                    <span className="p-1.5 bg-indigo-100 text-indigo-600 rounded-lg">
-                                        <DatabaseIcon className="w-5 h-5" />
-                                    </span>
-                                    Database Connection
-                                </h3>
-                                <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
-                                    <div className="flex items-center gap-3">
-                                        <div className={clsx(
-                                            "w-3 h-3 rounded-full animate-pulse",
-                                            dbStatus.status === 'connected' ? "bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.4)]" :
-                                                dbStatus.status === 'authenticating' ? "bg-yellow-500" : "bg-red-500"
-                                        )}></div>
-                                        <div>
-                                            <div className="text-sm font-bold text-slate-700 capitalize">{dbStatus.status.replace('_', ' ')}</div>
-                                            <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Cloud Sync: {dbStatus.authenticated ? 'Active' : 'Offline'}</div>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={async () => {
-                                                if (isSyncing) return;
-                                                setIsSyncing(true);
-                                                try {
-                                                    const result = await window.electron.invoke('sync-songs');
-                                                    if (result.success) {
-                                                        setCustomAlert(`Sync Complete! ${result.count} songs up to date.`);
-                                                    }
-                                                } catch (e) {
-                                                    setCustomAlert(`Sync Failed: ${e.message}`);
-                                                } finally {
-                                                    setIsSyncing(false);
-                                                }
-                                            }}
-                                            disabled={isSyncing}
-                                            className={clsx(
-                                                "px-4 py-1.5 border rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-2",
-                                                isSyncing
-                                                    ? "bg-indigo-50 text-indigo-400 border-indigo-100 cursor-not-allowed"
-                                                    : "bg-white border-slate-200 hover:border-indigo-400 hover:text-indigo-600"
-                                            )}
-                                        >
-                                            <svg className={clsx("w-3 h-3", isSyncing && "animate-spin")} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                            </svg>
-                                            {isSyncing ? 'Syncing...' : 'Sync'}
-                                        </button>
-                                        <button
-                                            onClick={() => window.location.reload()}
-                                            className="px-4 py-1.5 bg-white border border-slate-200 hover:border-indigo-400 hover:text-indigo-600 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-2"
-                                        >
-                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                            Reconnect
-                                        </button>
-                                    </div>
-                                </div>
-                                {dbStatus.status === 'auth_error' && (
-                                    <div className="mt-3 p-3 bg-red-50 text-red-600 text-xs rounded-lg border border-red-100 italic">
-                                        <div className="font-bold mb-1">Authentication Failed:</div>
-                                        <div className="font-mono bg-white/50 p-1.5 rounded border border-red-100/50 break-all">
-                                            {dbStatus.error || "Permission Denied: Please check your Firebase configuration or internet connection."}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Mobile Remote Group */}
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                    <span className="p-1.5 bg-green-100 text-green-600 rounded-lg">
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                                    </span>
-                                    Mobile Remote Control
-                                </h3>
-                                <div className="text-sm text-slate-500 italic mb-4">
-                                    Control LyriX Stage seamlessly from your smartphone or tablet! Just grab your mobile device, ensure it is connected to the same Wi-Fi network as this computer, and navigate to the address below in your web browser.
-                                </div>
-                                <div className="flex items-center justify-between bg-slate-50 rounded-xl p-5 border border-slate-200 shadow-inner">
-                                    <div className="flex items-center gap-6">
-                                        {status === 'Running' && ip !== 'Unknown' && (
-                                            <div className="bg-white p-2 border border-slate-200 shadow-sm rounded-lg flex-shrink-0">
-                                                <QRCode value={`http://${ip}:3001`} size={80} level="L" />
                                             </div>
                                         )}
-                                        <div className="flex flex-col">
-                                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Server Address</span>
-                                            <span className="text-lg font-mono font-bold italic text-slate-800 select-all tracking-tight">
-                                                {status === 'Running' && ip !== 'Unknown' ? `http://${ip}:3001` : 'Offline'}
-                                            </span>
-                                            {status === 'Running' && ip !== 'Unknown' && (
-                                                <span className="text-xs text-slate-500 mt-2 font-medium">Scan QR code with your phone's camera</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-col items-center justify-center flex-shrink-0">
-                                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${status === 'Running' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-500'}`}>
-                                            <div className={`w-2 h-2 rounded-full ${status === 'Running' ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`}></div>
-                                            {status === 'Running' ? 'Active' : 'Offline'}
-                                        </div>
-                                        <button
-                                            onClick={async () => {
-                                                if (window.electron && window.electron.invoke) {
-                                                    await window.electron.invoke('refresh-ip');
-                                                }
-                                            }}
-                                            className="mt-2 px-3 py-1 bg-white border border-slate-200 hover:border-indigo-400 hover:text-indigo-600 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1 text-slate-500"
-                                            title="Refresh IP Address"
-                                        >
-                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                            Refresh IP
-                                        </button>
-                                        {status === 'Running' && (
-                                            <div className="text-xs mt-2 font-medium flex items-center justify-center gap-2 text-slate-500">
-                                                <span>{connections} /</span>
-                                                <select
-                                                    value={maxRemoteDevices}
-                                                    onChange={(e) => setMaxRemoteDevices(Number(e.target.value))}
-                                                    className="bg-transparent border-b border-slate-300 outline-none text-slate-800 font-bold focus:border-indigo-500 transition-colors mx-1 italic"
-                                                >
-                                                    {[...Array(5)].map((_, i) => (
-                                                        <option key={i + 1} value={i + 1}>{i + 1}</option>
-                                                    ))}
-                                                </select>
-                                                <span>Limit</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Mobile App Download Group */}
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                    <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg">
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11v3m0 0l-2-2m2 2l2-2" />
-                                        </svg>
-                                    </span>
-                                    Mobile App Download
-                                </h3>
-                                <div className="text-sm text-slate-500 italic mb-4">
-                                    Download the official LyriX Mobile App to control this computer and manage your song library from anywhere!
-                                </div>
-                                <div className="flex items-center justify-between bg-blue-50/50 rounded-xl p-5 border border-blue-100/50">
-                                    <div className="flex flex-col">
-                                        <span className="text-sm font-bold text-slate-700">Get the APK Directly</span>
-                                        <span className="text-xs text-slate-500 mt-1">Scan the QR code to download the latest mobile version.</span>
-                                    </div>
-                                    <button
-                                        onClick={() => setShowMobileDownloadQR(true)}
-                                        className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-lg shadow-blue-500/20 transition-all font-sans"
-                                    >
-                                        Show QR Code
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Projector Styling Group */}
-                            {isAdminLoggedIn && adminTab === 'projector' && (
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                        <span className="p-1.5 bg-indigo-100 text-indigo-600 rounded-lg">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
-                                        </span>
-                                        Projector Styling
-                                    </h3>
-                                    <div className="space-y-4">
-                                        {/* Font Size & Bold */}
-                                        <div className="grid grid-cols-2 gap-6">
-                                            <div>
-                                                <div className="flex justify-between mb-2">
-                                                    <label className="font-semibold text-slate-700 text-xs uppercase">Font Size</label>
-                                                    <span className="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-500">{fontSize}vw</span>
+                                        {adminTab === 'security' && (
+                                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 animate-fade-in">
+                                                <h3 className="text-lg font-bold text-slate-800 mb-6 font-display">Update Admin Credentials</h3>
+                                                <div className="space-y-4 max-w-md">
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1">Admin Username</label>
+                                                        <input
+                                                            type="text"
+                                                            value={adminUsernameInput}
+                                                            onChange={(e) => setAdminUsernameInput(e.target.value)}
+                                                            placeholder="New username..."
+                                                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-indigo-500 transition-all"
+                                                        />
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1">New Password</label>
+                                                            <input
+                                                                type="password"
+                                                                value={adminPasswordInput}
+                                                                onChange={(e) => setAdminPasswordInput(e.target.value)}
+                                                                placeholder="••••••••"
+                                                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-indigo-500 transition-all"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1">Confirm</label>
+                                                            <input
+                                                                type="password"
+                                                                id="confirmPassword"
+                                                                placeholder="••••••••"
+                                                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-indigo-500 transition-all"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div className="pt-4 flex justify-end">
+                                                        <button
+                                                            onClick={async () => {
+                                                                const confirmInput = document.getElementById('confirmPassword');
+                                                                if (!adminUsernameInput || !adminPasswordInput) {
+                                                                    setCustomAlert('Username and Password cannot be empty.');
+                                                                    return;
+                                                                }
+                                                                if (adminPasswordInput !== confirmInput.value) {
+                                                                    setCustomAlert('Passwords do not match.');
+                                                                    return;
+                                                                }
+                                                                const success = await window.electron.invoke('set-admin-credentials', adminUsernameInput, adminPasswordInput);
+                                                                if (success) {
+                                                                    setCustomAlert('Admin credentials updated successfully! Please login again with new details.');
+                                                                    setIsAdminLoggedIn(false);
+                                                                    setAdminPasswordInput('');
+                                                                    confirmInput.value = '';
+                                                                }
+                                                            }}
+                                                            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
+                                                        >
+                                                            Update Security Details
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                <input type="range" min="2" max="15" step="0.5" value={fontSize} onChange={(e) => setFontSize(parseFloat(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
                                             </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                /* PUBLIC VIEW */
+                                <div className="space-y-8 w-full max-w-6xl mx-auto pb-12">
+                                    {/* 1. Church Profile Card */}
+                                    <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 flex flex-col gap-6 relative group overflow-hidden">
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner">
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                                            </div>
+                                            <h3 className="text-xl font-bold text-slate-800 tracking-tight">Church Profile</h3>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Church Name</label>
+                                                <input type="text" value={churchName} onChange={(e) => setChurchName(e.target.value)} placeholder="Enter church name..." className="w-full px-5 py-3.5 bg-white border border-slate-100 rounded-2xl text-sm font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all shadow-sm italic" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Location</label>
+                                                <input type="text" value={churchPlace} onChange={(e) => setChurchPlace(e.target.value)} placeholder="City, Country..." className="w-full px-5 py-3.5 bg-white border border-slate-100 rounded-2xl text-sm font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all shadow-sm italic" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 2. Database & Cloud */}
+                                    <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden group">
+                                        <div className="absolute right-[-20px] top-[-20px] opacity-[0.03] group-hover:rotate-12 transition-transform duration-700 pointer-events-none">
+                                            <DatabaseIcon className="w-48 h-48" />
+                                        </div>
+                                        <div className="flex items-start justify-between mb-8">
                                             <div>
-                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Emphasis</label>
-                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                    <input type="checkbox" checked={isBold} onChange={(e) => setIsBold(e.target.checked)} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
-                                                    <span className="text-sm text-slate-600 font-medium">Bold Text</span>
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner">
+                                                        <DatabaseIcon className="w-5 h-5" />
+                                                    </div>
+                                                    <h3 className="text-xl font-bold text-slate-800 tracking-tight">Database & Cloud</h3>
+                                                </div>
+                                                <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">Manage your song database and cloud synchronization status.</p>
+                                            </div>
+                                            <div className={clsx(
+                                                "px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 border shadow-sm",
+                                                dbStatus.authenticated ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-red-50 text-red-600 border-red-100"
+                                            )}>
+                                                <div className={clsx("w-2 h-2 rounded-full", dbStatus.authenticated ? "bg-emerald-500 animate-pulse" : "bg-red-500")}></div>
+                                                {dbStatus.authenticated ? "Connected" : "Disconnected"}
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 shadow-inner group/db">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Cloud Sync</span>
+                                                        <span className="text-sm font-bold text-slate-700">Firestore Database</span>
+                                                    </div>
+                                                    {isSyncing ? (
+                                                        <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={async () => {
+                                                                setIsSyncing(true);
+                                                                try { await window.electron.invoke('sync-songs'); setCustomAlert("Database synced successfully!"); }
+                                                                catch (e) { setCustomAlert("Sync failed: " + e.message); }
+                                                                finally { setIsSyncing(false); }
+                                                            }}
+                                                            className="px-4 py-2 bg-white hover:bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 shadow-sm transition-all active:scale-95 text-[10px] font-bold uppercase tracking-widest group-hover/db:shadow-md"
+                                                            title="Sync Now"
+                                                        >
+                                                            Sync Now
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <p className="text-[10px] text-slate-400 italic">Push local changes and pull updates from the cloud.</p>
+                                            </div>
+
+                                            <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 shadow-inner group/rec">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status Check</span>
+                                                        <span className="text-sm font-bold text-slate-700">Connection Health</span>
+                                                    </div>
+                                                    <button
+                                                        onClick={async () => {
+                                                            const status = await window.electron.invoke('get-db-status');
+                                                            setDbStatus(status);
+                                                            setCustomAlert(status.authenticated ? "Connection verified!" : "Unable to reach database.");
+                                                        }}
+                                                        className="px-4 py-2 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100 shadow-sm transition-all active:scale-95 text-[10px] font-bold uppercase tracking-widest group-hover/rec:shadow-md"
+                                                    >
+                                                        Reconnect
+                                                    </button>
+                                                </div>
+                                                <p className="text-[10px] text-slate-400 italic">Verify your connection to the Firebase services.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 3. Mobile & Remote Card */}
+                                    <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 flex flex-col gap-8 relative group">
+                                        <div className="flex items-start justify-between">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner">
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                                                    </div>
+                                                    <h3 className="text-xl font-bold text-slate-800 tracking-tight">Mobile Remote Control</h3>
+                                                </div>
+                                                <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">Control LyriX Stage seamlessly from your smartphone! Navigate to the address below in your web browser.</p>
+                                            </div>
+                                            <div className={clsx("px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 border shadow-sm", status === 'Active' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-slate-50 text-slate-400 border-slate-200")}>
+                                                <div className={clsx("w-2 h-2 rounded-full", status === 'Active' ? "bg-emerald-500 animate-pulse" : "bg-slate-300")}></div>
+                                                {status}
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100/50 shadow-inner">
+                                            <div className="flex items-center gap-6">
+                                                <div className="bg-white p-3 rounded-2xl shadow-lg border border-slate-100">
+                                                    <QRCode value={`http://${ip}:3001`} size={110} level="M" fgColor="#1e293b" />
+                                                </div>
+                                                <div className="space-y-4 flex-1">
+                                                    <div className="space-y-1">
+                                                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Server Address</label>
+                                                        <div className="text-base font-bold text-slate-800 tracking-tight font-mono break-all leading-tight italic opacity-90">http://{ip}:3001</div>
+                                                        <div className="text-[10px] text-slate-400 italic">Scan QR code with your phone's camera</div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button onClick={async () => { const newStatus = await window.electron.invoke('refresh-ip'); setIp(newStatus.ip); setStatus(newStatus.status); }} className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-[10px] font-bold border border-slate-200 transition-all shadow-sm active:scale-95 flex items-center gap-1.5"><RefreshIcon className="w-3.5 h-3.5" /> Refresh</button>
+                                                        <div className="text-[10px] font-bold text-slate-400 bg-white/80 border border-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm">
+                                                            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+                                                            <strong>{connections} / {maxRemoteDevices}</strong> <span className="opacity-50 italic uppercase text-[9px]">Devices</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="border-t lg:border-t-0 lg:border-l border-slate-200/50 pt-6 lg:pt-0 lg:pl-10 h-full flex flex-col justify-center">
+                                                <div className="flex items-center gap-4 mb-4">
+                                                    <div className="w-10 h-10 bg-indigo-50 text-indigo-500 rounded-xl flex items-center justify-center shadow-inner">
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 0l-2-2m2 2l2-2" /></svg>
+                                                    </div>
+                                                    <h4 className="font-bold text-slate-800 tracking-tight">Mobile App Download</h4>
+                                                </div>
+                                                <p className="text-[10px] text-slate-400 italic leading-relaxed mb-4">Download the APK directly to manage your song library from anywhere!</p>
+                                                <button onClick={() => setShowMobileDownloadQR(true)} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-widest">Show APK QR Code</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 4. Visible Categories Card */}
+                                    <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 flex flex-col gap-6 relative group">
+                                        <div>
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                                                </div>
+                                                <h3 className="text-xl font-bold text-slate-800 tracking-tight">Visible Library Categories</h3>
+                                            </div>
+                                            <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">Select which categories appear as tabs in the Song Library.</p>
+                                        </div>
+                                        <div className="flex flex-wrap gap-3 pt-2">
+                                            {allCategories.map(cat => {
+                                                const isVisible = visibleCategories.includes(cat);
+                                                return (
+                                                    <button
+                                                        key={cat}
+                                                        onClick={() => setVisibleCategories(prev => isVisible ? prev.filter(c => c !== cat) : [...prev, cat])}
+                                                        className={clsx(
+                                                            "px-5 py-2.5 rounded-2xl text-[11px] transition-all border shadow-sm active:scale-95 flex items-center gap-2",
+                                                            isVisible
+                                                                ? "bg-indigo-600 text-white border-indigo-700 shadow-indigo-200 italic"
+                                                                : "bg-white text-slate-400 border-slate-100 hover:border-slate-200 hover:text-slate-600 font-medium"
+                                                        )}
+                                                    >
+                                                        {cat}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* 5. Projector Styling Card */}
+                                    <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 relative group">
+                                        <div className="absolute right-[-20px] top-[-20px] opacity-[0.03] group-hover:rotate-12 transition-transform duration-700 pointer-events-none">
+                                            <svg className="w-48 h-48" fill="currentColor" viewBox="0 0 24 24"><path d="M21 16v-2h-1v-2h1v-2h-1V8h1V6h-1V4H4v2h1v2H4v2h1v2H4v2h1v2H4v2h1v2H4v2h17zm-15-2V6h12v8H6z" /></svg>
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4h10l2 2v10l-2 2H7l-2-2V6l2-2zM7 9h10M9 13h6" /></svg>
+                                                </div>
+                                                <h3 className="text-xl font-bold text-slate-800 tracking-tight">Projector Styling</h3>
+                                            </div>
+                                            <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">Customize how lyrics appear on the big screen! These changes update instantly in the live projector window.</p>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+                                            {/* Font Size Sub-card */}
+                                            <div className="bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100 flex flex-col justify-between shadow-inner h-full">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-3 block">Font Size</label>
+                                                <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                                    <input type="range" min="3" max="15" step="0.5" value={fontSize} onChange={(e) => setFontSize(parseFloat(e.target.value))} className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
+                                                    <span className="text-sm font-bold text-indigo-600 w-8 text-right italic font-mono">{fontSize}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Color Theme Sub-card */}
+                                            <div className="bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100 flex flex-col justify-between shadow-inner h-full">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-3 block">Color Theme</label>
+                                                <div className="flex gap-3 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+                                                    <div className="flex-1 flex flex-col gap-1.5">
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase">Text</span>
+                                                        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-full h-8 rounded-lg cursor-pointer border-none bg-transparent" />
+                                                    </div>
+                                                    <div className="flex-1 flex flex-col gap-1.5">
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase">BG</span>
+                                                        <input type="color" value={backgroundColor} onChange={(e) => setBackgroundColor(e.target.value)} className="w-full h-8 rounded-lg cursor-pointer border-none bg-transparent" />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Text Aspects Sub-card */}
+                                            <div className="bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100 flex flex-col justify-between shadow-inner h-full">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-3 block">Text Aspects & Fonts</label>
+                                                <div className="flex flex-col gap-3">
+                                                    <div className="flex gap-2 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm h-[52px] items-center">
+                                                        <button onClick={() => setIsBold(!isBold)} className={clsx("flex-1 h-full rounded-xl text-[10px] font-bold transition-all", isBold ? "bg-indigo-600 text-white shadow-md" : "text-slate-400 hover:text-slate-600 uppercase")}>BOLD</button>
+                                                        <div className="w-[1px] h-6 bg-slate-200"></div>
+                                                        <CustomSelect
+                                                            value={textAlign}
+                                                            onChange={(e) => setTextAlign(e.target.value)}
+                                                            options={[
+                                                                { value: "left", label: "Left" },
+                                                                { value: "center", label: "Center" },
+                                                                { value: "right", label: "Right" }
+                                                            ]}
+                                                            className="flex-1 h-full bg-transparent text-[10px] font-bold px-3 focus:ring-0 cursor-pointer text-slate-600 italic focus:border-indigo-500 rounded-xl"
+                                                        />
+                                                    </div>
+                                                    <CustomSelect
+                                                        value={fontFamily}
+                                                        onChange={(e) => setFontFamily(e.target.value)}
+                                                        options={[
+                                                            { value: "sans-serif", label: "Projector: Modern (Sans)" },
+                                                            { value: "serif", label: "Projector: Classic (Serif)" },
+                                                            { value: "'Times New Roman', Times, serif", label: "Projector: Times New Roman" },
+                                                            { value: "'Arial', sans-serif", label: "Projector: Arial" }
+                                                        ]}
+                                                        placeholder="Projector Font"
+                                                        className="w-full px-4 py-2 bg-white border border-slate-100 rounded-2xl text-[10px] font-bold text-slate-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all shadow-sm leading-none italic"
+                                                    />
+                                                    <CustomSelect
+                                                        value={previewFont}
+                                                        onChange={(e) => setPreviewFont(e.target.value)}
+                                                        options={[
+                                                            { value: "lyrics", label: "Preview: Classic (Lora Serif)" },
+                                                            { value: "sans", label: "Preview: Modern (Inter Sans)" }
+                                                        ]}
+                                                        placeholder="Preview Font"
+                                                        className="w-full px-4 py-2 bg-white border border-slate-100 rounded-2xl text-[10px] font-bold text-slate-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all shadow-sm leading-none italic"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 6. App Behavior Card */}
+                                    <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 flex flex-col gap-6 relative group">
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center shadow-inner">
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                            </div>
+                                            <h3 className="text-xl font-bold text-slate-800 tracking-tight">Application Behavior</h3>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="space-y-4">
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Default Category</label>
+                                                    <CustomSelect
+                                                        value={defaultCategory}
+                                                        onChange={(e) => setDefaultCategory(e.target.value)}
+                                                        options={allCategories.map(cat => ({ value: cat, label: cat }))}
+                                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 focus:bg-white focus:border-indigo-500 transition-all shadow-inner italic"
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Lyrics Preview Layout</label>
+                                                    <CustomSelect
+                                                        value={previewMode}
+                                                        onChange={(e) => setPreviewMode(e.target.value)}
+                                                        options={[
+                                                            { value: "single", label: "Single Slide (Large Text)" },
+                                                            { value: "grid", label: "Grid Overview (Compact)" }
+                                                        ]}
+                                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 focus:bg-white focus:border-indigo-500 transition-all shadow-inner italic"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-3 pt-6">
+                                                <label className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl cursor-pointer hover:bg-white hover:border-indigo-100 transition-all shadow-inner group/tog">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-700 text-sm group-hover/tog:text-indigo-600 transition-colors">Auto-Format Lyrics</span>
+                                                        <span className="text-[10px] text-slate-400 italic">Automatically try to format pasted lyrics into stanzas.</span>
+                                                    </div>
+                                                    <div className="relative w-10 h-5 shrink-0">
+                                                        <input type="checkbox" checked={autoFormat} onChange={(e) => setAutoFormat(e.target.checked)} className="peer sr-only" id="tog-auto" />
+                                                        <label htmlFor="tog-auto" className="block w-10 h-5 bg-slate-200 rounded-full cursor-pointer transition-colors peer-checked:bg-indigo-600"></label>
+                                                        <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-5 shadow-sm"></div>
+                                                    </div>
+                                                </label>
+                                                <label className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl cursor-pointer hover:bg-white hover:border-indigo-100 transition-all shadow-inner group/tog">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-700 text-sm group-hover/tog:text-indigo-600 transition-colors">Show Application Controls</span>
+                                                        <span className="text-[10px] text-slate-400 italic">Show or hide the system refresh, zoom, and developer tools.</span>
+                                                    </div>
+                                                    <div className="relative w-10 h-5 shrink-0">
+                                                        <input type="checkbox" checked={showAppControls} onChange={(e) => setShowAppControls(e.target.checked)} className="peer sr-only" id="tog-controls" />
+                                                        <label htmlFor="tog-controls" className="block w-10 h-5 bg-slate-200 rounded-full cursor-pointer transition-colors peer-checked:bg-indigo-600"></label>
+                                                        <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-5 shadow-sm"></div>
+                                                    </div>
                                                 </label>
                                             </div>
                                         </div>
+                                    </div>
 
-                                        {/* Colors & Background */}
-                                        <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-50">
-                                            <div>
-                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Text Color</label>
-                                                <div className="flex items-center gap-2">
-                                                    <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-9 w-16 p-0 border border-slate-200 rounded cursor-pointer" />
-                                                    <span className="text-xs font-mono text-slate-400">{color}</span>
+                                    {/* 7. Version & Updates Card */}
+                                    <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 relative group mb-8">
+                                        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-center shadow-inner">
+                                                    <svg className="w-6 h-6 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                                                </div>
+                                                <div>
+                                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">LyriX Desktop v{appVersion}</h3>
+                                                    <div className="flex items-center gap-2 h-4">
+                                                        {updateStatus === 'checking' && <span className="text-[11px] font-semibold text-slate-400 animate-pulse italic">Checking for updates...</span>}
+                                                        {updateStatus === 'available' && <span className="text-[11px] font-semibold text-indigo-600 italic">Update Available! Version {updateInfo?.version} is ready.</span>}
+                                                        {(updateStatus === 'not-available' || !updateStatus) && <span className="text-[11px] font-semibold text-slate-400 italic">Your app is up to date.</span>}
+                                                        {updateStatus === 'error' && <span className="text-[11px] font-semibold text-red-500 italic">Could not check for updates.</span>}
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div>
-                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Background Color</label>
-                                                <div className="flex items-center gap-2">
-                                                    <input type="color" value={backgroundColor} onChange={(e) => { setBackgroundColor(e.target.value); setBackgroundImage(''); }} className="h-9 w-16 p-0 border border-slate-200 rounded cursor-pointer" />
-                                                    <span className="text-xs font-mono text-slate-400">{backgroundColor}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Background Image */}
-                                        <div className="pt-4 border-t border-slate-50">
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Background Wallpaper</label>
-                                            <div className="flex items-center gap-3">
-                                                <button
-                                                    onClick={async () => {
-                                                        if (window.electron) {
-                                                            const path = await window.electron.invoke('select-image-file');
-                                                            if (path) setBackgroundImage(path);
-                                                        }
-                                                    }}
-                                                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors border border-slate-200"
-                                                >
-                                                    Upload Image...
-                                                </button>
-                                                {backgroundImage && (
-                                                    <button onClick={() => setBackgroundImage('')} className="text-xs text-red-500 font-medium hover:text-red-700">Remove</button>
-                                                )}
-                                            </div>
-                                            {backgroundImage && (
-                                                <div className="mt-2 h-24 w-full rounded-lg bg-cover bg-center border border-slate-200" style={{ backgroundImage: `url("${backgroundImage}")` }}></div>
-                                            )}
-                                        </div>
-
-                                        {/* Alignment & Font Family */}
-                                        <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-50">
-                                            <div>
-                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Align Text</label>
-                                                <div className="flex gap-1 bg-slate-100 p-1 rounded-lg inline-flex">
-                                                    {['left', 'center', 'right'].map(align => (
-                                                        <button
-                                                            key={align}
-                                                            onClick={() => setTextAlign(align)}
-                                                            className={clsx("p-1.5 rounded-md transition-all", textAlign === align ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-600")}
-                                                        >
-                                                            <div className="w-5 h-5 flex items-center justify-center">
-                                                                {align === 'left' && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10M4 18h8" /></svg>}
-                                                                {align === 'center' && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M7 12h10M9 18h6" /></svg>}
-                                                                {align === 'right' && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M10 12h10M12 18h8" /></svg>}
-                                                            </div>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Font Family</label>
-                                                <select
-                                                    value={fontFamily}
-                                                    onChange={(e) => setFontFamily(e.target.value)}
-                                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
-                                                >
-                                                    <option value="sans-serif">Modern (Sans)</option>
-                                                    <option value="serif">Classic (Serif)</option>
-                                                    <option value="monospace">Typewriter</option>
-                                                    <option value="'Courier New', Courier, monospace">Courier</option>
-                                                    <option value="'Times New Roman', Times, serif">Times New Roman</option>
-                                                    <option value="'Arial', sans-serif">Arial</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* App Behavior Group */}
-                            {isAdminLoggedIn && adminTab === 'app_behavior' && (
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                        <span className="p-1.5 bg-orange-100 text-orange-600 rounded-lg">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
-                                        </span>
-                                        Application Behavior
-                                    </h3>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Default Category</label>
-                                            <p className="text-xs text-slate-400 italic mb-2">Category selected by default when adding new songs.</p>
-                                            <select
-                                                value={defaultCategory}
-                                                onChange={(e) => setDefaultCategory(e.target.value)}
-                                                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
-                                            >
-                                                <option value="English Choruses">English Choruses</option>
-                                                <option value="English Hymns">English Hymns</option>
-                                                <option value="Telugu Songs">Telugu Songs</option>
-                                                <option value="Hindi Songs">Hindi Songs</option>
-                                                <option value="Special Songs">Special Songs</option>
-                                            </select>
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-50">
-                                            <div>
-                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Lyrics Preview Layout</label>
-                                                <p className="text-xs text-slate-400 italic mb-2">Choose how slides are displayed in the main preview window.</p>
-                                                <select
-                                                    value={previewMode}
-                                                    onChange={(e) => {
-                                                        setPreviewMode(e.target.value);
-                                                        localStorage.setItem('setting_previewMode', e.target.value);
-                                                    }}
-                                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
-                                                >
-                                                    <option value="single">Single Slide (Large Text)</option>
-                                                    <option value="grid">Grid View (All Slides Interactive)</option>
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-2">Preview Font</label>
-                                                <p className="text-xs text-slate-400 italic mb-2">Choose the font for the lyrics preview pane.</p>
-                                                <select
-                                                    value={previewFont}
-                                                    onChange={(e) => {
-                                                        setPreviewFont(e.target.value);
-                                                        localStorage.setItem('setting_previewFont', e.target.value);
-                                                    }}
-                                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm italic"
-                                                >
-                                                    <option value="lyrics">Classic (Lora Serif)</option>
-                                                    <option value="sans">Modern (Inter Sans)</option>
-                                                </select>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                                            <div>
-                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-1">Auto-Format Lyrics</label>
-                                                <p className="text-xs text-slate-400 italic">Automatically try to format pasted lyrics into stanzas.</p>
-                                            </div>
-                                            <label className="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" checked={autoFormat} onChange={(e) => setAutoFormat(e.target.checked)} className="sr-only peer" />
-                                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                            </label>
-                                        </div>
-
-                                        <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                                            <div>
-                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-1">Show Application Controls</label>
-                                                <p className="text-xs text-slate-400 italic">Show or hide the system refresh, zoom, and developer tools.</p>
-                                            </div>
-                                            <label className="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" checked={showAppControls} onChange={(e) => setShowAppControls(e.target.checked)} className="sr-only peer" />
-                                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                            </label>
-                                        </div>
-
-                                        <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                                            <div>
-                                                <label className="font-semibold text-slate-700 text-xs uppercase block mb-1">Show Database Management</label>
-                                                <p className="text-xs text-slate-400 italic">Show or hide the XML import and database tools.</p>
-                                            </div>
-                                            <label className="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" checked={showDatabaseManagement} onChange={(e) => setShowDatabaseManagement(e.target.checked)} className="sr-only peer" />
-                                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                            </label>
-                                        </div>
-
-                                        <div className="pt-4 border-t border-slate-50">
-                                            <label className="font-semibold text-slate-700 text-xs uppercase block mb-3">Visible Library Categories</label>
-                                            <p className="text-xs text-slate-400 italic mb-4">Select which categories appear as tabs in the Song Library.</p>
-                                            <div className="grid grid-cols-2 gap-3">
-                                                {allCategories.map(cat => (
-                                                    <label key={cat} className="flex items-center gap-3 cursor-pointer group">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={visibleCategories.includes(cat)}
-                                                            onChange={(e) => {
-                                                                if (e.target.checked) {
-                                                                    setVisibleCategories([...visibleCategories, cat]);
-                                                                } else {
-                                                                    setVisibleCategories(visibleCategories.filter(c => c !== cat));
-                                                                }
-                                                            }}
-                                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-slate-300 transition-all"
-                                                        />
-                                                        <span className="text-xs font-medium text-slate-600 group-hover:text-slate-800 transition-colors">{cat}</span>
-                                                    </label>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* App Version & Updates Group */}
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                    <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                    </span>
-                                    Version & Updates
-                                </h3>
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <div className="text-sm font-bold text-slate-700">LyriX Desktop v{appVersion}</div>
-                                        <div className="text-xs text-slate-500 italic mt-1">
-                                            {updateStatus === 'idle' && 'Your app is up to date.'}
-                                            {updateStatus === 'checking' && 'Checking for updates...'}
-                                            {updateStatus === 'available' && `New version ${updateInfo?.version} available!`}
-                                            {updateStatus === 'not-available' && 'You have the latest version.'}
-                                            {updateStatus === 'downloading' && `Downloading update: ${Math.round(updateProgress)}%`}
-                                            {updateStatus === 'downloaded' && 'Update ready to install.'}
-                                            {updateStatus === 'error' && `Update Error: ${updateError}`}
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={() => {
-                                                setUpdateStatus('checking');
-                                                window.electron.invoke('check-for-updates').catch(err => {
-                                                    setUpdateStatus('error');
-                                                    setUpdateError(err.message);
-                                                });
-                                            }}
-                                            disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
-                                            className={clsx(
-                                                "px-4 py-2 rounded-lg text-sm font-bold transition-all border",
-                                                updateStatus === 'available'
-                                                    ? "bg-green-600 text-white border-green-600 hover:bg-green-700 shadow-md"
-                                                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-                                            )}
-                                        >
-                                            {updateStatus === 'available' ? 'Review Update' : 'Check for Updates'}
-                                        </button>
-                                        {updateStatus === 'available' && (
                                             <button
-                                                onClick={() => window.electron.invoke('start-download')}
-                                                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors shadow-md shadow-blue-500/20"
+                                                onClick={async () => {
+                                                    setUpdateStatus('checking');
+                                                    try {
+                                                        const res = await window.electron.invoke('check-for-updates');
+                                                        if (!res || !res.updateInfo) setUpdateStatus('not-available');
+                                                    } catch (e) {
+                                                        setUpdateStatus('error');
+                                                        setUpdateError(e.message || 'Check failed');
+                                                    }
+                                                }}
+                                                className={clsx(
+                                                    "px-8 py-3 rounded-2xl text-[11px] font-bold uppercase tracking-widest transition-all shadow-md active:scale-95 border",
+                                                    updateStatus === 'checking' ? "bg-slate-50 text-slate-400 border-slate-200" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                                                )}
                                             >
-                                                Download Now
+                                                Check for Updates
                                             </button>
+                                        </div>
+                                        {updateStatus === 'available' && (
+                                            <div className="mt-6 p-4 bg-indigo-50 border border-indigo-100 rounded-2xl flex justify-between items-center animate-fade-in shadow-inner">
+                                                <div className="text-xs font-semibold text-indigo-800 italic">Version {updateInfo?.version} is ready to download!</div>
+                                                <button onClick={() => window.electron.invoke('start-download')} className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-bold shadow-md hover:bg-indigo-700 transition-all uppercase tracking-wider">Download Now</button>
+                                            </div>
+                                        )}
+                                        {updateStatus === 'downloading' && (
+                                            <div className="mt-6 space-y-2.5">
+                                                <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+                                                    <span>Downloading Content...</span>
+                                                    <span>{Math.round(updateProgress)}%</span>
+                                                </div>
+                                                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner border border-slate-200/50">
+                                                    <div className="h-full bg-indigo-600 transition-all duration-300" style={{ width: `${updateProgress}%` }}></div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {updateStatus === 'downloaded' && (
+                                            <div className="mt-6 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex justify-between items-center animate-fade-in shadow-inner">
+                                                <div className="text-xs font-semibold text-emerald-800 italic">Update successfully downloaded. Restart to apply.</div>
+                                                <button onClick={() => window.electron.invoke('install-update')} className="px-5 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-bold shadow-md hover:bg-emerald-700 transition-all uppercase tracking-wider">Restart & Install</button>
+                                            </div>
                                         )}
                                     </div>
                                 </div>
-                                {updateStatus === 'downloading' && (
-                                    <div className="mt-4 w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                                        <div className="bg-blue-600 h-full transition-all duration-300" style={{ width: `${updateProgress}%` }}></div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Database Management Group */}
-                            {showDatabaseManagement && (
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                        <span className="p-1.5 bg-indigo-100 text-indigo-600 rounded-lg">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
-                                        </span>
-                                        Database Management
-                                    </h3>
-                                    <div className="space-y-4">
-                                        <div className="flex items-center justify-between border-t border-slate-50 pt-4">
-                                            <div>
-                                                <label className="font-semibold text-slate-700 text-sm block mb-1">Import OpenLyrics Database (.xml)</label>
-                                                <p className="text-xs text-slate-400 italic">Import songs from an OpenLP or OpenLyrics exported database. Duplicates will be skipped or overwritten.</p>
-                                            </div>
-                                            <label className="shrink-0 px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 rounded-lg text-sm font-bold transition-colors cursor-pointer flex items-center gap-2 shadow-sm">
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                                                Import XML
-                                                <input
-                                                    type="file"
-                                                    accept=".xml"
-                                                    multiple
-                                                    className="hidden"
-                                                    onChange={handleXMLImport}
-                                                />
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
                             )}
-
-                            {/* Application Controls Group */}
-                            {showAppControls && (
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2">
-                                        <span className="p-1.5 bg-green-100 text-green-600 rounded-lg">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
-                                        </span>
-                                        Application Controls
-                                    </h3>
-                                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                                        <button onClick={() => window.electron?.appControl('reload')} className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                            Reload App
-                                        </button>
-                                        <button onClick={() => window.electron?.appControl('fullscreen')} className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
-                                            Toggle Fullscreen
-                                        </button>
-                                        <button onClick={() => window.electron?.appControl('devtools')} className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
-                                            Developer Tools
-                                        </button>
-                                        <button onClick={() => window.electron?.appControl('zoom-in')} className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
-                                            Zoom In
-                                        </button>
-                                        <button onClick={() => window.electron?.appControl('zoom-out')} className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" /></svg>
-                                            Zoom Out
-                                        </button>
-                                        <button onClick={() => window.electron?.appControl('zoom-reset')} className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                            Reset Zoom
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-
                         </div>
                     </div>
                 ) : (
-                    <>
+                    <div className="flex-1 flex overflow-hidden">
                         {/* List Column (Library, Favourites, or Schedule) */}
                         {activeTab === 'library' || activeTab === 'favourites' ? (
                             <div className="w-[320px] flex flex-col border-r border-slate-200 bg-white z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
@@ -1591,6 +1426,7 @@ function App() {
                                 }}
                                 currentSongId={currentSong?.id}
                                 isAdminLoggedIn={isAdminLoggedIn}
+                                setConfirmPrompt={setConfirmPrompt}
                             />
                         )}
 
@@ -1629,477 +1465,564 @@ function App() {
                                 setShowAddModal(true);
                             }}
                         />
-                    </>
-                )}
-
-                {showAddModal && (
-                    <AddSongModal
-                        initialData={addSongInitialData}
-                        onConfirmOverwrite={confirmOverwrite}
-                        defaultCategory={defaultCategory} // Pass default category
-                        onClose={() => { setShowAddModal(false); setAddSongInitialData(null); }}
-                        onSave={(savedSong) => {
-                            handleSearch('', activeFilter);
-                            if (currentSong && savedSong?.id === currentSong.id) {
-                                selectSong(savedSong);
-                            }
-                        }}
-                    />
-                )}
+                    </div>
+                )
+                }
+                {
+                    showAddModal && (
+                        <AddSongModal
+                            initialData={addSongInitialData}
+                            onConfirmOverwrite={confirmOverwrite}
+                            defaultCategory={defaultCategory} // Pass default category
+                            onClose={() => { setShowAddModal(false); setAddSongInitialData(null); }}
+                            onSave={(savedSong) => {
+                                handleSearch('', activeFilter);
+                                if (currentSong && savedSong?.id === currentSong.id) {
+                                    selectSong(savedSong);
+                                }
+                            }}
+                        />
+                    )
+                }
 
                 {/* Generic Confirm Modal */}
-                {confirmPrompt && (
-                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-[110] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100">
-                            <div className="flex items-start gap-4">
-                                <div className={clsx(
-                                    "shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner mt-0.5",
-                                    confirmPrompt.confirmStyle === 'red' ? "bg-red-50 text-red-500" : "bg-blue-50 text-blue-500"
-                                )}>
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                {
+                    confirmPrompt && (
+                        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-[110] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100">
+                                <div className="flex items-start gap-4">
+                                    <div className={clsx(
+                                        "shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner mt-0.5",
+                                        confirmPrompt.confirmStyle === 'red' ? "bg-red-50 text-red-500" : "bg-blue-50 text-blue-500"
+                                    )}>
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    </div>
+                                    <div className="flex-1">
+                                        <h3 className="text-lg font-bold text-slate-800 mb-1">{confirmPrompt.title || "Confirm Action"}</h3>
+                                        <p className="text-sm text-slate-500 leading-relaxed italic">{confirmPrompt.message}</p>
+                                    </div>
                                 </div>
-                                <div className="flex-1">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-1">{confirmPrompt.title || "Confirm Action"}</h3>
-                                    <p className="text-sm text-slate-500 leading-relaxed italic">{confirmPrompt.message}</p>
+                                <div className="mt-6 flex gap-3">
+                                    <button
+                                        onClick={() => setConfirmPrompt(null)}
+                                        className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (confirmPrompt.onConfirm) confirmPrompt.onConfirm();
+                                            setConfirmPrompt(null);
+                                        }}
+                                        className={clsx(
+                                            "flex-1 py-2.5 text-white rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95",
+                                            confirmPrompt.confirmStyle === 'red' ? "bg-red-600 hover:bg-red-700 shadow-red-500/20" : "bg-blue-600 hover:bg-blue-700 shadow-blue-500/20"
+                                        )}
+                                    >
+                                        {confirmPrompt.confirmText || "Confirm"}
+                                    </button>
                                 </div>
-                            </div>
-                            <div className="mt-6 flex gap-3">
-                                <button
-                                    onClick={() => setConfirmPrompt(null)}
-                                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        if (confirmPrompt.onConfirm) confirmPrompt.onConfirm();
-                                        setConfirmPrompt(null);
-                                    }}
-                                    className={clsx(
-                                        "flex-1 py-2.5 text-white rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95",
-                                        confirmPrompt.confirmStyle === 'red' ? "bg-red-600 hover:bg-red-700 shadow-red-500/20" : "bg-blue-600 hover:bg-blue-700 shadow-blue-500/20"
-                                    )}
-                                >
-                                    {confirmPrompt.confirmText || "Confirm"}
-                                </button>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* Custom Alert Modal */}
-                {customAlert && (
-                    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100">
-                            <div className="flex items-start gap-4">
-                                <div className="shrink-0 w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-inner mt-0.5">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                {
+                    customAlert && (
+                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100">
+                                <div className="flex items-start gap-4">
+                                    <div className="shrink-0 w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-inner mt-0.5">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    </div>
+                                    <div className="flex-1">
+                                        <h3 className="text-lg font-bold text-slate-800 mb-1">Notice</h3>
+                                        <p className="text-sm text-slate-500 leading-relaxed italic">{customAlert}</p>
+                                    </div>
                                 </div>
-                                <div className="flex-1">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-1">Notice</h3>
-                                    <p className="text-sm text-slate-500 leading-relaxed italic">{customAlert}</p>
+                                <div className="mt-6 flex justify-end">
+                                    <button
+                                        onClick={() => setCustomAlert(null)}
+                                        className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+                                    >
+                                        Got it
+                                    </button>
                                 </div>
-                            </div>
-                            <div className="mt-6 flex justify-end">
-                                <button
-                                    onClick={() => setCustomAlert(null)}
-                                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all active:scale-95"
-                                >
-                                    Got it
-                                </button>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* Overwrite Confirmation Modal (Promise-based) */}
-                {overwritePrompt && (
-                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-[110] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100">
-                            <div className="flex items-start gap-4">
-                                <div className="shrink-0 w-12 h-12 bg-amber-50 text-amber-500 rounded-2xl flex items-center justify-center shadow-inner mt-0.5">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                {
+                    overwritePrompt && (
+                        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-[110] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100">
+                                <div className="flex items-start gap-4">
+                                    <div className="shrink-0 w-12 h-12 bg-amber-50 text-amber-500 rounded-2xl flex items-center justify-center shadow-inner mt-0.5">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                    </div>
+                                    <div className="flex-1">
+                                        <h3 className="text-lg font-bold text-slate-800 mb-1">Overwrite Song?</h3>
+                                        <p className="text-sm text-slate-500 leading-relaxed italic">The song <span className="font-bold text-slate-700 not-italic">"{overwritePrompt.title}"</span> already exists. Do you want to replace it?</p>
+                                    </div>
                                 </div>
-                                <div className="flex-1">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-1">Overwrite Song?</h3>
-                                    <p className="text-sm text-slate-500 leading-relaxed italic">The song <span className="font-bold text-slate-700 not-italic">"{overwritePrompt.title}"</span> already exists. Do you want to replace it?</p>
+                                <div className="mt-6 flex gap-3">
+                                    <button
+                                        onClick={() => { overwritePrompt.resolve(false); setOverwritePrompt(null); }}
+                                        className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
+                                    >
+                                        Skip Import
+                                    </button>
+                                    <button
+                                        onClick={() => { overwritePrompt.resolve(true); setOverwritePrompt(null); }}
+                                        className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-amber-500/20 transition-all active:scale-95"
+                                    >
+                                        Overwrite
+                                    </button>
                                 </div>
-                            </div>
-                            <div className="mt-6 flex gap-3">
-                                <button
-                                    onClick={() => { overwritePrompt.resolve(false); setOverwritePrompt(null); }}
-                                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
-                                >
-                                    Skip Import
-                                </button>
-                                <button
-                                    onClick={() => { overwritePrompt.resolve(true); setOverwritePrompt(null); }}
-                                    className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-amber-500/20 transition-all active:scale-95"
-                                >
-                                    Overwrite
-                                </button>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* Schedule Add Confirmation Modal has been replaced by a toast */}
 
                 {/* Delete Confirmation Modal */}
-                {songToDelete && (
-                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100">
-                            <div className="flex items-start gap-4">
-                                <div className="shrink-0 w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center shadow-inner mt-0.5">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                {
+                    songToDelete && (
+                        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100">
+                                <div className="flex items-start gap-4">
+                                    <div className="shrink-0 w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center shadow-inner mt-0.5">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </div>
+                                    <div className="flex-1">
+                                        <h3 className="text-lg font-bold text-slate-800 mb-1">Delete Forever</h3>
+                                        <p className="text-sm text-slate-500 leading-relaxed italic">Delete <span className="font-bold text-slate-700 not-italic">"{songToDelete.title || songToDelete.id}"</span>? This cannot be undone.</p>
+                                    </div>
                                 </div>
-                                <div className="flex-1">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-1">Delete Forever</h3>
-                                    <p className="text-sm text-slate-500 leading-relaxed italic">Delete <span className="font-bold text-slate-700 not-italic">"{songToDelete.title || songToDelete.id}"</span>? This cannot be undone.</p>
+                                <div className="mt-6 flex gap-3">
+                                    <button
+                                        onClick={() => setSongToDelete(null)}
+                                        className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={executeDelete}
+                                        className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/20 transition-all active:scale-95"
+                                    >
+                                        Delete Song
+                                    </button>
                                 </div>
-                            </div>
-                            <div className="mt-6 flex gap-3">
-                                <button
-                                    onClick={() => setSongToDelete(null)}
-                                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={executeDelete}
-                                    className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/20 transition-all active:scale-95"
-                                >
-                                    Delete Song
-                                </button>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* Exit Confirmation Modal */}
 
                 {/* Admin Login Modal */}
-                {showAdminLoginModal && (
-                    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-[150] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col">
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center shadow-inner">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                {
+                    showAdminLoginModal && (
+                        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center shadow-inner">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                    </div>
+                                    <h3 className="text-xl font-black text-slate-800">Admin Login</h3>
                                 </div>
-                                <h3 className="text-xl font-black text-slate-800">Admin Login</h3>
-                            </div>
 
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Username</label>
-                                    <input
-                                        type="text"
-                                        value={adminUsernameInput}
-                                        onChange={(e) => setAdminUsernameInput(e.target.value)}
-                                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-800 transition-all font-medium"
-                                        placeholder="Enter admin username"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Password</label>
-                                    <input
-                                        type="password"
-                                        value={adminPasswordInput}
-                                        onChange={(e) => setAdminPasswordInput(e.target.value)}
-                                        onKeyDown={async (e) => {
-                                            if (e.key === 'Enter') {
-                                                const valid = await window.electron.invoke('verify-admin', { user: adminUsernameInput, pass: adminPasswordInput });
-                                                if (valid) {
-                                                    setIsAdminLoggedIn(true);
-                                                    setShowAdminLoginModal(false);
-                                                    setAdminPasswordInput('');
-                                                    setAdminLoginError('');
-                                                } else {
-                                                    setAdminLoginError('Invalid username or password.');
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Username</label>
+                                        <input
+                                            type="text"
+                                            value={adminUsernameInput}
+                                            onChange={(e) => setAdminUsernameInput(e.target.value)}
+                                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-800 transition-all font-medium"
+                                            placeholder="Enter admin username"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Password</label>
+                                        <input
+                                            type="password"
+                                            value={adminPasswordInput}
+                                            onChange={(e) => setAdminPasswordInput(e.target.value)}
+                                            onKeyDown={async (e) => {
+                                                if (e.key === 'Enter') {
+                                                    const valid = await window.electron.invoke('verify-admin', adminUsernameInput, adminPasswordInput);
+                                                    if (valid) {
+                                                        setIsAdminLoggedIn(true);
+                                                        setShowAdminLoginModal(false);
+                                                        setAdminPasswordInput('');
+                                                        setAdminLoginError('');
+                                                    } else {
+                                                        setAdminLoginError('Invalid username or password.');
+                                                    }
                                                 }
-                                            }
-                                        }}
-                                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-800 transition-all font-medium"
-                                        placeholder="Enter admin password"
-                                    />
+                                            }}
+                                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-800 transition-all font-medium"
+                                            placeholder="Enter admin password"
+                                        />
+                                    </div>
+                                    {adminLoginError && (
+                                        <p className="text-xs text-red-500 font-bold bg-red-50 py-2 px-3 rounded-lg border border-red-100">{adminLoginError}</p>
+                                    )}
                                 </div>
-                                {adminLoginError && (
-                                    <p className="text-xs text-red-500 font-bold bg-red-50 py-2 px-3 rounded-lg border border-red-100">{adminLoginError}</p>
-                                )}
-                            </div>
 
-                            <div className="mt-6 flex gap-3">
-                                <button
-                                    onClick={() => {
-                                        setShowAdminLoginModal(false);
-                                        setAdminPasswordInput('');
-                                        setAdminLoginError('');
-                                    }}
-                                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={async () => {
-                                        const valid = await window.electron.invoke('verify-admin', { user: adminUsernameInput, pass: adminPasswordInput });
-                                        if (valid) {
-                                            setIsAdminLoggedIn(true);
+                                <div className="mt-6 flex gap-3">
+                                    <button
+                                        onClick={() => {
                                             setShowAdminLoginModal(false);
                                             setAdminPasswordInput('');
                                             setAdminLoginError('');
-                                        } else {
-                                            setAdminLoginError('Invalid username or password.');
-                                        }
-                                    }}
-                                    className="flex-1 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-bold shadow-lg shadow-slate-900/20 transition-all active:scale-95"
-                                >
-                                    Login
-                                </button>
+                                        }}
+                                        className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            const valid = await window.electron.invoke('verify-admin', adminUsernameInput, adminPasswordInput);
+                                            if (valid) {
+                                                setIsAdminLoggedIn(true);
+                                                setShowAdminLoginModal(false);
+                                                setAdminPasswordInput('');
+                                                setAdminLoginError('');
+                                            } else {
+                                                setAdminLoginError('Invalid username or password.');
+                                            }
+                                        }}
+                                        className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+                                    >
+                                        Login
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
-                {showCloseConfirm && (
-                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center text-center">
-                            <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-3xl flex items-center justify-center shadow-inner mb-6 animate-bounce-subtle">
-                                <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                            </div>
-                            <h3 className="text-2xl font-black text-slate-800 mb-2">Wait a moment!</h3>
-                            <p className="text-slate-500 leading-relaxed mb-8 italic">Are you sure you want to close the application?</p>
+                {
+                    showCloseConfirm && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center text-center">
+                                <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-3xl flex items-center justify-center shadow-inner mb-6 animate-bounce-subtle">
+                                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                                </div>
+                                <h3 className="text-2xl font-black text-slate-800 mb-2">Wait a moment!</h3>
+                                <p className="text-slate-500 leading-relaxed mb-8 italic">Are you sure you want to close the application?</p>
 
-                            <div className="flex flex-col w-full gap-3">
-                                <button
-                                    onClick={() => setShowCloseConfirm(false)}
-                                    className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl text-sm font-bold transition-all active:scale-95"
-                                >
-                                    Stay Here
-                                </button>
-                                <button
-                                    onClick={() => window.electron.invoke('exit-app')}
-                                    className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-sm font-bold shadow-xl shadow-rose-500/30 transition-all active:scale-95"
-                                >
-                                    Exit Now
-                                </button>
+                                <div className="flex flex-col w-full gap-3">
+                                    <button
+                                        onClick={() => setShowCloseConfirm(false)}
+                                        className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                                    >
+                                        Stay Here
+                                    </button>
+                                    <button
+                                        onClick={() => window.electron.invoke('exit-app')}
+                                        className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-sm font-bold shadow-xl shadow-rose-500/30 transition-all active:scale-95"
+                                    >
+                                        Exit Now
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* First Launch Welcome Modal (Multi-step) */}
-                {welcomeStep > 0 && (
-                    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg h-[560px] overflow-hidden animate-fade-in border border-slate-200/50 flex flex-col">
-                            {/* Header Area */}
-                            <div className="bg-slate-50 border-b border-slate-100 py-6 px-8 text-center relative overflow-hidden shrink-0">
+                {
+                    welcomeStep > 0 && (
+                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg h-[560px] overflow-hidden animate-fade-in border border-slate-200/50 flex flex-col">
+                                {/* Header Area */}
+                                <div className="bg-slate-50 border-b border-slate-100 py-6 px-8 text-center relative overflow-hidden shrink-0">
 
-                                {welcomeStep === 1 && (
-                                    <div className="animate-fade-in">
-                                        <img src="./icon.ico" className="w-16 h-16 mx-auto mb-4 drop-shadow-md relative z-10" alt="LyriX Logo" />
-                                        <h2 className="text-2xl font-bold text-slate-800 relative z-10">Welcome to LyriX Stage!</h2>
-                                        <p className="text-sm text-slate-500 mt-2 relative z-10">Let's set up your profile to get started.</p>
-                                    </div>
-                                )}
-
-                                {welcomeStep === 2 && (
-                                    <div className="animate-fade-in">
-                                        <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 relative z-10">
-                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                    {welcomeStep === 1 && (
+                                        <div className="animate-fade-in">
+                                            <img src="./icon.ico" className="w-16 h-16 mx-auto mb-4 drop-shadow-md relative z-10" alt="LyriX Logo" />
+                                            <h2 className="text-2xl font-bold text-slate-800 relative z-10">Welcome to LyriX Stage!</h2>
+                                            <p className="text-sm text-slate-500 mt-2 relative z-10">Let's set up your profile to get started.</p>
                                         </div>
-                                        <h2 className="text-2xl font-bold text-slate-800 relative z-10">Adding Songs</h2>
-                                        <p className="text-sm text-slate-500 mt-2 relative z-10">Build your library easily.</p>
-                                    </div>
-                                )}
+                                    )}
 
-                                {welcomeStep === 3 && (
-                                    <div className="animate-fade-in">
-                                        <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 relative z-10">
-                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                                        </div>
-                                        <h2 className="text-2xl font-bold text-slate-800 relative z-10">Presenting Lyrics</h2>
-                                        <p className="text-sm text-slate-500 mt-2 relative z-10">Control the screen with ease.</p>
-                                    </div>
-                                )}
-
-                                {welcomeStep === 4 && (
-                                    <div className="animate-fade-in">
-                                        <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-4 relative z-10">
-                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                                        </div>
-                                        <h2 className="text-2xl font-bold text-slate-800 relative z-10">Mobile Remote Control</h2>
-                                        <p className="text-sm text-slate-500 mt-2 relative z-10">Control LyriX right from your phone.</p>
-                                    </div>
-                                )}
-
-                                {welcomeStep === 5 && (
-                                    <div className="animate-fade-in">
-                                        <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 relative z-10">
-                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                        </div>
-                                        <h2 className="text-2xl font-bold text-slate-800 relative z-10">Mobile Scheduling</h2>
-                                        <p className="text-sm text-slate-500 mt-2 relative z-10">Build the service from anywhere.</p>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Form & Content Area */}
-                            <div className="px-8 py-5 flex-1 flex flex-col">
-                                {welcomeStep === 1 && (
-                                    <div className="animate-fade-in h-full flex flex-col">
-                                        <div className="space-y-6 flex-1">
-                                            <div>
-                                                <label className="block text-sm font-bold text-slate-700 mb-1.5 uppercase tracking-wider">Church/Organization Name <span className="text-red-500">*</span></label>
-                                                <input
-                                                    type="text"
-                                                    placeholder="e.g. Grace Fellowship Church"
-                                                    value={churchName}
-                                                    onChange={(e) => setChurchName(e.target.value)}
-                                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500/10 focus:border-slate-400 transition-all italic font-medium"
-                                                    autoFocus
-                                                />
+                                    {welcomeStep === 2 && (
+                                        <div className="animate-fade-in">
+                                            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 relative z-10">
+                                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                                             </div>
-                                            <div>
-                                                <label className="block text-sm font-bold text-slate-700 mb-1.5 uppercase tracking-wider">Location / City <span className="text-slate-400 font-normal lowercase tracking-normal">(Optional)</span></label>
-                                                <input
-                                                    type="text"
-                                                    placeholder="e.g. New York, NY"
-                                                    value={churchPlace}
-                                                    onChange={(e) => setChurchPlace(e.target.value)}
-                                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500/10 focus:border-slate-400 transition-all italic font-medium"
-                                                />
-                                            </div>
+                                            <h2 className="text-2xl font-bold text-slate-800 relative z-10">Adding Songs</h2>
+                                            <p className="text-sm text-slate-500 mt-2 relative z-10">Build your library easily.</p>
                                         </div>
+                                    )}
 
-                                        <button
-                                            onClick={() => {
-                                                if (churchName.trim().length > 0) setWelcomeStep(2);
-                                            }}
-                                            disabled={!churchName.trim()}
-                                            className="w-full mt-auto py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            Next Step &rarr;
-                                        </button>
-                                    </div>
-                                )}
+                                    {welcomeStep === 3 && (
+                                        <div className="animate-fade-in">
+                                            <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 relative z-10">
+                                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                                            </div>
+                                            <h2 className="text-2xl font-bold text-slate-800 relative z-10">Presenting Lyrics</h2>
+                                            <p className="text-sm text-slate-500 mt-2 relative z-10">Control the screen with ease.</p>
+                                        </div>
+                                    )}
 
-                                {welcomeStep === 2 && (
-                                    <div className="animate-fade-in h-full flex flex-col">
-                                        <div className="space-y-3 text-slate-600 text-sm flex-1">
-                                            <p>You can add songs to your database in two ways:</p>
-                                            <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                                                <div className="mt-0.5 text-blue-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg></div>
-                                                <div><strong className="text-slate-800">Manual Entry:</strong> Click "Add New Song" in the sidebar to type or paste a song directly.</div>
+                                    {welcomeStep === 4 && (
+                                        <div className="animate-fade-in">
+                                            <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-4 relative z-10">
+                                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                                             </div>
-                                            <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                                                <div className="mt-0.5 text-blue-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg></div>
-                                                <div><strong className="text-slate-800">Web Search:</strong> Switch to the "Search Web" tab to automatically download lyrics from the internet!</div>
-                                            </div>
+                                            <h2 className="text-2xl font-bold text-slate-800 relative z-10">Mobile Remote Control</h2>
+                                            <p className="text-sm text-slate-500 mt-2 relative z-10">Control LyriX right from your phone.</p>
                                         </div>
-                                        <div className="flex gap-3 mt-auto pt-4">
-                                            <button onClick={() => setWelcomeStep(1)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all">Back</button>
-                                            <button onClick={() => setWelcomeStep(3)} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 py-3 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all">Next &rarr;</button>
-                                        </div>
-                                    </div>
-                                )}
+                                    )}
 
-                                {welcomeStep === 3 && (
-                                    <div className="animate-fade-in h-full flex flex-col">
-                                        <div className="space-y-3 text-slate-600 text-sm flex-1">
-                                            <p>When you have a song selected, you'll see the preview pane.</p>
-                                            <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                                                <div className="mt-0.5 text-indigo-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg></div>
-                                                <div><strong className="text-slate-800">Projector Window:</strong> Click "Open Projector Window" at the bottom left to launch the second screen. Move it to your projector display.</div>
+                                    {welcomeStep === 5 && (
+                                        <div className="animate-fade-in">
+                                            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 relative z-10">
+                                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                                             </div>
-                                            <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                                                <div className="mt-0.5 text-indigo-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg></div>
-                                                <div><strong className="text-slate-800">Changing Slides:</strong> You can click the slides in the preview pane, or simply use your keyboard <kbd className="bg-white border border-slate-200 rounded px-1.5 py-0.5 shadow-sm text-xs">&larr;</kbd> <kbd className="bg-white border border-slate-200 rounded px-1.5 py-0.5 shadow-sm text-xs">&rarr;</kbd> keys!</div>
-                                            </div>
+                                            <h2 className="text-2xl font-bold text-slate-800 relative z-10">Mobile Scheduling</h2>
+                                            <p className="text-sm text-slate-500 mt-2 relative z-10">Build the service from anywhere.</p>
                                         </div>
-                                        <div className="flex gap-3 mt-auto pt-4">
-                                            <button onClick={() => setWelcomeStep(2)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all">Back</button>
-                                            <button onClick={() => setWelcomeStep(4)} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 py-3 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all">Next &rarr;</button>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {welcomeStep === 4 && (
-                                    <div className="animate-fade-in h-full flex flex-col">
-                                        <div className="space-y-3 text-slate-600 text-sm flex-1">
-                                            <p>You can control the live lyrics right from your smartphone!</p>
-                                            <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                                                <div className="mt-0.5 text-purple-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></div>
-                                                <div><strong className="text-slate-800">Finding the Link:</strong> Go to the <strong>Settings</strong> tab and scroll down to the "Mobile Remote Control" section.</div>
-                                            </div>
-                                            <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                                                <div className="mt-0.5 text-purple-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg></div>
-                                                <div><strong className="text-slate-800">Scan & Go:</strong> Scan the QR code with your phone camera! Make sure your PC and phone are on the same Wi-Fi network.</div>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-3 mt-auto pt-4">
-                                            <button onClick={() => setWelcomeStep(3)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all">Back</button>
-                                            <button onClick={() => setWelcomeStep(5)} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 py-3 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all">Next &rarr;</button>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {welcomeStep === 5 && (
-                                    <div className="animate-fade-in h-full flex flex-col">
-                                        <div className="space-y-3 text-slate-600 text-sm flex-1">
-                                            <p>Our most powerful feature: The entire Sunday Service schedule syncs in real-time with the Mobile Web Remote!</p>
-                                            <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                                                <div className="mt-0.5 text-emerald-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg></div>
-                                                <div><strong className="text-slate-800">Add from anywhere:</strong> The worship leader can open the Remote App on their phone, search the library, and add songs directly to the main computer's schedule without touching the PC!</div>
-                                            </div>
-                                            <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                                                <div className="mt-0.5 text-emerald-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></div>
-                                                <div><strong className="text-slate-800">Instant Sync:</strong> As soon as a song is scheduled from the phone, the tech strictly needs to click <kbd className="bg-white border border-slate-200 rounded px-1.5 py-0.5 shadow-sm text-xs">&rarr;</kbd> to go live.</div>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-3 mt-auto pt-4">
-                                            <button onClick={() => setWelcomeStep(4)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all">Back</button>
-                                            <button onClick={() => { setWelcomeStep(0); setIsEditingProfile(false); }} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 py-3 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all">Complete Tour ✨</button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Dots */}
-                            {welcomeStep > 0 && (
-                                <div className="flex justify-center gap-2 pb-5 shrink-0">
-                                    {[1, 2, 3, 4, 5].map(s => (
-                                        <div key={s} className={clsx("w-2 h-2 rounded-full transition-all", welcomeStep === s ? "bg-blue-500 w-4" : "bg-slate-200")}></div>
-                                    ))}
+                                    )}
                                 </div>
-                            )}
+
+                                {/* Form & Content Area */}
+                                <div className="px-8 py-5 flex-1 flex flex-col">
+                                    {welcomeStep === 1 && (
+                                        <div className="animate-fade-in h-full flex flex-col">
+                                            <div className="space-y-6 flex-1">
+                                                <div>
+                                                    <label className="block text-sm font-bold text-slate-700 mb-1.5 uppercase tracking-wider">Church/Organization Name <span className="text-red-500">*</span></label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="e.g. Grace Fellowship Church"
+                                                        value={churchName}
+                                                        onChange={(e) => setChurchName(e.target.value)}
+                                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500/10 focus:border-slate-400 transition-all italic font-medium"
+                                                        autoFocus
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-bold text-slate-700 mb-1.5 uppercase tracking-wider">Location / City <span className="text-slate-400 font-normal lowercase tracking-normal">(Optional)</span></label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="e.g. New York, NY"
+                                                        value={churchPlace}
+                                                        onChange={(e) => setChurchPlace(e.target.value)}
+                                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500/10 focus:border-slate-400 transition-all italic font-medium"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <button
+                                                onClick={() => {
+                                                    if (churchName.trim().length > 0) setWelcomeStep(2);
+                                                }}
+                                                disabled={!churchName.trim()}
+                                                className="w-full mt-auto py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Next Step &rarr;
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {welcomeStep === 2 && (
+                                        <div className="animate-fade-in h-full flex flex-col">
+                                            <div className="space-y-3 text-slate-600 text-sm flex-1">
+                                                <p>You can add songs to your database in two ways:</p>
+                                                <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                                                    <div className="mt-0.5 text-blue-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg></div>
+                                                    <div><strong className="text-slate-800">Manual Entry:</strong> Click "Add New Song" in the sidebar to type or paste a song directly.</div>
+                                                </div>
+                                                <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                                                    <div className="mt-0.5 text-blue-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg></div>
+                                                    <div><strong className="text-slate-800">Web Search:</strong> Switch to the "Search Web" tab to automatically download lyrics from the internet!</div>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 mt-auto pt-4">
+                                                <button onClick={() => setWelcomeStep(1)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all">Back</button>
+                                                <button onClick={() => setWelcomeStep(3)} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 py-3 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all">Next &rarr;</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {welcomeStep === 3 && (
+                                        <div className="animate-fade-in h-full flex flex-col">
+                                            <div className="space-y-3 text-slate-600 text-sm flex-1">
+                                                <p>When you have a song selected, you'll see the preview pane.</p>
+                                                <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                                                    <div className="mt-0.5 text-indigo-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg></div>
+                                                    <div><strong className="text-slate-800">Projector Window:</strong> Click "Open Projector Window" at the bottom left to launch the second screen. Move it to your projector display.</div>
+                                                </div>
+                                                <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                                                    <div className="mt-0.5 text-indigo-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg></div>
+                                                    <div><strong className="text-slate-800">Changing Slides:</strong> You can click the slides in the preview pane, or simply use your keyboard <kbd className="bg-white border border-slate-200 rounded px-1.5 py-0.5 shadow-sm text-xs">&larr;</kbd> <kbd className="bg-white border border-slate-200 rounded px-1.5 py-0.5 shadow-sm text-xs">&rarr;</kbd> keys!</div>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 mt-auto pt-4">
+                                                <button onClick={() => setWelcomeStep(2)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all">Back</button>
+                                                <button onClick={() => setWelcomeStep(4)} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 py-3 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all">Next &rarr;</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {welcomeStep === 4 && (
+                                        <div className="animate-fade-in h-full flex flex-col">
+                                            <div className="space-y-3 text-slate-600 text-sm flex-1">
+                                                <p>You can control the live lyrics right from your smartphone!</p>
+                                                <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                                                    <div className="mt-0.5 text-purple-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></div>
+                                                    <div><strong className="text-slate-800">Finding the Link:</strong> Go to the <strong>Settings</strong> tab and scroll down to the "Mobile Remote Control" section.</div>
+                                                </div>
+                                                <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                                                    <div className="mt-0.5 text-purple-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg></div>
+                                                    <div><strong className="text-slate-800">Scan & Go:</strong> Scan the QR code with your phone camera! Make sure your PC and phone are on the same Wi-Fi network.</div>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 mt-auto pt-4">
+                                                <button onClick={() => setWelcomeStep(3)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all">Back</button>
+                                                <button onClick={() => setWelcomeStep(5)} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 py-3 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all">Next &rarr;</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {welcomeStep === 5 && (
+                                        <div className="animate-fade-in h-full flex flex-col">
+                                            <div className="space-y-3 text-slate-600 text-sm flex-1">
+                                                <p>Our most powerful feature: The entire Sunday Service schedule syncs in real-time with the Mobile Web Remote!</p>
+                                                <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                                                    <div className="mt-0.5 text-emerald-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg></div>
+                                                    <div><strong className="text-slate-800">Add from anywhere:</strong> The worship leader can open the Remote App on their phone, search the library, and add songs directly to the main computer's schedule without touching the PC!</div>
+                                                </div>
+                                                <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                                                    <div className="mt-0.5 text-emerald-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></div>
+                                                    <div><strong className="text-slate-800">Instant Sync:</strong> As soon as a song is scheduled from the phone, the tech strictly needs to click <kbd className="bg-white border border-slate-200 rounded px-1.5 py-0.5 shadow-sm text-xs">&rarr;</kbd> to go live.</div>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 mt-auto pt-4">
+                                                <button onClick={() => setWelcomeStep(4)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all">Back</button>
+                                                <button onClick={() => { setWelcomeStep(0); setIsEditingProfile(false); }} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 py-3 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all">Complete Tour ✨</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Dots */}
+                                {welcomeStep > 0 && (
+                                    <div className="flex justify-center gap-2 pb-5 shrink-0">
+                                        {[1, 2, 3, 4, 5].map(s => (
+                                            <div key={s} className={clsx("w-2 h-2 rounded-full transition-all", welcomeStep === s ? "bg-blue-500 w-4" : "bg-slate-200")}></div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* Mobile App Download QR Modal */}
-                {showMobileDownloadQR && (
-                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center">
-                            <h3 className="text-2xl font-black text-slate-800 mb-2">Download Mobile App</h3>
-                            <p className="text-sm text-slate-500 text-center mb-8 italic px-4">Scan this QR code with your phone to jump straight to the direct APK download.</p>
+                {
+                    showMobileDownloadQR && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center">
+                                <h3 className="text-2xl font-black text-slate-800 mb-2">Download Mobile App</h3>
+                                <p className="text-sm text-slate-500 text-center mb-8 italic px-4">Scan this QR code with your phone to jump straight to the direct APK download.</p>
 
-                            <div className="bg-white p-6 border-4 border-slate-50 rounded-[2rem] shadow-inner mb-8">
-                                <QRCode value={`https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/download/v${appVersion}/LyriX-Mobile.apk`} size={200} level="M" />
-                            </div>
+                                <div className="bg-white p-6 border-4 border-slate-50 rounded-[2rem] shadow-inner mb-8">
+                                    <QRCode value={`https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/download/v${appVersion}/LyriX-Mobile.apk`} size={200} level="M" />
+                                </div>
 
-                            <div className="flex flex-col w-full gap-3">
-                                <button
-                                    onClick={() => setShowMobileDownloadQR(false)}
-                                    className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-bold transition-all"
-                                >
-                                    Dismiss
-                                </button>
+                                <div className="flex flex-col w-full gap-3">
+                                    <button
+                                        onClick={() => setShowMobileDownloadQR(false)}
+                                        className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-bold transition-all"
+                                    >
+                                        Dismiss
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
-            </div>
-        </div>
+                    )
+                }
+
+                {/* Confirmation Prompt */}
+                {
+                    confirmPrompt && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[250] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center text-center">
+                                <div className={clsx(
+                                    "w-20 h-20 rounded-3xl flex items-center justify-center shadow-inner mb-6",
+                                    confirmPrompt.confirmStyle === 'red' ? "bg-red-50 text-red-500" : "bg-blue-50 text-blue-500"
+                                )}>
+                                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                </div>
+                                <h3 className="text-2xl font-black text-slate-800 mb-2">{confirmPrompt.title}</h3>
+                                <p className="text-slate-500 leading-relaxed mb-8 italic">{confirmPrompt.message}</p>
+
+                                <div className="flex flex-col w-full gap-3">
+                                    <button
+                                        onClick={() => setConfirmPrompt(null)}
+                                        className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            await confirmPrompt.onConfirm();
+                                            setConfirmPrompt(null);
+                                        }}
+                                        className={clsx(
+                                            "w-full py-4 text-white rounded-2xl text-sm font-bold shadow-xl transition-all active:scale-95",
+                                            confirmPrompt.confirmStyle === 'red' ? "bg-red-600 hover:bg-red-700 shadow-red-500/30" : "bg-blue-600 hover:bg-blue-700 shadow-blue-500/30"
+                                        )}
+                                    >
+                                        {confirmPrompt.confirmText || 'Confirm'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                }
+
+                {/* Overwrite Prompt */}
+                {
+                    overwritePrompt && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[260] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center text-center">
+                                <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-3xl flex items-center justify-center shadow-inner mb-6">
+                                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                </div>
+                                <h3 className="text-2xl font-black text-slate-800 mb-2">Song Exists</h3>
+                                <p className="text-slate-500 leading-relaxed mb-8 italic">A song titled "{overwritePrompt.title}" already exists. Do you want to update the existing song or cancel?</p>
+
+                                <div className="flex flex-col w-full gap-3">
+                                    <button
+                                        onClick={() => { overwritePrompt.resolve(false); setOverwritePrompt(null); }}
+                                        className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={() => { overwritePrompt.resolve(true); setOverwritePrompt(null); }}
+                                        className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl text-sm font-bold shadow-xl shadow-amber-500/30 transition-all active:scale-95"
+                                    >
+                                        Update Existing
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                }
+            </div >
+        </div >
     );
 }
 
@@ -2256,7 +2179,7 @@ function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurren
     )
 }
 
-function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh, currentSongId, isAdminLoggedIn }) {
+function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh, currentSongId, isAdminLoggedIn, setConfirmPrompt }) {
     if (schedule.length === 0) {
         return (
             <div className="w-[320px] bg-slate-50 flex flex-col items-center justify-center text-slate-400 section-split-border">
@@ -2289,25 +2212,26 @@ function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh,
                     Sunday Service
                 </h2>
                 <div className="flex items-center gap-2">
-                    {isAdminLoggedIn && (
-                        <button
-                            onClick={() => {
-                                setConfirmPrompt({
-                                    title: 'Clear Schedule',
-                                    message: 'Are you sure you want to clear the entire schedule? This will remove all songs from the Sunday Service list.',
-                                    confirmText: 'Clear All',
-                                    confirmStyle: 'red',
-                                    onConfirm: () => {
-                                        onRefresh && window.electron?.invoke('clear-schedule').then(() => onRefresh(true));
+                    <button
+                        onClick={() => {
+                            setConfirmPrompt({
+                                title: 'Clear Schedule',
+                                message: 'Are you sure you want to clear the entire schedule? This will remove all songs from the Sunday Service list.',
+                                confirmText: 'Clear All',
+                                confirmStyle: 'red',
+                                onConfirm: async () => {
+                                    if (window.electron) {
+                                        await window.electron.invoke('clear-schedule');
+                                        if (onRefresh) onRefresh(true);
                                     }
-                                });
-                            }}
-                            className="p-1.5 hover:bg-red-100 text-red-500 rounded-lg transition-colors"
-                            title="Clear Schedule"
-                        >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
-                    )}
+                                }
+                            });
+                        }}
+                        className="p-1.5 hover:bg-red-100 text-red-500 rounded-lg transition-colors"
+                        title="Clear Schedule"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
                     <button
                         onClick={() => onRefresh && onRefresh(true)}
                         className="p-1.5 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors"
@@ -2408,14 +2332,15 @@ function AddSongModal({ onClose, onSave, initialData, defaultCategory, onConfirm
     const [category, setCategory] = useState(initialData?.category || defaultCategory || 'Special Songs');
     const [id, setId] = useState(initialData?.id || '');
     const [title, setTitle] = useState(initialData?.title || '');
-    const [lyrics, setLyrics] = useState(initialData?.lyrics || '');
+    const [lyrics, setLyrics] = useState(initialData?.lyrics || initialData?.preview || '');
     const [loading, setLoading] = useState(false);
 
     const isEdit = initialData?.isEdit;
 
     useEffect(() => {
-        // Auto-generate ID only if not provided and when category changes (and NOT in edit mode)
-        if (!initialData?.id && !isEdit) {
+        // Auto-generate ID if not provided OR if category changes (even in edit mode)
+        const categoryChanged = initialData?.category && initialData.category !== category;
+        if (!id || categoryChanged) {
             async function fetchNextId() {
                 if (window.electron) {
                     const nextId = await window.electron.invoke('get-next-id', category);
@@ -2424,7 +2349,7 @@ function AddSongModal({ onClose, onSave, initialData, defaultCategory, onConfirm
             }
             fetchNextId();
         }
-    }, [category, initialData, isEdit]);
+    }, [category]);
 
     const handleSave = async () => {
         if (!id || !lyrics || !title.trim()) return;

@@ -30,8 +30,8 @@ if (!gotTheLock) {
             height: 800,
             titleBarStyle: 'hidden',
             titleBarOverlay: {
-                color: '#ffffff',
-                symbolColor: '#000000',
+                color: '#4f46e5',
+                symbolColor: '#ffffff',
                 height: 40
             },
             autoHideMenuBar: true,
@@ -629,10 +629,67 @@ if (!gotTheLock) {
                 filters: [{ name: 'Images', extensions: ['jpg', 'png', 'gif', 'jpeg', 'webp'] }]
             });
             if (!result.canceled && result.filePaths.length > 0) {
-                // Return file protocol path for rendering
                 return `file://${result.filePaths[0].replace(/\\/g, '/')}`;
             }
             return null;
+        });
+
+        ipcMain.handle('import-pptx', async () => {
+            try {
+                const result = await dialog.showOpenDialog({
+                    properties: ['openFile'],
+                    filters: [{ name: 'PowerPoint', extensions: ['pptx', 'ppsx', 'pptm'] }]
+                });
+
+                if (result.canceled || result.filePaths.length === 0) return { success: false, cancelled: true };
+
+                const filePath = result.filePaths[0];
+                const data = fs.readFileSync(filePath);
+
+                const JSZip = require('jszip');
+                const zip = await JSZip.loadAsync(data);
+
+                // Find all slide XML files and sort them numerically
+                const slideFiles = Object.keys(zip.files).filter(k => /^ppt\/slides\/slide\d+\.xml$/.test(k));
+                slideFiles.sort((a, b) => {
+                    const numA = parseInt(a.match(/\d+/)[0]);
+                    const numB = parseInt(b.match(/\d+/)[0]);
+                    return numA - numB;
+                });
+
+                const slides = [];
+                for (const filename of slideFiles) {
+                    const xml = await zip.file(filename).async("string");
+                    // Extract paragraphs <a:p>
+                    const pRegex = /<a:p[^>]*>.*?<\/a:p>/gs;
+                    let pMatch;
+                    const slideLines = [];
+
+                    while ((pMatch = pRegex.exec(xml)) !== null) {
+                        const pContent = pMatch[0];
+                        // Extract text nodes <a:t>
+                        const tRegex = /<a:t[^>]*>(.*?)<\/a:t>/gs;
+                        let tMatch;
+                        let lineText = "";
+                        while ((tMatch = tRegex.exec(pContent)) !== null) {
+                            let decoded = tMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+                            lineText += decoded;
+                        }
+                        lineText = lineText.trim();
+                        if (lineText) slideLines.push(lineText);
+                    }
+                    if (slideLines.length > 0) {
+                        // Join lines of this slide into a single card representation
+                        slides.push(slideLines.join('\n'));
+                    }
+                }
+
+                return { success: true, slides: slides, filename: path.basename(filePath, path.extname(filePath)) };
+
+            } catch (e) {
+                console.error("PPTX Import Error:", e);
+                return { success: false, error: e.message };
+            }
         });
 
         app.on('activate', function () {

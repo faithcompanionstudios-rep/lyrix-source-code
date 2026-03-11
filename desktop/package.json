@@ -1,11 +1,11 @@
 {
   "name": "desktop",
-  "version": "1.3.4",
+  "version": "1.4.0",
   "description": "Church LyriX Desktop Application for lyrics and presentation management",
   "main": "src/main.js",
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron .\"",
-    "build": "vite build && electron-builder",
+    "build": "cross-env NODE_ENV=production vite build && electron-builder build --win --publish never -c.directories.output=release_v1_4_0",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -25,6 +25,8 @@
     "electron-updater": "^6.8.3",
     "express": "^5.2.1",
     "firebase": "^12.8.0",
+    "jszip": "^3.10.1",
+    "pptx2json": "^0.0.10",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-qr-code": "^2.0.18",
@@ -48,7 +50,7 @@
   },
   "build": {
     "appId": "com.lyrix.desktop",
-    "productName": "LyriX Church System",
+    "productName": "LyriX-Church-System",
     "files": [
       "src/**/*",
       "renderer_dist/**/*",
@@ -59,7 +61,7 @@
       "public/remote/**/*"
     ],
     "directories": {
-      "output": "release_v1_3_4"
+      "output": "release_v1_4_0"
     },
     "win": {
       "target": "nsis",
@@ -76,7 +78,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
+      "createDesktopShortcut": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     }
   }
 }
