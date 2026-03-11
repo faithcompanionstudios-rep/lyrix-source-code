@@ -17,4 +17,6 @@ LyriX*.exe
 **/dist/
 **/release/
 **/renderer_dist/
-.env*
+.env
+.env.*
+!.env.example
