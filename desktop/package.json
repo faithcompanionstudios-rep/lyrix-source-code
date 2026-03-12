@@ -1,11 +1,11 @@
 {
   "name": "desktop",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Church LyriX Desktop Application for lyrics and presentation management",
   "main": "src/main.js",
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron .\"",
-    "build": "cross-env NODE_ENV=production vite build && electron-builder build --win --publish never -c.directories.output=release_v1_4_4",
+    "build": "cross-env NODE_ENV=production vite build && electron-builder build --win --publish never -c.directories.output=release_v1_4_5",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

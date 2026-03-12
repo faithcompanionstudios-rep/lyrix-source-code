@@ -38,7 +38,7 @@ const Tooltip = ({ children, text, delay = 300, position = 'bottom', className =
     return (
         <div
             ref={targetRef}
-            className={clsx("inline-block", className)}
+            className={clsx("block", className)}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
         >

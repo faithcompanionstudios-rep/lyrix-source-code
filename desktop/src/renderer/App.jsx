@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
 import QRCode from 'react-qr-code';
 import Tooltip from './components/Tooltip';
+import securityImg from '../assets/security.png';
 
 // Helper to strip leading numbers (e.g. "1. Title" -> "Title")
 const cleanText = (text) => text ? text.replace(/^\d+\.?\s*/, '') : '';
@@ -96,7 +97,7 @@ function App() {
     const [updateProgress, setUpdateProgress] = useState(0);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
-    const [appVersion, setAppVersion] = useState('1.4.4');
+    const [appVersion, setAppVersion] = useState('1.4.5');
     const [isSyncing, setIsSyncing] = useState(false);
 
     const confirmOverwrite = (title) => {
@@ -192,7 +193,15 @@ function App() {
         localStorage.setItem('setting_visibleCategories', JSON.stringify(visibleCategories));
         localStorage.setItem('setting_showAppControls', showAppControls);
         localStorage.setItem('setting_showDatabaseManagement', showDatabaseManagement);
-    }, [favourites, fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, defaultCategory, autoFormat, previewMode, previewFont, maxRemoteDevices, churchName, churchPlace, visibleCategories, showAppControls, showDatabaseManagement]);
+
+        // Immediate pruning fix: if allCategories is loaded, ensure visibleCategories only contains valid items
+        if (allCategories.length > 0) {
+            const hasInvalid = visibleCategories.some(c => !allCategories.includes(c));
+            if (hasInvalid) {
+                setVisibleCategories(prev => prev.filter(c => allCategories.includes(c)));
+            }
+        }
+    }, [favourites, fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, defaultCategory, autoFormat, previewMode, previewFont, maxRemoteDevices, churchName, churchPlace, visibleCategories, showAppControls, showDatabaseManagement, allCategories]);
 
     useEffect(() => {
         if (window.electron) {
@@ -675,9 +684,9 @@ function App() {
                         <div className="text-sm font-bold text-slate-600 tracking-widest uppercase">LyriX Stage</div>
                     </div>
 
-                    <div className="flex-1 py-6 px-3 space-y-1">
-                        <div className="flex w-full gap-2 px-1 mb-4">
-                            <Tooltip text="Create a new song entry" position="right" className="flex-[3] w-full">
+                    <div className="flex-1 py-6 space-y-1">
+                        <div className="flex w-full gap-2 px-3 mb-4">
+                            <Tooltip text="Create a new song entry" position="right" className="flex-[3]">
                                 <button
                                     onClick={() => { setAddSongInitialData(null); setShowAddModal(true); }}
                                     className="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-sm font-bold transition-all duration-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-[1.02]"
@@ -686,7 +695,7 @@ function App() {
                                     New Song
                                 </button>
                             </Tooltip>
-                            <Tooltip text="Import slides from PowerPoint (.pptx)" position="right" className="flex-1 w-full">
+                            <Tooltip text="Import slides from PowerPoint (.pptx)" position="right" className="flex-1">
                                 <button
                                     onClick={async () => {
                                         const res = await window.electron.invoke('import-pptx');
@@ -704,12 +713,14 @@ function App() {
                             </Tooltip>
                         </div>
 
-                        <NavItem icon={<LibraryIcon />} label="Song Library" active={activeTab === 'library'} onClick={() => setActiveTab('library')} />
-                        <NavItem icon={<HeartIcon />} label="Favourites" active={activeTab === 'favourites'} onClick={() => setActiveTab('favourites')} />
-                        <NavItem icon={<GlobeIcon />} label="Search Web" active={activeTab === 'web'} onClick={() => setActiveTab('web')} />
-                        <NavItem icon={<CalendarIcon />} label="Sunday Service" active={activeTab === 'service'} onClick={() => setActiveTab('service')} />
-                        <div className="pt-6">
-                            <NavItem icon={<SettingsIcon />} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
+                        <div className="px-3 space-y-1">
+                            <NavItem icon={<LibraryIcon />} label="Song Library" active={activeTab === 'library'} onClick={() => setActiveTab('library')} />
+                            <NavItem icon={<HeartIcon />} label="Favourites" active={activeTab === 'favourites'} onClick={() => setActiveTab('favourites')} />
+                            <NavItem icon={<GlobeIcon />} label="Search Web" active={activeTab === 'web'} onClick={() => setActiveTab('web')} />
+                            <NavItem icon={<CalendarIcon />} label="Sunday Service" active={activeTab === 'service'} onClick={() => setActiveTab('service')} />
+                            <div className="pt-6">
+                                <NavItem icon={<SettingsIcon />} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
+                            </div>
                         </div>
                     </div>
 
@@ -1024,7 +1035,7 @@ function App() {
                                                     </div>
 
                                                     <img
-                                                        src="assets/security.png"
+                                                        src={securityImg}
                                                         alt="Security"
                                                         className="w-48 h-48 mb-6 drop-shadow-2xl animate-float object-contain"
                                                     />
