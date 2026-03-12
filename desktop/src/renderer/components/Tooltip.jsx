@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { clsx } from 'clsx';
 
-const Tooltip = ({ children, text, delay = 300, position = 'bottom' }) => {
+const Tooltip = ({ children, text, delay = 300, position = 'bottom', className = '' }) => {
     const [isVisible, setIsVisible] = useState(false);
     const [coords, setCoords] = useState({ x: 0, y: 0 });
     const timerRef = useRef(null);
@@ -38,7 +38,7 @@ const Tooltip = ({ children, text, delay = 300, position = 'bottom' }) => {
     return (
         <div
             ref={targetRef}
-            className="inline-block"
+            className={clsx("inline-block", className)}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
         >

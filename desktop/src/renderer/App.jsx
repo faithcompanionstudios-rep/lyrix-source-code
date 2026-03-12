@@ -96,7 +96,7 @@ function App() {
     const [updateProgress, setUpdateProgress] = useState(0);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
-    const [appVersion, setAppVersion] = useState('1.4.3');
+    const [appVersion, setAppVersion] = useState('1.4.4');
     const [isSyncing, setIsSyncing] = useState(false);
 
     const confirmOverwrite = (title) => {
@@ -213,7 +213,7 @@ function App() {
 
             // Fetch app version
             window.electron.invoke('get-app-version').then(v => {
-                setAppVersion('1.4.1');
+                if (v) setAppVersion(v);
             });
 
             // DB Status Listener
@@ -223,7 +223,11 @@ function App() {
 
             // Fetch dynamic categories
             window.electron.invoke('get-categories').then(cats => {
-                if (cats && Array.isArray(cats)) setAllCategories(cats);
+                if (cats && Array.isArray(cats)) {
+                    setAllCategories(cats);
+                    // Prune visibleCategories if any were deleted (Persistence Fix)
+                    setVisibleCategories(prev => prev.filter(c => cats.includes(c)));
+                }
             });
 
             const unsubDbStatusUpdate = window.electron.onDbStatus((event, status) => {
@@ -672,17 +676,17 @@ function App() {
                     </div>
 
                     <div className="flex-1 py-6 px-3 space-y-1">
-                        <div className="flex gap-2 mb-4">
-                            <Tooltip text="Create a new song entry" position="right">
+                        <div className="flex w-full gap-2 px-1 mb-4">
+                            <Tooltip text="Create a new song entry" position="right" className="flex-[3] w-full">
                                 <button
                                     onClick={() => { setAddSongInitialData(null); setShowAddModal(true); }}
-                                    className="flex-[3] flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-sm font-bold transition-all duration-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-[1.02]"
+                                    className="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-sm font-bold transition-all duration-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-[1.02]"
                                 >
                                     <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
                                     New Song
                                 </button>
                             </Tooltip>
-                            <Tooltip text="Import slides from PowerPoint (.pptx)" position="right">
+                            <Tooltip text="Import slides from PowerPoint (.pptx)" position="right" className="flex-1 w-full">
                                 <button
                                     onClick={async () => {
                                         const res = await window.electron.invoke('import-pptx');
@@ -693,7 +697,7 @@ function App() {
                                             setCustomAlert("Error importing PPTX: " + res.error);
                                         }
                                     }}
-                                    className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-700 hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-300 transition-all font-bold shadow-sm flex items-center justify-center group"
+                                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-700 hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-300 transition-all font-bold shadow-sm flex items-center justify-center group"
                                 >
                                     <svg className="w-5 h-5 group-hover:scale-110 transition-transform text-orange-600" fill="currentColor" viewBox="0 0 24 24"><path d="M19.5 3h-15C3.12 3 2 4.12 2 5.5v13C2 19.88 3.12 21 4.5 21h15c1.38 0 2.5-1.12 2.5-2.5v-13C22 4.12 20.88 3 19.5 3zm-9 14.5c0 .28-.22.5-.5.5h-5c-.28 0-.5-.22-.5-.5v-11c0-.28.22-.5.5-.5h5c.28 0 .5.22.5.5v11zm8 0c0 .28-.22.5-.5.5h-6c-.28 0-.5-.22-.5-.5v-11c0-.28.22-.5.5-.5h6c.28 0 .5.22.5.5v11zM7.5 10c-.83 0-1.5.67-1.5 1.5S6.67 13 7.5 13 9 12.33 9 11.5 8.33 10 7.5 10z" /></svg>
                                 </button>
@@ -1020,7 +1024,7 @@ function App() {
                                                     </div>
 
                                                     <img
-                                                        src="/assets/security.png"
+                                                        src="assets/security.png"
                                                         alt="Security"
                                                         className="w-48 h-48 mb-6 drop-shadow-2xl animate-float object-contain"
                                                     />
