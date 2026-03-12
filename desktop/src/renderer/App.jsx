@@ -97,7 +97,7 @@ function App() {
     const [updateProgress, setUpdateProgress] = useState(0);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
-    const [appVersion, setAppVersion] = useState('1.4.5');
+    const [appVersion, setAppVersion] = useState('1.4.6');
     const [isSyncing, setIsSyncing] = useState(false);
 
     const confirmOverwrite = (title) => {
@@ -1517,7 +1517,7 @@ function App() {
                                                         {updateStatus === 'checking' && <span className="text-[11px] font-semibold text-slate-400 animate-pulse italic">Checking for updates...</span>}
                                                         {updateStatus === 'available' && <span className="text-[11px] font-semibold text-indigo-600 italic">Update Available! Version {updateInfo?.version} is ready.</span>}
                                                         {(updateStatus === 'not-available' || !updateStatus) && <span className="text-[11px] font-semibold text-slate-400 italic">Your app is up to date.</span>}
-                                                        {updateStatus === 'error' && <span className="text-[11px] font-semibold text-red-500 italic">Could not check for updates.</span>}
+                                                        {updateStatus === 'error' && <span className="text-[11px] font-semibold text-red-500 italic">Error: {updateError || 'Could not check for updates.'}</span>}
                                                     </div>
                                                 </div>
                                             </div>

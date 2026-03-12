@@ -118,34 +118,16 @@ if (!gotTheLock) {
 
         // Updater Configuration
         autoUpdater.autoDownload = false; // We want manual control
+        autoUpdater.logger = console;
 
-        if (process.env.NODE_ENV !== 'development') {
-            try {
-                // Check if app-update.yml exists in resources
-                const resourcesPath = path.join(process.resourcesPath);
-                const updateConfigPath = path.join(resourcesPath, 'app-update.yml');
-
-                if (!fs.existsSync(updateConfigPath)) {
-                    console.log("app-update.yml missing in resources. Creating fallback in userData...");
-                    const fallbackConfigPath = path.join(app.getPath('userData'), 'app-update.yml');
-                    const configContent = `owner: justforaitoolz-ops\nrepo: LyriX-Church-System\nprovider: github`;
-                    fs.writeFileSync(fallbackConfigPath, configContent);
-                    autoUpdater.updateConfigPath = fallbackConfigPath;
-                    console.log(`Updater config path set to: ${fallbackConfigPath}`);
-                }
-            } catch (e) {
-                console.error("Failed to setup update fallback config:", e);
-            }
-        }
-
-        // Bypass missing app-update.yml by setting feed manually
+        // Directly set the feed URL to ensure the updater points to the correct GitHub repo
         try {
             autoUpdater.setFeedURL({
                 provider: 'github',
                 owner: 'justforaitoolz-ops',
                 repo: 'LyriX-Church-System'
             });
-            console.log("Updater feed configured manually.");
+            console.log("Updater feed configured for github:justforaitoolz-ops/LyriX-Church-System");
         } catch (e) {
             console.error("Failed to set manual feed URL:", e);
         }
