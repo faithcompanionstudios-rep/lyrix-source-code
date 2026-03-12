@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
 import QRCode from 'react-qr-code';
+import Tooltip from './components/Tooltip';
 
 // Helper to strip leading numbers (e.g. "1. Title" -> "Title")
 const cleanText = (text) => text ? text.replace(/^\d+\.?\s*/, '') : '';
@@ -95,7 +96,7 @@ function App() {
     const [updateProgress, setUpdateProgress] = useState(0);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
-    const [appVersion, setAppVersion] = useState('1.4.1');
+    const [appVersion, setAppVersion] = useState('1.4.3');
     const [isSyncing, setIsSyncing] = useState(false);
 
     const confirmOverwrite = (title) => {
@@ -136,10 +137,11 @@ function App() {
 
 
     // Library Categories
-    const [allCategories, setAllCategories] = useState(['English Choruses', 'English Hymns', 'Telugu Songs', 'Hindi Songs', 'Marathi Songs', 'Special Songs', 'Children Songs']);
+    const DEFAULT_CATEGORIES = ['English Choruses', 'English Hymns', 'Telugu Songs', 'Hindi Songs', 'Marathi Songs', 'Special Songs', 'Children Songs'];
+    const [allCategories, setAllCategories] = useState(DEFAULT_CATEGORIES);
     const [visibleCategories, setVisibleCategories] = useState(() => {
         const saved = localStorage.getItem('setting_visibleCategories');
-        return saved ? JSON.parse(saved) : ['English Choruses', 'English Hymns', 'Telugu Songs', 'Hindi Songs', 'Marathi Songs', 'Special Songs', 'Children Songs'];
+        return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
     });
     const [favourites, setFavourites] = useState(() => {
         const saved = localStorage.getItem('setting_favourites');
@@ -322,6 +324,14 @@ function App() {
                 handleSearch(searchQueryRef.current, activeFilterRef.current);
             });
 
+            const unsubCategoriesUpdate = window.electron.onCategoriesUpdate((event, cats) => {
+                if (cats && Array.isArray(cats)) {
+                    setAllCategories(cats);
+                    // Prune visibleCategories if any were deleted
+                    setVisibleCategories(prev => prev.filter(c => cats.includes(c)));
+                }
+            });
+
             const unsubAppRunning = window.electron.onAppRunningAlert(() => {
                 setCustomAlert('The application is already running.');
             });
@@ -407,6 +417,7 @@ function App() {
                 if (unsubUpdateStatus) unsubUpdateStatus();
                 if (unsubUpdateProgress) unsubUpdateProgress();
                 if (unsubSongsUpdate) unsubSongsUpdate();
+                if (unsubCategoriesUpdate) unsubCategoriesUpdate();
                 if (unsubAppRunning) unsubAppRunning();
                 if (unsubDbStatusUpdate) unsubDbStatusUpdate();
             };
@@ -662,28 +673,31 @@ function App() {
 
                     <div className="flex-1 py-6 px-3 space-y-1">
                         <div className="flex gap-2 mb-4">
-                            <button
-                                onClick={() => { setAddSongInitialData(null); setShowAddModal(true); }}
-                                className="flex-1 flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-sm font-bold transition-all duration-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-[1.02]"
-                            >
-                                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
-                                New Song
-                            </button>
-                            <button
-                                onClick={async () => {
-                                    const res = await window.electron.invoke('import-pptx');
-                                    if (res && res.success) {
-                                        setAddSongInitialData({ title: res.filename, preview: res.slides.join('\n\n\n') });
-                                        setShowAddModal(true);
-                                    } else if (res && res.error) {
-                                        setCustomAlert("Error importing PPTX: " + res.error);
-                                    }
-                                }}
-                                className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-700 hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-300 transition-all font-bold shadow-sm flex items-center justify-center group"
-                                title="Import from PowerPoint (.pptx)"
-                            >
-                                <svg className="w-5 h-5 group-hover:scale-110 transition-transform text-orange-600" fill="currentColor" viewBox="0 0 24 24"><path d="M19.5 3h-15C3.12 3 2 4.12 2 5.5v13C2 19.88 3.12 21 4.5 21h15c1.38 0 2.5-1.12 2.5-2.5v-13C22 4.12 20.88 3 19.5 3zm-9 14.5c0 .28-.22.5-.5.5h-5c-.28 0-.5-.22-.5-.5v-11c0-.28.22-.5.5-.5h5c.28 0 .5.22.5.5v11zm8 0c0 .28-.22.5-.5.5h-6c-.28 0-.5-.22-.5-.5v-11c0-.28.22-.5.5-.5h6c.28 0 .5.22.5.5v11zM7.5 10c-.83 0-1.5.67-1.5 1.5S6.67 13 7.5 13 9 12.33 9 11.5 8.33 10 7.5 10z" /></svg>
-                            </button>
+                            <Tooltip text="Create a new song entry" position="right">
+                                <button
+                                    onClick={() => { setAddSongInitialData(null); setShowAddModal(true); }}
+                                    className="flex-[3] flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-sm font-bold transition-all duration-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-[1.02]"
+                                >
+                                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
+                                    New Song
+                                </button>
+                            </Tooltip>
+                            <Tooltip text="Import slides from PowerPoint (.pptx)" position="right">
+                                <button
+                                    onClick={async () => {
+                                        const res = await window.electron.invoke('import-pptx');
+                                        if (res && res.success) {
+                                            setAddSongInitialData({ title: res.filename, preview: res.slides.join('\n\n\n') });
+                                            setShowAddModal(true);
+                                        } else if (res && res.error) {
+                                            setCustomAlert("Error importing PPTX: " + res.error);
+                                        }
+                                    }}
+                                    className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-700 hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-300 transition-all font-bold shadow-sm flex items-center justify-center group"
+                                >
+                                    <svg className="w-5 h-5 group-hover:scale-110 transition-transform text-orange-600" fill="currentColor" viewBox="0 0 24 24"><path d="M19.5 3h-15C3.12 3 2 4.12 2 5.5v13C2 19.88 3.12 21 4.5 21h15c1.38 0 2.5-1.12 2.5-2.5v-13C22 4.12 20.88 3 19.5 3zm-9 14.5c0 .28-.22.5-.5.5h-5c-.28 0-.5-.22-.5-.5v-11c0-.28.22-.5.5-.5h5c.28 0 .5.22.5.5v11zm8 0c0 .28-.22.5-.5.5h-6c-.28 0-.5-.22-.5-.5v-11c0-.28.22-.5.5-.5h6c.28 0 .5.22.5.5v11zM7.5 10c-.83 0-1.5.67-1.5 1.5S6.67 13 7.5 13 9 12.33 9 11.5 8.33 10 7.5 10z" /></svg>
+                                </button>
+                            </Tooltip>
                         </div>
 
                         <NavItem icon={<LibraryIcon />} label="Song Library" active={activeTab === 'library'} onClick={() => setActiveTab('library')} />
@@ -779,17 +793,55 @@ function App() {
                                             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
                                                 <h3 className="text-lg font-bold text-slate-800 mb-4 font-display">Category Management</h3>
                                                 <div className="flex gap-2 mb-4">
-                                                    <input type="text" value={newCategoryInput} onChange={(e) => setNewCategoryInput(e.target.value)} placeholder="New Category Name..." className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm" />
-                                                    <button onClick={async () => { if (newCategoryInput.trim()) { await window.electron.invoke('add-category', newCategoryInput.trim()); setNewCategoryInput(''); } }} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold">Add</button>
+                                                    <input type="text" value={newCategoryInput} onChange={(e) => setNewCategoryInput(e.target.value)} placeholder="New Category Name..." className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm italic font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+                                                    <button onClick={async () => { if (newCategoryInput.trim()) { await window.electron.invoke('add-category', newCategoryInput.trim()); setNewCategoryInput(''); } }} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold transition-all active:scale-95">Add</button>
                                                 </div>
                                                 <div className="space-y-2 max-h-60 overflow-y-auto">
                                                     {allCategories.map((cat, i) => (
                                                         <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-lg">
-                                                            <span className="font-medium text-slate-700 text-sm">{cat}</span>
-                                                            <div className="flex gap-1">
-                                                                <button onClick={() => setEditingCategory(cat)} className="p-1.5 text-slate-400 hover:text-blue-600"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
-                                                                <button onClick={async () => await window.electron.invoke('delete-category', cat)} className="p-1.5 text-slate-400 hover:text-red-600"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-                                                            </div>
+                                                            {editingCategory === cat ? (
+                                                                <div className="flex-1 flex gap-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        defaultValue={cat}
+                                                                        autoFocus
+                                                                        className="flex-1 px-3 py-1.5 border border-indigo-200 rounded-lg text-sm italic font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                                                                        onKeyDown={async (e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                const newName = e.target.value.trim();
+                                                                                if (newName && newName !== cat) {
+                                                                                    await window.electron.invoke('update-category', cat, newName);
+                                                                                }
+                                                                                setEditingCategory(null);
+                                                                            } else if (e.key === 'Escape') {
+                                                                                setEditingCategory(null);
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                    <button
+                                                                        onClick={async (e) => {
+                                                                            const input = e.currentTarget.parentElement.querySelector('input');
+                                                                            const newName = input.value.trim();
+                                                                            if (newName && newName !== cat) {
+                                                                                await window.electron.invoke('update-category', cat, newName);
+                                                                            }
+                                                                            setEditingCategory(null);
+                                                                        }}
+                                                                        className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-sm"
+                                                                    >
+                                                                        Save
+                                                                    </button>
+                                                                    <button onClick={() => setEditingCategory(null)} className="px-3 py-1.5 bg-slate-200 text-slate-600 rounded-lg text-xs font-bold">Cancel</button>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <span className="font-bold text-slate-700 text-sm italic">{cat}</span>
+                                                                    <div className="flex gap-1">
+                                                                        <button onClick={() => setEditingCategory(cat)} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
+                                                                        <button onClick={async () => await window.electron.invoke('delete-category', cat)} className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                                                                    </div>
+                                                                </>
+                                                            )}
                                                         </div>
                                                     ))}
                                                 </div>
@@ -802,8 +854,8 @@ function App() {
                                                     <div className="space-y-3">
                                                         {uncategorizedSongs.map(song => (
                                                             <div key={song.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex justify-between items-center">
-                                                                <div className="font-bold text-sm text-slate-800">{song.title}</div>
-                                                                <select className="px-3 py-1 bg-white border border-slate-300 rounded text-sm" onChange={async (e) => { if (e.target.value) await window.electron.invoke('recategorize-song', song.id, e.target.value); }}>
+                                                                <div className="font-bold text-sm text-slate-800 italic">{song.title}</div>
+                                                                <select className="px-3 py-1 bg-white border border-slate-300 rounded text-sm italic font-medium cursor-pointer focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" onChange={async (e) => { if (e.target.value) await window.electron.invoke('recategorize-song', song.id, e.target.value); }}>
                                                                     <option value="">Assign...</option>
                                                                     {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                                                 </select>
@@ -820,7 +872,7 @@ function App() {
                                                     <div className="flex-1">
                                                         <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">Select Category</label>
                                                         <select
-                                                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold"
+                                                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold italic focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none cursor-pointer"
                                                             value={bulkCategory}
                                                             onChange={(e) => {
                                                                 setBulkCategory(e.target.value);
@@ -894,64 +946,99 @@ function App() {
                                             </div>
                                         )}
                                         {adminTab === 'security' && (
-                                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 animate-fade-in">
-                                                <h3 className="text-lg font-bold text-slate-800 mb-6 font-display">Update Admin Credentials</h3>
-                                                <div className="space-y-4 max-w-md">
-                                                    <div>
-                                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1">Admin Username</label>
-                                                        <input
-                                                            type="text"
-                                                            value={adminUsernameInput}
-                                                            onChange={(e) => setAdminUsernameInput(e.target.value)}
-                                                            placeholder="New username..."
-                                                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-indigo-500 transition-all"
-                                                        />
-                                                    </div>
-                                                    <div className="grid grid-cols-2 gap-4">
+                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
+                                                <div className="bg-white rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 p-8">
+                                                    <h3 className="text-xl font-bold text-slate-800 mb-8 font-display flex items-center gap-3">
+                                                        <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner">
+                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                                        </div>
+                                                        Admin Credentials
+                                                    </h3>
+                                                    <div className="space-y-6">
                                                         <div>
-                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1">New Password</label>
+                                                            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1">Admin Username</label>
                                                             <input
-                                                                type="password"
-                                                                value={adminPasswordInput}
-                                                                onChange={(e) => setAdminPasswordInput(e.target.value)}
-                                                                placeholder="••••••••"
-                                                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-indigo-500 transition-all"
+                                                                type="text"
+                                                                value={adminUsernameInput}
+                                                                onChange={(e) => setAdminUsernameInput(e.target.value)}
+                                                                placeholder="New username..."
+                                                                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm italic font-medium focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/5 transition-all outline-none"
                                                             />
                                                         </div>
-                                                        <div>
-                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1">Confirm</label>
-                                                            <input
-                                                                type="password"
-                                                                id="confirmPassword"
-                                                                placeholder="••••••••"
-                                                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-indigo-500 transition-all"
-                                                            />
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                            <div>
+                                                                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1">New Password</label>
+                                                                <input
+                                                                    type="password"
+                                                                    value={adminPasswordInput}
+                                                                    onChange={(e) => setAdminPasswordInput(e.target.value)}
+                                                                    placeholder="••••••••"
+                                                                    className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm italic font-medium focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/5 transition-all outline-none"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1">Confirm Password</label>
+                                                                <input
+                                                                    type="password"
+                                                                    id="confirmPassword"
+                                                                    placeholder="••••••••"
+                                                                    className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm italic font-medium focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/5 transition-all outline-none"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="pt-4">
+                                                            <button
+                                                                onClick={async () => {
+                                                                    const confirmInput = document.getElementById('confirmPassword');
+                                                                    if (!adminUsernameInput || !adminPasswordInput) {
+                                                                        setCustomAlert('Username and Password cannot be empty.');
+                                                                        return;
+                                                                    }
+                                                                    if (adminPasswordInput !== confirmInput.value) {
+                                                                        setCustomAlert('Passwords do not match.');
+                                                                        return;
+                                                                    }
+                                                                    const success = await window.electron.invoke('set-admin-credentials', adminUsernameInput, adminPasswordInput);
+                                                                    if (success) {
+                                                                        setCustomAlert('Admin credentials updated successfully! Please login again with new details.');
+                                                                        setIsAdminLoggedIn(false);
+                                                                        setAdminPasswordInput('');
+                                                                        confirmInput.value = '';
+                                                                    }
+                                                                }}
+                                                                className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-bold shadow-xl shadow-indigo-500/30 transition-all active:scale-[0.98] uppercase tracking-widest"
+                                                            >
+                                                                Update Security Details
+                                                            </button>
                                                         </div>
                                                     </div>
-                                                    <div className="pt-4 flex justify-end">
-                                                        <button
-                                                            onClick={async () => {
-                                                                const confirmInput = document.getElementById('confirmPassword');
-                                                                if (!adminUsernameInput || !adminPasswordInput) {
-                                                                    setCustomAlert('Username and Password cannot be empty.');
-                                                                    return;
-                                                                }
-                                                                if (adminPasswordInput !== confirmInput.value) {
-                                                                    setCustomAlert('Passwords do not match.');
-                                                                    return;
-                                                                }
-                                                                const success = await window.electron.invoke('set-admin-credentials', adminUsernameInput, adminPasswordInput);
-                                                                if (success) {
-                                                                    setCustomAlert('Admin credentials updated successfully! Please login again with new details.');
-                                                                    setIsAdminLoggedIn(false);
-                                                                    setAdminPasswordInput('');
-                                                                    confirmInput.value = '';
-                                                                }
-                                                            }}
-                                                            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
-                                                        >
-                                                            Update Security Details
-                                                        </button>
+                                                </div>
+
+                                                <div className="bg-indigo-600 rounded-[2rem] shadow-xl shadow-indigo-900/20 p-8 flex flex-col items-center justify-center text-center relative overflow-hidden h-full">
+                                                    <div className="absolute top-0 right-0 p-8 opacity-10">
+                                                        <svg className="w-32 h-32 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm1 14h-2v-2h2v2zm0-4h-2V7h2v5z" /></svg>
+                                                    </div>
+
+                                                    <img
+                                                        src="/assets/security.png"
+                                                        alt="Security"
+                                                        className="w-48 h-48 mb-6 drop-shadow-2xl animate-float object-contain"
+                                                    />
+
+                                                    <h4 className="text-xl font-bold text-white mb-2">Protect Your Workspace</h4>
+                                                    <p className="text-indigo-100 text-sm leading-relaxed max-w-xs italic mb-8">
+                                                        Keep your lyrics management safe. We recommend using a unique password and updating it regularly.
+                                                    </p>
+
+                                                    <div className="grid grid-cols-2 gap-4 w-full">
+                                                        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10">
+                                                            <div className="text-indigo-200 text-[10px] font-bold uppercase tracking-widest mb-1">Status</div>
+                                                            <div className="text-white text-sm font-bold italic">Encrypted</div>
+                                                        </div>
+                                                        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10">
+                                                            <div className="text-indigo-200 text-[10px] font-bold uppercase tracking-widest mb-1">Access</div>
+                                                            <div className="text-white text-sm font-bold italic">Restricted</div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -963,20 +1050,67 @@ function App() {
                                 <div className="space-y-8 w-full max-w-6xl mx-auto pb-12">
                                     {/* 1. Church Profile Card */}
                                     <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 flex flex-col gap-6 relative group overflow-hidden">
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner">
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                                                </div>
+                                                <h3 className="text-xl font-bold text-slate-800 tracking-tight">Church Profile</h3>
                                             </div>
-                                            <h3 className="text-xl font-bold text-slate-800 tracking-tight">Church Profile</h3>
+                                            <button
+                                                onClick={() => setIsEditingProfile(!isEditingProfile)}
+                                                className={clsx(
+                                                    "px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm border",
+                                                    isEditingProfile
+                                                        ? "bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-700"
+                                                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                                                )}
+                                            >
+                                                {isEditingProfile ? (
+                                                    <>
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                        Save Profile
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                        Edit Profile
+                                                    </>
+                                                )}
+                                            </button>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div className="space-y-2">
                                                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Church Name</label>
-                                                <input type="text" value={churchName} onChange={(e) => setChurchName(e.target.value)} placeholder="Enter church name..." className="w-full px-5 py-3.5 bg-white border border-slate-100 rounded-2xl text-sm font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all shadow-sm italic" />
+                                                <input
+                                                    type="text"
+                                                    disabled={!isEditingProfile}
+                                                    value={churchName}
+                                                    onChange={(e) => setChurchName(e.target.value)}
+                                                    placeholder="Enter church name..."
+                                                    className={clsx(
+                                                        "w-full px-5 py-3.5 rounded-2xl text-sm font-bold transition-all shadow-sm italic border",
+                                                        isEditingProfile
+                                                            ? "bg-white border-emerald-500 ring-4 ring-emerald-500/10 text-slate-800"
+                                                            : "bg-slate-50/50 border-transparent text-slate-500 cursor-not-allowed"
+                                                    )}
+                                                />
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Location</label>
-                                                <input type="text" value={churchPlace} onChange={(e) => setChurchPlace(e.target.value)} placeholder="City, Country..." className="w-full px-5 py-3.5 bg-white border border-slate-100 rounded-2xl text-sm font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all shadow-sm italic" />
+                                                <input
+                                                    type="text"
+                                                    disabled={!isEditingProfile}
+                                                    value={churchPlace}
+                                                    onChange={(e) => setChurchPlace(e.target.value)}
+                                                    placeholder="City, Country..."
+                                                    className={clsx(
+                                                        "w-full px-5 py-3.5 rounded-2xl text-sm font-bold transition-all shadow-sm italic border",
+                                                        isEditingProfile
+                                                            ? "bg-white border-emerald-500 ring-4 ring-emerald-500/10 text-slate-800"
+                                                            : "bg-slate-50/50 border-transparent text-slate-500 cursor-not-allowed"
+                                                    )}
+                                                />
                                             </div>
                                         </div>
                                     </div>
@@ -1156,7 +1290,15 @@ function App() {
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
                                             {/* Font Size Sub-card */}
                                             <div className="bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100 flex flex-col justify-between shadow-inner h-full">
-                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-3 block">Font Size</label>
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-1 block">Font Size</label>
+
+                                                {/* Preview Area */}
+                                                <div className="flex-1 flex items-center justify-center bg-white/40 rounded-2xl mb-3 border border-slate-100 overflow-hidden min-h-[60px]">
+                                                    <div className="italic font-extrabold text-slate-400 opacity-50 select-none tracking-tight" style={{ fontSize: `${fontSize * 4}px`, lineHeight: 1 }}>
+                                                        Aa
+                                                    </div>
+                                                </div>
+
                                                 <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
                                                     <input type="range" min="3" max="15" step="0.5" value={fontSize} onChange={(e) => setFontSize(parseFloat(e.target.value))} className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
                                                     <span className="text-sm font-bold text-indigo-600 w-8 text-right italic font-mono">{fontSize}</span>
@@ -1165,14 +1307,22 @@ function App() {
 
                                             {/* Color Theme Sub-card */}
                                             <div className="bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100 flex flex-col justify-between shadow-inner h-full">
-                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-3 block">Color Theme</label>
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-1 block">Color Theme</label>
+
+                                                {/* Preview Area */}
+                                                <div className="flex-1 flex items-center justify-center rounded-2xl mb-3 border border-slate-200 shadow-inner overflow-hidden min-h-[60px]" style={{ backgroundColor: backgroundColor || '#000000' }}>
+                                                    <div className="font-extrabold tracking-tighter italic" style={{ color: color || '#ffffff', fontSize: '18px' }}>
+                                                        Preview
+                                                    </div>
+                                                </div>
+
                                                 <div className="flex gap-3 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
                                                     <div className="flex-1 flex flex-col gap-1.5">
                                                         <span className="text-[9px] font-bold text-slate-400 uppercase">Text</span>
                                                         <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-full h-8 rounded-lg cursor-pointer border-none bg-transparent" />
                                                     </div>
                                                     <div className="flex-1 flex flex-col gap-1.5">
-                                                        <span className="text-[9px] font-bold text-slate-400 uppercase">BG</span>
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase">BACKGROUND</span>
                                                         <input type="color" value={backgroundColor} onChange={(e) => setBackgroundColor(e.target.value)} className="w-full h-8 rounded-lg cursor-pointer border-none bg-transparent" />
                                                     </div>
                                                 </div>
@@ -1282,6 +1432,63 @@ function App() {
                                         </div>
                                     </div>
 
+                                    {/* 6.5 Application Controls Card */}
+                                    {showAppControls && (
+                                        <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 relative group animate-fade-in mb-8">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+                                                </div>
+                                                <h3 className="text-xl font-bold text-slate-800 tracking-tight">Application Controls</h3>
+                                            </div>
+                                            <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic mb-6">Advanced controls for managing the application window and zoom levels.</p>
+
+                                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                                <button
+                                                    onClick={() => window.electron.invoke('app-control', 'reload')}
+                                                    className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-[1.5rem] transition-all group/btn"
+                                                >
+                                                    <svg className="w-5 h-5 text-slate-400 group-hover/btn:text-indigo-600 mb-2 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest group-hover/btn:text-slate-800">Reload</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => window.electron.invoke('app-control', 'fullscreen')}
+                                                    className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-[1.5rem] transition-all group/btn"
+                                                >
+                                                    <svg className="w-5 h-5 text-slate-400 group-hover/btn:text-indigo-600 mb-2 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest group-hover/btn:text-slate-800">Screen</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => window.electron.invoke('app-control', 'zoom-in')}
+                                                    className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-[1.5rem] transition-all group/btn"
+                                                >
+                                                    <svg className="w-5 h-5 text-slate-400 group-hover/btn:text-indigo-600 mb-2 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" /></svg>
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest group-hover/btn:text-slate-800">Zoom+</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => window.electron.invoke('app-control', 'zoom-out')}
+                                                    className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-[1.5rem] transition-all group/btn"
+                                                >
+                                                    <svg className="w-5 h-5 text-slate-400 group-hover/btn:text-indigo-600 mb-2 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM7 10h6" /></svg>
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest group-hover/btn:text-slate-800">Zoom-</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => window.electron.invoke('app-control', 'zoom-reset')}
+                                                    className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-[1.5rem] transition-all group/btn"
+                                                >
+                                                    <svg className="w-5 h-5 text-slate-400 group-hover/btn:text-indigo-600 mb-2 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest group-hover/btn:text-slate-800">Reset</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => window.electron.invoke('app-control', 'devtools')}
+                                                    className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-[1.5rem] transition-all group/btn"
+                                                >
+                                                    <svg className="w-5 h-5 text-slate-400 group-hover/btn:text-indigo-600 mb-2 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest group-hover/btn:text-slate-800">Tools</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                     {/* 7. Version & Updates Card */}
                                     <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 relative group mb-8">
                                         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
@@ -1357,7 +1564,7 @@ function App() {
                                         <input
                                             type="text"
                                             placeholder="Search..."
-                                            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all italic"
                                             value={searchQuery}
                                             onChange={(e) => handleSearch(e.target.value)}
                                         />
@@ -1398,15 +1605,17 @@ function App() {
                                                         currentSong?.id === song.id ? "bg-blue-200 text-blue-700" : ""
                                                     )}>{song.id}</span>
 
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleAddToSchedule(song.id);
-                                                        }}
-                                                        className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                                                    </button>
+                                                    <Tooltip text="Add to Sunday schedule" position="left">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleAddToSchedule(song.id);
+                                                            }}
+                                                            className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                                                        </button>
+                                                    </Tooltip>
                                                 </div>
                                             </div>
                                             {currentSong?.id === song.id && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>}
@@ -1637,10 +1846,10 @@ function App() {
                         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-[150] flex items-center justify-center p-4">
                             <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col">
                                 <div className="flex items-center gap-3 mb-6">
-                                    <div className="w-10 h-10 bg-slate-800 text-white rounded-xl flex items-center justify-center shadow-inner">
+                                    <div className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-inner">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                                     </div>
-                                    <h3 className="text-xl font-black text-slate-800">Admin Login</h3>
+                                    <h3 className="text-xl font-black text-slate-800 italic">Admin Login</h3>
                                 </div>
 
                                 <div className="space-y-4">
@@ -1650,7 +1859,7 @@ function App() {
                                             type="text"
                                             value={adminUsernameInput}
                                             onChange={(e) => setAdminUsernameInput(e.target.value)}
-                                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-800 transition-all font-medium"
+                                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-800 transition-all font-medium italic"
                                             placeholder="Enter admin username"
                                         />
                                     </div>
@@ -1673,7 +1882,7 @@ function App() {
                                                     }
                                                 }
                                             }}
-                                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-800 transition-all font-medium"
+                                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-800 transition-all font-medium italic"
                                             placeholder="Enter admin password"
                                         />
                                     </div>
@@ -2111,38 +2320,41 @@ function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurren
             {/* Bottom Control Bar */}
             <div className="h-16 bg-white border-t border-slate-200 flex items-center justify-between px-6 shadow-sm">
                 <div className="flex items-center gap-4">
-                    <button
-                        onClick={onToggleFavourite}
-                        disabled={!currentSong}
-                        className={clsx(
-                            "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
-                            isFavourite
-                                ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
-                                : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 disabled:opacity-50"
-                        )}
-                        title={isFavourite ? "Remove from Favourites" : "Add to Favourites"}
-                    >
-                        <HeartIcon className={clsx("w-3 h-3", isFavourite ? "fill-current" : "")} />
-                        {isFavourite ? 'Favourited' : 'Favourite'}
-                    </button>
-                    <button
-                        onClick={onEdit}
-                        disabled={!currentSong}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 disabled:opacity-50"
-                        title="Edit Lyrics"
-                    >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                        Edit
-                    </button>
-                    <button
-                        onClick={onDelete}
-                        disabled={!currentSong}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border bg-slate-100 text-slate-400 border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50"
-                        title="Delete Song"
-                    >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        Delete
-                    </button>
+                    <Tooltip text={isFavourite ? "Remove from Favourites" : "Add to Favourites"}>
+                        <button
+                            onClick={onToggleFavourite}
+                            disabled={!currentSong}
+                            className={clsx(
+                                "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
+                                isFavourite
+                                    ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+                                    : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 disabled:opacity-50"
+                            )}
+                        >
+                            <HeartIcon className={clsx("w-3 h-3", isFavourite ? "fill-current" : "")} />
+                            {isFavourite ? 'Favourited' : 'Favourite'}
+                        </button>
+                    </Tooltip>
+                    <Tooltip text="Edit Lyrics">
+                        <button
+                            onClick={onEdit}
+                            disabled={!currentSong}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 disabled:opacity-50"
+                        >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                            Edit
+                        </button>
+                    </Tooltip>
+                    <Tooltip text="Delete Song">
+                        <button
+                            onClick={onDelete}
+                            disabled={!currentSong}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border bg-slate-100 text-slate-400 border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50"
+                        >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            Delete
+                        </button>
+                    </Tooltip>
                     <button
                         onClick={() => setIsBlack(!isBlack)}
                         className={clsx(
@@ -2423,6 +2635,7 @@ function AddSongModal({ onClose, onSave, initialData, defaultCategory, onConfirm
                 const sanitizeTitle = t => (t || "").replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
                 const duplicateSong = existingSongs.find(s =>
                     s.id !== id &&
+                    (!initialData || s.id !== initialData.id) &&
                     s.title &&
                     sanitizeTitle(s.title) === sanitizeTitle(resolvedTitle)
                 );
@@ -2440,7 +2653,16 @@ function AddSongModal({ onClose, onSave, initialData, defaultCategory, onConfirm
                 } else {
                     // Normal behavior
                     if (isEdit) {
-                        await window.electron.invoke('update-song', songData);
+                        // Check if category changed
+                        if (initialData && category !== initialData.category) {
+                            // First move the song (this deletes old, creates new ID, and shifts others)
+                            const recatResult = await window.electron.invoke('recategorize-song', initialData.id, category);
+                            // Now update the other fields (title, lyrics) using the NEW ID
+                            songData.id = recatResult.id;
+                            await window.electron.invoke('update-song', songData);
+                        } else {
+                            await window.electron.invoke('update-song', songData);
+                        }
                     } else {
                         await window.electron.invoke('add-song', songData);
                     }
@@ -2643,7 +2865,7 @@ function WebSearch({ onImport, setCustomAlert }) {
                     <input
                         type="text"
                         placeholder="Search for song title, lyrics..."
-                        className="w-full pl-10 pr-4 py-2.5 bg-slate-100 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-100 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all italic"
                         value={query}
                         onChange={e => setQuery(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleSearch()}
@@ -2686,7 +2908,7 @@ function WebSearch({ onImport, setCustomAlert }) {
                                 </div>
                             ) : (
                                 <textarea
-                                    className="w-full h-full min-h-[500px] p-4 bg-slate-50 border border-slate-200 rounded-lg font-mono text-sm whitespace-pre-wrap leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                    className="w-full h-full min-h-[500px] p-4 bg-slate-50 border border-slate-200 rounded-lg font-mono text-sm whitespace-pre-wrap leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500/20 italic"
                                     value={fetchedContent}
                                     onChange={e => setFetchedContent(e.target.value)}
                                 ></textarea>

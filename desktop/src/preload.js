@@ -11,6 +11,7 @@ function exposeListener(channel) {
 contextBridge.exposeInMainWorld('electron', {
     onStatus: exposeListener('status-update'),
     onSongsUpdate: exposeListener('songs-updated'),
+    onCategoriesUpdate: exposeListener('categories-updated'),
     onProjectorStateChanged: exposeListener('projector-state-changed'),
     onProjectorKeyPress: exposeListener('projector-key-press'),
     onRemoteCommand: exposeListener('remote-command'),

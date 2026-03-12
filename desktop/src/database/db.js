@@ -177,7 +177,7 @@ async function loadConfig() {
             }
         } else {
             // First launch — create default config
-            await setDoc(configRef, { categories: DEFAULT_CATEGORIES, version: '1.3.4' });
+            await setDoc(configRef, { categories: DEFAULT_CATEGORIES, version: '1.3.9' });
             categoriesCache = [...DEFAULT_CATEGORIES];
             fs.writeFileSync(CATEGORIES_BACKUP_PATH, JSON.stringify(categoriesCache, null, 2));
             console.log('Created default app config in Firestore');
@@ -211,6 +211,8 @@ async function addCategory(name) {
     await setDoc(doc(db, 'config', 'app-config'), { categories: newCategories }, { merge: true });
     categoriesCache = newCategories;
     try { fs.writeFileSync(CATEGORIES_BACKUP_PATH, JSON.stringify(categoriesCache, null, 2)); } catch (e) { }
+    if (global.broadcastCategoriesUpdate) global.broadcastCategoriesUpdate(categoriesCache);
+    if (global.broadcastCategoriesUpdate) global.broadcastCategoriesUpdate(categoriesCache);
     return categoriesCache;
 }
 
@@ -225,6 +227,7 @@ async function updateCategory(oldName, newName) {
     categoriesCache = newCategories;
     try { fs.writeFileSync(CATEGORIES_BACKUP_PATH, JSON.stringify(categoriesCache, null, 2)); } catch (e) { }
 
+    if (global.broadcastCategoriesUpdate) global.broadcastCategoriesUpdate(categoriesCache);
     // 2. Update category field in all affected songs without changing IDs
     const affectedSongs = songsCache.filter(s => s.category === oldName);
     if (affectedSongs.length > 0) {
@@ -272,6 +275,7 @@ async function updateCategory(oldName, newName) {
         if (global.broadcastSongsUpdate) global.broadcastSongsUpdate(songsCache);
     }
 
+    if (global.broadcastCategoriesUpdate) global.broadcastCategoriesUpdate(categoriesCache);
     return categoriesCache;
 }
 
@@ -280,6 +284,8 @@ async function deleteCategory(name) {
     await setDoc(doc(db, 'config', 'app-config'), { categories: newCategories }, { merge: true });
     categoriesCache = newCategories;
     try { fs.writeFileSync(CATEGORIES_BACKUP_PATH, JSON.stringify(categoriesCache, null, 2)); } catch (e) { }
+    if (global.broadcastCategoriesUpdate) global.broadcastCategoriesUpdate(categoriesCache);
+    if (global.broadcastCategoriesUpdate) global.broadcastCategoriesUpdate(categoriesCache);
     return categoriesCache;
 }
 

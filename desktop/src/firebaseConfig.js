@@ -1,11 +1,11 @@
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+require('dotenv').config();
 const { initializeApp } = require("firebase/app");
 // For Node.js environment (Electron Main), we use standard firestore
 const { getFirestore } = require("firebase/firestore");
 const { getAuth } = require("firebase/auth");
 
 const firebaseConfig = {
-    apiKey: process.env.FIREBASE_API_KEY,
+    apiKey: process.env.FIREBASE_API_KEY || "AIzaSyAGcC_oF9aLuK_ofHuE7I3wEafBs5ckfbo",
     authDomain: "church-lyrics-viewer.firebaseapp.com",
     projectId: "church-lyrics-viewer",
     storageBucket: "church-lyrics-viewer.firebasestorage.app",

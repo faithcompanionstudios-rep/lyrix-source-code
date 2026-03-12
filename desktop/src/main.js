@@ -102,6 +102,11 @@ if (!gotTheLock) {
         wins.forEach(w => w.webContents.send('db-status-updated', status));
     };
 
+    global.broadcastCategoriesUpdate = (categories) => {
+        const wins = BrowserWindow.getAllWindows();
+        wins.forEach(w => w.webContents.send('categories-updated', categories));
+    };
+
     app.whenReady().then(() => {
         if (process.platform === 'win32') {
             app.setAppUserModelId('com.lyrix.desktop');
