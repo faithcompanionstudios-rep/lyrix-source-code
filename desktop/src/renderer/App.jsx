@@ -80,6 +80,15 @@ function App() {
     const [addSongInitialData, setAddSongInitialData] = useState(null);
     const [schedule, setSchedule] = useState([]);
     const [customAlert, setCustomAlert] = useState(null);
+
+    // Auto-dismiss custom alerts after 2.5 seconds
+    useEffect(() => {
+        if (customAlert) {
+            const timer = setTimeout(() => setCustomAlert(null), 2500);
+            return () => clearTimeout(timer);
+        }
+    }, [customAlert]);
+
     const [songToDelete, setSongToDelete] = useState(null);
     const [overwritePrompt, setOverwritePrompt] = useState(null);
     const [confirmPrompt, setConfirmPrompt] = useState(null);
@@ -478,9 +487,10 @@ function App() {
                 return;
             }
 
-            // Add directly explicitly without alert
+            // Add directly with an auto-dismissing notification
             const newSchedule = await window.electron.invoke('add-to-schedule', songId);
             setSchedule(newSchedule);
+            setCustomAlert('Added to schedule');
         }
     };
 
