@@ -22,6 +22,14 @@ export default function App() {
   const [currentGreeting, setCurrentGreeting] = useState('Praise the Lord!');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [customAlert, setCustomAlert] = useState(null);
+  
+  // Auto-dismiss custom alerts after 2.5 seconds
+  useEffect(() => {
+    if (customAlert) {
+      const timer = setTimeout(() => setCustomAlert(null), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [customAlert]);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [appVersion, setAppVersion] = useState('1.0.1');
@@ -1041,9 +1049,6 @@ export default function App() {
                   <Ionicons name="notifications" size={32} color="#6366f1" />
                 </View>
                 <Text style={styles.alertText}>{customAlert}</Text>
-                <TouchableOpacity style={styles.alertButton} onPress={() => setCustomAlert(null)}>
-                  <Text style={styles.alertButtonText}>Got it</Text>
-                </TouchableOpacity>
               </View>
             </View>
           )}

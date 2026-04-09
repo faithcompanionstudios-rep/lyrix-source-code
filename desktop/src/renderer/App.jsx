@@ -478,10 +478,9 @@ function App() {
                 return;
             }
 
-            // Add directly and show toast
+            // Add directly explicitly without alert
             const newSchedule = await window.electron.invoke('add-to-schedule', songId);
             setSchedule(newSchedule);
-            setCustomAlert(`Added to schedule`);
         }
     };
 

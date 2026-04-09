@@ -63,7 +63,12 @@ async function checkNetwork() {
                 isOffline = false;
                 console.log('Network Status: Connected');
                 broadcastDbStatus();
-                if (!auth.currentUser) ensureAuth().catch(() => { });
+                if (!auth.currentUser) {
+                    ensureAuth().catch(() => { });
+                } else {
+                    // Force a background push on reconnection if we modified anything locally
+                    syncRemoteData();
+                }
             }
             resolve(true);
         };
@@ -137,6 +142,7 @@ async function ensureAuth() {
             dbStatus = 'connected';
             broadcastDbStatus();
             authPromise = null;
+            syncRemoteData(); // Trigger sync once authenticated
         })
         .catch(err => {
             dbStatus = 'auth_error';
@@ -145,6 +151,31 @@ async function ensureAuth() {
             throw err;
         });
     return authPromise;
+}
+
+// Manually synchronizes local newer data to cloud upon reconnection
+async function syncRemoteData() {
+    if (isOffline) return;
+    try {
+        console.log('SyncRemoteData: Checking Schedule');
+        const snap = await getDoc(doc(db, 'schedules', 'sunday-service'));
+        const remoteData = snap.exists() ? snap.data() : null;
+        const remoteUpdatedAt = remoteData?.updatedAt || 0;
+        
+        if (localScheduleUpdatedAt > remoteUpdatedAt && localScheduleUpdatedAt > 0) {
+            console.log('SyncRemoteData: Local schedule is newer, pushing to Cloud manually.');
+            await setDoc(doc(db, 'schedules', 'sunday-service'), { items: scheduleCache, updatedAt: localScheduleUpdatedAt });
+        } else if (remoteUpdatedAt > localScheduleUpdatedAt) {
+            console.log('SyncRemoteData: Cloud schedule is newer, pulling.');
+            scheduleCache = remoteData.items || [];
+            localScheduleUpdatedAt = remoteUpdatedAt;
+            const data = { items: scheduleCache, updatedAt: localScheduleUpdatedAt };
+            fs.writeFileSync(SCHEDULE_BACKUP_PATH, JSON.stringify(data, null, 2));
+            if (global.broadcastScheduleUpdate) global.broadcastScheduleUpdate(scheduleCache);
+        }
+    } catch(e) {
+        console.error('SyncRemoteData failed:', e);
+    }
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
@@ -720,7 +751,8 @@ async function addToSchedule(songId) {
     if (!song) throw new Error('Song not found');
     
     // Ensure we have a clean title, fallback to ID if completely missing
-    const displayTitle = song.title || song.titleNormalized || song.id;
+    // mobile uses displayTitle, our desktop app uses title.
+    const displayTitle = song.displayTitle || song.title || song.titleNormalized || song.id;
     
     const newItem = { 
         instanceId: Date.now().toString(), 
