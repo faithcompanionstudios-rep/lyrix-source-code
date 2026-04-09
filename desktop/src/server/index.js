@@ -7,16 +7,35 @@ const path = require('path');
 
 let io;
 
-function getLocalIP() {
+function getAllLocalIPs() {
     const interfaces = os.networkInterfaces();
+    const addresses = [];
+
     for (const name of Object.keys(interfaces)) {
+        if (name.toLowerCase().includes('virtual') || 
+            name.toLowerCase().includes('vmware') || 
+            name.toLowerCase().includes('vbox') || 
+            name.toLowerCase().includes('zerotier') ||
+            name.toLowerCase().includes('tailscale') ||
+            name.toLowerCase().includes('tunnel')) {
+            continue;
+        }
+
         for (const iface of interfaces[name]) {
             if (iface.family === 'IPv4' && !iface.internal) {
-                return iface.address;
+                if (iface.address.startsWith('192.168.') || iface.address.startsWith('10.')) {
+                    addresses.unshift(iface.address);
+                } else {
+                    addresses.push(iface.address);
+                }
             }
         }
     }
-    return '127.0.0.1';
+    return addresses.length > 0 ? addresses : ['127.0.0.1'];
+}
+
+function getLocalIP() {
+    return getAllLocalIPs()[0];
 }
 
 function startServer(onStatusChange) {
@@ -72,4 +91,4 @@ function startServer(onStatusChange) {
     return io;
 }
 
-module.exports = { startServer, getLocalIP };
+module.exports = { startServer, getLocalIP, getAllLocalIPs };

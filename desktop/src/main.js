@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const { startServer } = require('./server/index.js');
-const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs } = require('./database/db.js');
+const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork } = require('./database/db.js');
 
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -112,7 +112,36 @@ if (!gotTheLock) {
             app.setAppUserModelId('com.lyrix.desktop');
         }
         nativeTheme.themeSource = 'light';
-        initDb();
+
+        // Data Migration (src/database -> userData/data)
+        const userDataPath = app.getPath('userData');
+        const oldDataDir = path.join(__dirname, 'database');
+        const newDataDir = path.join(userDataPath, 'data');
+
+        if (!fs.existsSync(newDataDir)) {
+            fs.mkdirSync(newDataDir, { recursive: true });
+        }
+
+        ['songs.json', 'schedule.json', 'categories.json'].forEach(file => {
+            const oldPath = path.join(oldDataDir, file);
+            const newPath = path.join(newDataDir, file);
+            if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
+                try {
+                    fs.copyFileSync(oldPath, newPath);
+                    console.log(`Migrated ${file} to persistent storage`);
+                } catch (e) {
+                    console.error(`Failed to migrate ${file}:`, e);
+                }
+            }
+        });
+
+        initDb(userDataPath);
+
+        // Start periodic network check
+        setInterval(() => {
+            checkNetwork();
+        }, 3000); // Every 3s
+
         createWindow();
         console.log("App Ready");
 
@@ -185,8 +214,8 @@ if (!gotTheLock) {
         });
 
         // IPC Handlers for Renderer
-        ipcMain.handle('search-songs', async (event, query, category) => {
-            return searchSongs(query, category);
+        ipcMain.handle('search-songs', async (event, query, category, preferredCategory) => {
+            return searchSongs(query, category, preferredCategory);
         });
 
         ipcMain.handle('get-next-id', async (event, category) => {
@@ -230,12 +259,19 @@ if (!gotTheLock) {
         ipcMain.handle('recategorize-song', async (event, songId, newCategory) => recategorizeSong(songId, newCategory));
 
         ipcMain.handle('refresh-ip', async () => {
-            const { getLocalIP } = require('./server/index.js');
-            const ip = getLocalIP();
-            currentServerStatus.ip = ip;
-            const updatedStatus = { ...currentServerStatus, ip: ip };
+            const { getAllLocalIPs } = require('./server/index.js');
+            const allIps = getAllLocalIPs();
+            
+            // Cycle IP: find current index and pick next, or reset to 0
+            let currentIndex = allIps.indexOf(currentServerStatus.ip);
+            let nextIndex = (currentIndex + 1) % allIps.length;
+            const newIp = allIps[nextIndex];
+            
+            currentServerStatus.ip = newIp;
+            const updatedStatus = { ...currentServerStatus, ip: newIp };
+            
             BrowserWindow.getAllWindows().forEach(win => {
-                win.webContents.send('status-update', updatedStatus);
+                if (!win.isDestroyed()) win.webContents.send('status-update', updatedStatus);
             });
             return updatedStatus;
         });

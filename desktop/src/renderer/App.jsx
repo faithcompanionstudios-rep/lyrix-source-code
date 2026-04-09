@@ -97,7 +97,7 @@ function App() {
     const [updateProgress, setUpdateProgress] = useState(0);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
-    const [appVersion, setAppVersion] = useState('1.4.6');
+    const [appVersion, setAppVersion] = useState('1.5.4');
     const [isSyncing, setIsSyncing] = useState(false);
 
     const confirmOverwrite = (title) => {
@@ -160,6 +160,7 @@ function App() {
     // Admin Categories Manager State
     const [newCategoryInput, setNewCategoryInput] = useState('');
     const [editingCategory, setEditingCategory] = useState(null);
+    const [editCategoryInput, setEditCategoryInput] = useState('');
 
     // Admin Bulk Delete State
     const [bulkCategory, setBulkCategory] = useState('');
@@ -194,13 +195,7 @@ function App() {
         localStorage.setItem('setting_showAppControls', showAppControls);
         localStorage.setItem('setting_showDatabaseManagement', showDatabaseManagement);
 
-        // Immediate pruning fix: if allCategories is loaded, ensure visibleCategories only contains valid items
-        if (allCategories.length > 0) {
-            const hasInvalid = visibleCategories.some(c => !allCategories.includes(c));
-            if (hasInvalid) {
-                setVisibleCategories(prev => prev.filter(c => allCategories.includes(c)));
-            }
-        }
+        // Removed aggressive pruning: we now trust visibleCategories from localStorage or remote.
     }, [favourites, fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, defaultCategory, autoFormat, previewMode, previewFont, maxRemoteDevices, churchName, churchPlace, visibleCategories, showAppControls, showDatabaseManagement, allCategories]);
 
     useEffect(() => {
@@ -234,8 +229,13 @@ function App() {
             window.electron.invoke('get-categories').then(cats => {
                 if (cats && Array.isArray(cats)) {
                     setAllCategories(cats);
-                    // Prune visibleCategories if any were deleted (Persistence Fix)
-                    setVisibleCategories(prev => prev.filter(c => cats.includes(c)));
+                    // Prune deleted, and add any newly created categories to visibleCategories
+                    setVisibleCategories(prev => {
+                        // Only remove categories that are DEFINITELY gone from allCategories
+                        // But don't prune if allCategories is just empty (startup/offline)
+                        if (cats.length === 0) return prev;
+                        return prev.filter(c => cats.includes(c));
+                    });
                 }
             });
 
@@ -333,15 +333,20 @@ function App() {
                 setUpdateProgress(percent);
             });
 
-            const unsubSongsUpdate = window.electron.onSongsUpdate(() => {
+            const unsubSongsUpdate = window.electron.onSongsUpdate((event, songs) => {
+                // Ensure the library refreshes when local songs are loaded or remote changes arrive
                 handleSearch(searchQueryRef.current, activeFilterRef.current);
             });
 
             const unsubCategoriesUpdate = window.electron.onCategoriesUpdate((event, cats) => {
                 if (cats && Array.isArray(cats)) {
                     setAllCategories(cats);
-                    // Prune visibleCategories if any were deleted
-                    setVisibleCategories(prev => prev.filter(c => cats.includes(c)));
+                    setVisibleCategories(prev => {
+                        // Only remove categories that are DEFINITELY gone from allCategories
+                        // But don't prune if allCategories is just empty (startup/offline)
+                        if (cats.length === 0) return prev;
+                        return prev.filter(c => cats.includes(c));
+                    });
                 }
             });
 
@@ -592,7 +597,17 @@ function App() {
         setActiveFilter(filter);
         if (window.electron && window.electron.invoke) {
             try {
-                const results = await window.electron.invoke('search-songs', q, filter);
+                // If it's a numeric search, we search across all categories but then filter to visible ones
+                const isNumeric = q && !isNaN(q.trim()) && q.trim().length > 0;
+                const searchFilter = isNumeric ? 'All' : filter;
+
+                let results = await window.electron.invoke('search-songs', q, searchFilter, filter);
+
+                if (isNumeric) {
+                    // Filter numeric results to only show visible categories
+                    results = results.filter(s => visibleCategories.includes(s.category));
+                }
+
                 setSearchResults(results);
             } catch (e) { console.error(e); }
         }
@@ -808,52 +823,107 @@ function App() {
                                             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
                                                 <h3 className="text-lg font-bold text-slate-800 mb-4 font-display">Category Management</h3>
                                                 <div className="flex gap-2 mb-4">
-                                                    <input type="text" value={newCategoryInput} onChange={(e) => setNewCategoryInput(e.target.value)} placeholder="New Category Name..." className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm italic font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
-                                                    <button onClick={async () => { if (newCategoryInput.trim()) { await window.electron.invoke('add-category', newCategoryInput.trim()); setNewCategoryInput(''); } }} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold transition-all active:scale-95">Add</button>
+                                                    <input
+                                                        type="text"
+                                                        value={newCategoryInput}
+                                                        onChange={(e) => setNewCategoryInput(e.target.value)}
+                                                        onKeyDown={async (e) => {
+                                                            if (e.key === 'Enter' && newCategoryInput.trim()) {
+                                                                await window.electron.invoke('add-category', newCategoryInput.trim());
+                                                                setNewCategoryInput('');
+                                                                setCustomAlert('Category added!');
+                                                            }
+                                                        }}
+                                                        placeholder="New Category Name..."
+                                                        className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm italic font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                                                    />
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (newCategoryInput.trim()) {
+                                                                try {
+                                                                    await window.electron.invoke('add-category', newCategoryInput.trim());
+                                                                    setNewCategoryInput('');
+                                                                    setCustomAlert('Category added!');
+                                                                } catch (err) {
+                                                                    setCustomAlert('Error: ' + (err?.message || 'Could not add category'));
+                                                                }
+                                                            }
+                                                        }}
+                                                        className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold transition-all active:scale-95"
+                                                    >Add</button>
                                                 </div>
                                                 <div className="space-y-2 max-h-60 overflow-y-auto">
-                                                    {allCategories.map((cat, i) => (
-                                                        <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-lg">
+                                                    {allCategories.map((cat) => (
+                                                        <div key={cat} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-lg">
                                                             {editingCategory === cat ? (
                                                                 <div className="flex-1 flex gap-2">
                                                                     <input
                                                                         type="text"
-                                                                        defaultValue={cat}
+                                                                        value={editCategoryInput}
                                                                         autoFocus
+                                                                        onChange={(e) => setEditCategoryInput(e.target.value)}
                                                                         className="flex-1 px-3 py-1.5 border border-indigo-200 rounded-lg text-sm italic font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
                                                                         onKeyDown={async (e) => {
                                                                             if (e.key === 'Enter') {
-                                                                                const newName = e.target.value.trim();
+                                                                                const newName = editCategoryInput.trim();
                                                                                 if (newName && newName !== cat) {
-                                                                                    await window.electron.invoke('update-category', cat, newName);
+                                                                                    try {
+                                                                                        await window.electron.invoke('update-category', cat, newName);
+                                                                                        setCustomAlert(`Renamed to "${newName}"`);
+                                                                                    } catch (err) {
+                                                                                        setCustomAlert('Error: ' + (err?.message || 'Could not rename'));
+                                                                                    }
                                                                                 }
                                                                                 setEditingCategory(null);
+                                                                                setEditCategoryInput('');
                                                                             } else if (e.key === 'Escape') {
                                                                                 setEditingCategory(null);
+                                                                                setEditCategoryInput('');
                                                                             }
                                                                         }}
                                                                     />
                                                                     <button
-                                                                        onClick={async (e) => {
-                                                                            const input = e.currentTarget.parentElement.querySelector('input');
-                                                                            const newName = input.value.trim();
+                                                                        onClick={async () => {
+                                                                            const newName = editCategoryInput.trim();
                                                                             if (newName && newName !== cat) {
-                                                                                await window.electron.invoke('update-category', cat, newName);
+                                                                                try {
+                                                                                    await window.electron.invoke('update-category', cat, newName);
+                                                                                    setCustomAlert(`Renamed to "${newName}"`);
+                                                                                } catch (err) {
+                                                                                    setCustomAlert('Error: ' + (err?.message || 'Could not rename'));
+                                                                                }
                                                                             }
                                                                             setEditingCategory(null);
+                                                                            setEditCategoryInput('');
                                                                         }}
                                                                         className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-sm"
                                                                     >
                                                                         Save
                                                                     </button>
-                                                                    <button onClick={() => setEditingCategory(null)} className="px-3 py-1.5 bg-slate-200 text-slate-600 rounded-lg text-xs font-bold">Cancel</button>
+                                                                    <button
+                                                                        onClick={() => { setEditingCategory(null); setEditCategoryInput(''); }}
+                                                                        className="px-3 py-1.5 bg-slate-200 text-slate-600 rounded-lg text-xs font-bold"
+                                                                    >Cancel</button>
                                                                 </div>
                                                             ) : (
                                                                 <>
                                                                     <span className="font-bold text-slate-700 text-sm italic">{cat}</span>
                                                                     <div className="flex gap-1">
-                                                                        <button onClick={() => setEditingCategory(cat)} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
-                                                                        <button onClick={async () => await window.electron.invoke('delete-category', cat)} className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                                                                        <button
+                                                                            onClick={() => { setEditingCategory(cat); setEditCategoryInput(cat); }}
+                                                                            className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"
+                                                                        ><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
+                                                                        <button
+                                                                            onClick={async () => {
+                                                                                try {
+                                                                                    await window.electron.invoke('delete-category', cat);
+                                                                                    setCustomAlert(`Deleted "${cat}"`);
+                                                                                } catch (err) {
+                                                                                    setCustomAlert('Error: ' + (err?.message || 'Could not delete'));
+                                                                                }
+                                                                            }}
+                                                                            className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
+                                                                        ><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                                                                     </div>
                                                                 </>
                                                             )}
@@ -1034,11 +1104,7 @@ function App() {
                                                         <svg className="w-32 h-32 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm1 14h-2v-2h2v2zm0-4h-2V7h2v5z" /></svg>
                                                     </div>
 
-                                                    <img
-                                                        src={securityImg}
-                                                        alt="Security"
-                                                        className="w-48 h-48 mb-6 drop-shadow-2xl animate-float object-contain"
-                                                    />
+                                                    {/* Security image removed at user request */}
 
                                                     <h4 className="text-xl font-bold text-white mb-2">Protect Your Workspace</h4>
                                                     <p className="text-indigo-100 text-sm leading-relaxed max-w-xs italic mb-8">
@@ -1147,10 +1213,10 @@ function App() {
                                             </div>
                                             <div className={clsx(
                                                 "px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 border shadow-sm",
-                                                dbStatus.authenticated ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-red-50 text-red-600 border-red-100"
+                                                dbStatus.status === 'connected' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-red-50 text-red-600 border-red-100"
                                             )}>
-                                                <div className={clsx("w-2 h-2 rounded-full", dbStatus.authenticated ? "bg-emerald-500 animate-pulse" : "bg-red-500")}></div>
-                                                {dbStatus.authenticated ? "Connected" : "Disconnected"}
+                                                <div className={clsx("w-2 h-2 rounded-full", dbStatus.status === 'connected' ? "bg-emerald-500 animate-pulse" : "bg-red-500")}></div>
+                                                {dbStatus.status === 'connected' ? "Connected" : "Disconnected"}
                                             </div>
                                         </div>
 
@@ -1172,7 +1238,6 @@ function App() {
                                                                 finally { setIsSyncing(false); }
                                                             }}
                                                             className="px-4 py-2 bg-white hover:bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 shadow-sm transition-all active:scale-95 text-[10px] font-bold uppercase tracking-widest group-hover/db:shadow-md"
-                                                            title="Sync Now"
                                                         >
                                                             Sync Now
                                                         </button>
@@ -1191,7 +1256,7 @@ function App() {
                                                         onClick={async () => {
                                                             const status = await window.electron.invoke('get-db-status');
                                                             setDbStatus(status);
-                                                            setCustomAlert(status.authenticated ? "Connection verified!" : "Unable to reach database.");
+                                                            setCustomAlert(status.status === 'connected' ? "Connection verified!" : "Unable to reach database.");
                                                         }}
                                                         className="px-4 py-2 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100 shadow-sm transition-all active:scale-95 text-[10px] font-bold uppercase tracking-widest group-hover/rec:shadow-md"
                                                     >
@@ -1215,9 +1280,17 @@ function App() {
                                                 </div>
                                                 <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">Control LyriX Stage seamlessly from your smartphone! Navigate to the address below in your web browser.</p>
                                             </div>
-                                            <div className={clsx("px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 border shadow-sm", status === 'Active' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-slate-50 text-slate-400 border-slate-200")}>
-                                                <div className={clsx("w-2 h-2 rounded-full", status === 'Active' ? "bg-emerald-500 animate-pulse" : "bg-slate-300")}></div>
-                                                {status}
+                                            <div className={clsx(
+                                                "px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 border shadow-sm transition-all duration-500",
+                                                (status === 'Running' && connections > 0)
+                                                    ? "bg-emerald-50 text-emerald-600 border-emerald-100 shadow-emerald-100"
+                                                    : "bg-slate-50 text-slate-400 border-slate-200"
+                                            )}>
+                                                <div className={clsx(
+                                                    "w-2 h-2 rounded-full",
+                                                    (status === 'Running' && connections > 0) ? "bg-emerald-500 animate-pulse" : "bg-slate-300"
+                                                )}></div>
+                                                {status === 'Running' ? (connections > 0 ? "Live" : "Standby") : status}
                                             </div>
                                         </div>
 
@@ -1235,7 +1308,7 @@ function App() {
                                                     <div className="flex items-center gap-2">
                                                         <button onClick={async () => { const newStatus = await window.electron.invoke('refresh-ip'); setIp(newStatus.ip); setStatus(newStatus.status); }} className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-[10px] font-bold border border-slate-200 transition-all shadow-sm active:scale-95 flex items-center gap-1.5"><RefreshIcon className="w-3.5 h-3.5" /> Refresh</button>
                                                         <div className="text-[10px] font-bold text-slate-400 bg-white/80 border border-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm">
-                                                            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+                                                            <div className={clsx("w-1.5 h-1.5 rounded-full animate-pulse", connections > 0 ? "bg-emerald-500" : "bg-blue-500")}></div>
                                                             <strong>{connections} / {maxRemoteDevices}</strong> <span className="opacity-50 italic uppercase text-[9px]">Devices</span>
                                                         </div>
                                                     </div>
@@ -1600,7 +1673,7 @@ function App() {
                                     {searchResults.filter(song => {
                                         if (activeTab === 'favourites') return favourites.includes(song.id);
                                         return activeFilter === 'All' ? visibleCategories.includes(song.category) : true;
-                                    }).slice(0, 100).map(song => (
+                                    }).map(song => (
                                         <div
                                             key={song.id}
                                             onClick={() => selectSong(song)}
@@ -2446,33 +2519,35 @@ function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh,
                     Sunday Service
                 </h2>
                 <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => {
-                            setConfirmPrompt({
-                                title: 'Clear Schedule',
-                                message: 'Are you sure you want to clear the entire schedule? This will remove all songs from the Sunday Service list.',
-                                confirmText: 'Clear All',
-                                confirmStyle: 'red',
-                                onConfirm: async () => {
-                                    if (window.electron) {
-                                        await window.electron.invoke('clear-schedule');
-                                        if (onRefresh) onRefresh(true);
+                    <Tooltip text="Clear Schedule" position="bottom">
+                        <button
+                            onClick={() => {
+                                setConfirmPrompt({
+                                    title: 'Clear Schedule',
+                                    message: 'Are you sure you want to clear the entire schedule? This will remove all songs from the Sunday Service list.',
+                                    confirmText: 'Clear All',
+                                    confirmStyle: 'red',
+                                    onConfirm: async () => {
+                                        if (window.electron) {
+                                            await window.electron.invoke('clear-schedule');
+                                            if (onRefresh) onRefresh(true);
+                                        }
                                     }
-                                }
-                            });
-                        }}
-                        className="p-1.5 hover:bg-red-100 text-red-500 rounded-lg transition-colors"
-                        title="Clear Schedule"
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
-                    <button
-                        onClick={() => onRefresh && onRefresh(true)}
-                        className="p-1.5 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors"
-                        title="Refresh Schedule"
-                    >
-                        <RefreshIcon className="w-4 h-4" />
-                    </button>
+                                });
+                            }}
+                            className="p-1.5 hover:bg-red-100 text-red-500 rounded-lg transition-colors"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                    </Tooltip>
+                    <Tooltip text="Refresh Schedule" position="bottom">
+                        <button
+                            onClick={() => onRefresh && onRefresh(true)}
+                            className="p-1.5 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors"
+                        >
+                            <RefreshIcon className="w-4 h-4" />
+                        </button>
+                    </Tooltip>
                     <div className="text-xs font-bold bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full italic">
                         {schedule.length}
                     </div>
@@ -2574,7 +2649,9 @@ function AddSongModal({ onClose, onSave, initialData, defaultCategory, onConfirm
     useEffect(() => {
         // Auto-generate ID if not provided OR if category changes (even in edit mode)
         const categoryChanged = initialData?.category && initialData.category !== category;
-        if (!id || categoryChanged) {
+        const isNewSong = !isEdit;
+
+        if (isNewSong || categoryChanged) {
             async function fetchNextId() {
                 if (window.electron) {
                     const nextId = await window.electron.invoke('get-next-id', category);

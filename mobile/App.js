@@ -506,6 +506,7 @@ export default function App() {
 
     const qNormalized = normalizeSearchText(searchQuery);
     const queryTokens = qNormalized.split(' ').filter(t => t.length > 0);
+    const isNumeric = /^\d+$/.test(qNormalized);
     Keyboard.dismiss();
 
     if (queryTokens.length === 0) {
@@ -529,6 +530,12 @@ export default function App() {
       else if (isExactTitle) score += 100;
       else if (startsWithTitle) score += 80;
       else if (exactPhraseInTitle) score += 60;
+
+      if (isNumeric) {
+        const idDigits = idNormalized.replace(/\D/g, '');
+        if (idDigits === qNormalized) score += 150;
+        else if (idDigits.startsWith(qNormalized)) score += 70;
+      }
 
       if (score === 0) {
         const matchTitleTokens = queryTokens.every(token => titleNormalized.includes(token));
@@ -610,7 +617,10 @@ export default function App() {
       // Navigate immediately for "fast" feel, sync happens in background
       setActiveTab('schedule');
 
-      await setDoc(doc(db, "schedules", "sunday-service"), { items: newSchedule });
+      await setDoc(doc(db, "schedules", "sunday-service"), { 
+        items: newSchedule,
+        updatedAt: Date.now() 
+      });
       // Removed blocking Alert for speed
     } catch (e) {
       setCustomAlert("Could not add to schedule: " + e.message);
@@ -619,7 +629,10 @@ export default function App() {
 
   const removeFromSchedule = async (instanceId) => {
     const newSchedule = schedule.filter(i => i.instanceId !== instanceId);
-    await setDoc(doc(db, "schedules", "sunday-service"), { items: newSchedule });
+    await setDoc(doc(db, "schedules", "sunday-service"), { 
+        items: newSchedule,
+        updatedAt: Date.now() 
+    });
   }
 
   // Auto-ID Logic

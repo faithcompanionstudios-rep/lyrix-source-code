@@ -1,0 +1,122 @@
+﻿--- Registry Apps ---
+Antigravity (User) | Location: C:\Users\BODDU_VAMSI\AppData\Local\Programs\Antigravity\ | Size: 1166.21 MB
+Bitdefender Agent | Location: C:\Program Files\Bitdefender Agent\ | Size: Unknown MB
+Bitdefender Total Security | Location: C:\Program Files\Bitdefender\Bitdefender Security\ | Size: Unknown MB
+Dropbox | Location: C:\Program Files (x86)\Dropbox\Client | Size: Unknown MB
+e-Sword | Location: C:\Program Files (x86)\e-Sword\ | Size: 88.2 MB
+e-Sword Module Installer version .6 | Location: C:\Program Files\e-Sword Module Installer\ | Size: 12.47 MB
+Git | Location: C:\Program Files\Git\ | Size: 346.25 MB
+Google Chrome | Location: C:\Program Files\Google\Chrome\Application | Size: Unknown MB
+HP Connection Optimizer | Location: C:\Program Files (x86)\HP Inc\HP Connection Optimizer | Size: Unknown MB
+HP One Agent | Location: C:\Program Files\HP\HP One Agent\ | Size: 200.66 MB
+HP PC Hardware Diagnostics UEFI | Location: C:\Windows\HP\ | Size: 118.39 MB
+HP Software Framework | Location: C:\Program Files (x86)\HP\HP Software Framework\ | Size: 9.15 MB
+Microsoft Edge | Location: C:\Program Files (x86)\Microsoft\Edge\Application | Size: Unknown MB
+Microsoft Edge WebView2 Runtime | Location: C:\Program Files (x86)\Microsoft\EdgeWebView\Application | Size: Unknown MB
+Microsoft Office Professional Plus 2021 - en-us | Location: C:\Program Files\Microsoft Office | Size: Unknown MB
+Power Automate for desktop | Location: C:\Program Files (x86)\Power Automate Desktop\ | Size: 992.11 MB
+Zoom Workplace | Location: C:\Users\BODDU_VAMSI\AppData\Roaming\Zoom\bin | Size: Unknown MB
+
+--- Store Apps (Potentially Movable) ---
+Microsoft.BioEnrollment | Location: C:\Windows\SystemApps\Microsoft.BioEnrollment_cw5n1h2txyewy
+Windows.CBSPreview | Location: C:\Windows\SystemApps\Windows.CBSPreview_cw5n1h2txyewy
+1527c705-839a-4832-9118-54d4Bd6a0c89 | Location: C:\Windows\SystemApps\Microsoft.Windows.FilePicker_cw5n1h2txyewy
+Microsoft.CredDialogHost | Location: C:\Windows\SystemApps\microsoft.creddialoghost_cw5n1h2txyewy
+E2A4F912-2574-4A75-9BB0-0D023378592B | Location: C:\Windows\SystemApps\Microsoft.Windows.AppResolverUX_cw5n1h2txyewy
+Microsoft.MixedReality.Portal | Location: C:\Program Files\WindowsApps\Microsoft.MixedReality.Portal_2000.22041.1123.0_x64__8wekyb3d8bbwe
+MicrosoftCorporationII.MicrosoftFamily | Location: C:\Program Files\WindowsApps\MicrosoftCorporationII.MicrosoftFamily_0.2.40.0_x64__8wekyb3d8bbwe
+AD2F1837.HPEnhance | Location: C:\Program Files\WindowsApps\AD2F1837.HPEnhance_1.4.4.0_x64__v10z8vjag6ke6
+AD2F1837.HPThermalControl | Location: C:\Program Files\WindowsApps\AD2F1837.HPThermalControl_1.11.60.0_x64__v10z8vjag6ke6
+c5e2524a-ea46-4f67-841f-6a9465d9d515 | Location: C:\Windows\SystemApps\Microsoft.Windows.FileExplorer_cw5n1h2txyewy
+F46D4000-FD22-4DB4-AC8E-4E1DDDE828FE | Location: C:\Windows\SystemApps\Microsoft.Windows.AddSuggestedFoldersToLibraryDialog_cw5n1h2txyewy
+Microsoft.AAD.BrokerPlugin | Location: C:\Windows\SystemApps\Microsoft.AAD.BrokerPlugin_cw5n1h2txyewy
+Microsoft.AccountsControl | Location: C:\Windows\SystemApps\Microsoft.AccountsControl_cw5n1h2txyewy
+Microsoft.AsyncTextService | Location: C:\Windows\SystemApps\Microsoft.AsyncTextService_8wekyb3d8bbwe
+Microsoft.MicrosoftEdgeDevToolsClient | Location: C:\Windows\SystemApps\Microsoft.MicrosoftEdgeDevToolsClient_8wekyb3d8bbwe
+Microsoft.Win32WebViewHost | Location: C:\Windows\SystemApps\Microsoft.Win32WebViewHost_cw5n1h2txyewy
+Microsoft.XboxGameCallableUI | Location: C:\Windows\SystemApps\Microsoft.XboxGameCallableUI_cw5n1h2txyewy
+MicrosoftWindows.UndockedDevKit | Location: C:\Windows\SystemApps\MicrosoftWindows.UndockedDevKit_cw5n1h2txyewy
+windows.immersivecontrolpanel | Location: C:\Windows\ImmersiveControlPanel
+Windows.PrintDialog | Location: C:\Windows\SystemApps\Windows.PrintDialog_cw5n1h2txyewy
+Microsoft.BingNews | Location: C:\Program Files\WindowsApps\Microsoft.BingNews_4.56.242.0_x64__8wekyb3d8bbwe
+Microsoft.ECApp | Location: C:\Windows\SystemApps\Microsoft.ECApp_8wekyb3d8bbwe
+MicrosoftWindows.Client.FileExp | Location: C:\Windows\SystemApps\MicrosoftWindows.Client.FileExp_cw5n1h2txyewy
+MicrosoftWindows.Client.Photon | Location: C:\Windows\SystemApps\MicrosoftWindows.Client.Photon_cw5n1h2txyewy
+Microsoft.WidgetsPlatformRuntime | Location: C:\Program Files\WindowsApps\Microsoft.WidgetsPlatformRuntime_1.6.14.0_x64__8wekyb3d8bbwe
+Microsoft.MicrosoftEdge.Stable | Location: C:\Program Files\WindowsApps\Microsoft.MicrosoftEdge.Stable_140.0.3485.54_neutral__8wekyb3d8bbwe
+igotkarmayogi.gov.in-5AD1A7D6 | Location: C:\Program Files\WindowsApps\igotkarmayogi.gov.in-5AD1A7D6_1.0.0.0_neutral__vekjbv3ct48rp
+meet.google.com-86BAEA39 | Location: C:\Program Files\WindowsApps\meet.google.com-86BAEA39_1.0.0.0_neutral__rqkekfyny6sjr
+210.212.190.4-21D1F740 | Location: C:\Program Files\WindowsApps\210.212.190.4-21D1F740_1.0.0.1_neutral__npe47f6bq4zba
+4DF9E0F8.Netflix | Location: C:\Program Files\WindowsApps\4DF9E0F8.Netflix_7.0.8.0_neutral__mcm4njqhnhss8
+github.com-8B11BEB2 | Location: C:\Program Files\WindowsApps\github.com-8B11BEB2_1.0.0.1_neutral__2t1n1bqhyggy0
+Microsoft.Edge.GameAssist | Location: C:\Program Files\WindowsApps\Microsoft.Edge.GameAssist_1.0.3590.0_x64__8wekyb3d8bbwe
+Microsoft.RawImageExtension | Location: C:\Program Files\WindowsApps\Microsoft.RawImageExtension_2.5.7.0_x64__8wekyb3d8bbwe
+Microsoft.MPEG2VideoExtension | Location: C:\Program Files\WindowsApps\Microsoft.MPEG2VideoExtension_1.2.13.0_x64__8wekyb3d8bbwe
+Microsoft.ApplicationCompatibilityEnhancements | Location: C:\Program Files\WindowsApps\Microsoft.ApplicationCompatibilityEnhancements_1.2511.9.0_x64__8wekyb3d8bbwe
+www.midjourney.com-D2A769F5 | Location: C:\Program Files\WindowsApps\www.midjourney.com-D2A769F5_1.0.0.0_neutral__c8pd49rdvzh4c
+Microsoft.VP9VideoExtensions | Location: C:\Program Files\WindowsApps\Microsoft.VP9VideoExtensions_1.2.12.0_x64__8wekyb3d8bbwe
+Microsoft.OutlookForWindows | Location: C:\Program Files\WindowsApps\Microsoft.OutlookForWindows_1.2025.1121.100_x64__8wekyb3d8bbwe
+gemini.google.com-CDD72DF2 | Location: C:\Program Files\WindowsApps\gemini.google.com-CDD72DF2_1.0.0.0_neutral__vn3jms8s81tkg
+Microsoft.WebpImageExtension | Location: C:\Program Files\WindowsApps\Microsoft.WebpImageExtension_1.2.14.0_x64__8wekyb3d8bbwe
+Microsoft.WebMediaExtensions | Location: C:\Program Files\WindowsApps\Microsoft.WebMediaExtensions_1.2.17.0_x64__8wekyb3d8bbwe
+Microsoft.GetHelp | Location: C:\Program Files\WindowsApps\Microsoft.GetHelp_10.2409.33293.0_x64__8wekyb3d8bbwe
+Microsoft.LanguageExperiencePacken-GB | Location: C:\Program Files\WindowsApps\Microsoft.LanguageExperiencePacken-GB_26100.124.233.0_neutral__8wekyb3d8bbwe
+Microsoft.Winget.Source | Location: C:\Program Files\WindowsApps\Microsoft.Winget.Source_2026.117.937.53_neutral__8wekyb3d8bbwe
+AD2F1837.HPPrinterControl | Location: C:\Program Files\WindowsApps\AD2F1837.HPPrinterControl_163.1.1121.0_x64__v10z8vjag6ke6
+AD2F1837.HPInc.EnergyStar | Location: C:\Program Files\WindowsApps\AD2F1837.HPInc.EnergyStar_2.0.11.0_x64__v10z8vjag6ke6
+accounts.mgovcloud.in-7FCCB52A | Location: C:\Program Files\WindowsApps\accounts.mgovcloud.in-7FCCB52A_1.0.0.0_neutral__crx4ms15efss0
+MicrosoftWindows.Client.WebExperience | Location: C:\Program Files\WindowsApps\MicrosoftWindows.Client.WebExperience_526.1202.40.0_x64__cw5n1h2txyewy
+OpenAI.ChatGPT-Desktop | Location: C:\Program Files\WindowsApps\OpenAI.ChatGPT-Desktop_1.2026.43.0_x64__2p2nqsd0c76g0
+Microsoft.SecHealthUI | Location: C:\Program Files\WindowsApps\Microsoft.SecHealthUI_1000.29510.1001.0_x64__8wekyb3d8bbwe
+Microsoft.AV1VideoExtension | Location: C:\Program Files\WindowsApps\Microsoft.AV1VideoExtension_2.0.7.0_x64__8wekyb3d8bbwe
+Microsoft.AVCEncoderVideoExtension | Location: C:\Program Files\WindowsApps\Microsoft.AVCEncoderVideoExtension_1.1.23.0_x64__8wekyb3d8bbwe
+AD2F1837.HPSupportAssistant | Location: C:\Program Files\WindowsApps\AD2F1837.HPSupportAssistant_9.51.14.0_x64__v10z8vjag6ke6
+Microsoft.HEVCVideoExtension | Location: C:\Program Files\WindowsApps\Microsoft.HEVCVideoExtension_2.4.43.0_x64__8wekyb3d8bbwe
+AD2F1837.HPSystemEventUtility | Location: C:\Program Files\WindowsApps\AD2F1837.HPSystemEventUtility_3.2.16.0_x64__v10z8vjag6ke6
+Microsoft.BingSearch | Location: C:\Program Files\WindowsApps\Microsoft.BingSearch_1.1.43.0_x64__8wekyb3d8bbwe
+Microsoft.BingWeather | Location: C:\Program Files\WindowsApps\Microsoft.BingWeather_4.54.63029.0_x64__8wekyb3d8bbwe
+Microsoft.People | Location: C:\Program Files\WindowsApps\Microsoft.People_10.2202.100.0_x64__8wekyb3d8bbwe
+AD2F1837.BOAudioControl | Location: C:\Program Files\WindowsApps\AD2F1837.BOAudioControl_1.47.308.0_x64__v10z8vjag6ke6
+Microsoft.MicrosoftStickyNotes | Location: C:\Program Files\WindowsApps\Microsoft.MicrosoftStickyNotes_4.0.6104.0_x64__8wekyb3d8bbwe
+Microsoft.ZuneVideo | Location: C:\Program Files\WindowsApps\Microsoft.ZuneVideo_10.25121.10051.0_x64__8wekyb3d8bbwe
+Microsoft.Copilot | Location: C:\Program Files\WindowsApps\Microsoft.Copilot_1.25121.84.0_x64__8wekyb3d8bbwe
+Microsoft.Whiteboard | Location: C:\Program Files\WindowsApps\Microsoft.Whiteboard_56.20201.588.0_x64__8wekyb3d8bbwe
+Microsoft.XboxGamingOverlay | Location: C:\Program Files\WindowsApps\Microsoft.XboxGamingOverlay_7.326.2102.0_x64__8wekyb3d8bbwe
+MicrosoftWindows.Client.CBS | Location: C:\Windows\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy
+MicrosoftWindows.Client.Core | Location: C:\Windows\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy
+MicrosoftWindows.Client.OOBE | Location: C:\Windows\SystemApps\MicrosoftWindows.Client.OOBE_cw5n1h2txyewy
+MicrosoftCorporationII.QuickAssist | Location: C:\Program Files\WindowsApps\MicrosoftCorporationII.QuickAssist_2.0.47.0_x64__8wekyb3d8bbwe
+Microsoft.Paint | Location: C:\Program Files\WindowsApps\Microsoft.Paint_11.2601.401.0_x64__8wekyb3d8bbwe
+support-portal.youversion.com-839F3389 | Location: C:\Program Files\WindowsApps\support-portal.youversion.com-839F3389_1.0.0.0_neutral__53kwahqj8r5m2
+MicrosoftCorporationII.WinAppRuntime.Main.1.8 | Location: C:\Program Files\WindowsApps\MicrosoftCorporationII.WinAppRuntime.Main.1.8_8000.770.947.0_x64__8wekyb3d8bbwe
+Microsoft.ZuneMusic | Location: C:\Program Files\WindowsApps\Microsoft.ZuneMusic_11.2601.11.0_x64__8wekyb3d8bbwe
+MicrosoftWindows.57242383.Tasbar | Location: C:\Windows\SystemApps\SxS\MicrosoftWindows.57242383.Tasbar_cw5n1h2txyewy
+MicrosoftWindows.60719890.Voiess | Location: C:\Windows\SystemApps\SxS\MicrosoftWindows.60719890.Voiess_cw5n1h2txyewy
+MicrosoftWindows.60719895.Livtop | Location: C:\Windows\SystemApps\SxS\MicrosoftWindows.60719895.Livtop_cw5n1h2txyewy
+MicrosoftWindows.60719896.Speion | Location: C:\Windows\SystemApps\SxS\MicrosoftWindows.60719896.Speion_cw5n1h2txyewy
+MicrosoftWindows.60719898.InpApp | Location: C:\Windows\SystemApps\SxS\MicrosoftWindows.60719898.InpApp_cw5n1h2txyewy
+MicrosoftWindows.Client.CoreAI | Location: C:\Windows\SystemApps\MicrosoftWindows.Client.CoreAI_cw5n1h2txyewy
+Microsoft.LockApp | Location: C:\Windows\SystemApps\Microsoft.LockApp_cw5n1h2txyewy
+BDContextualMenu | Location: C:\Program Files\WindowsApps\BDContextualMenu_1.0.0.1_neutral__wyhbsbn8my8n2
+Microsoft.DesktopAppInstaller | Location: C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_1.28.220.0_x64__8wekyb3d8bbwe
+MicrosoftWindows.CrossDevice | Location: C:\Program Files\WindowsApps\MicrosoftWindows.CrossDevice_1.26012.79.0_x64__cw5n1h2txyewy
+Microsoft.YourPhone | Location: C:\Program Files\WindowsApps\Microsoft.YourPhone_1.26012.101.0_x64__8wekyb3d8bbwe
+aimgr | Location: C:\Program Files\WindowsApps\aimgr_0.20.44.0_x64__8wekyb3d8bbwe
+AppUp.IntelGraphicsExperience | Location: C:\Program Files\WindowsApps\AppUp.IntelGraphicsExperience_1.100.5688.0_x64__8j3eq9eme6ctt
+Clipchamp.Clipchamp | Location: C:\Program Files\WindowsApps\Clipchamp.Clipchamp_4.5.10420.0_x64__yxz26nhyzhsrt
+Microsoft.ScreenSketch | Location: C:\Program Files\WindowsApps\Microsoft.ScreenSketch_11.2601.2.0_x64__8wekyb3d8bbwe
+AD2F1837.myHP | Location: C:\Program Files\WindowsApps\AD2F1837.myHP_54.52610.3208.0_x64__v10z8vjag6ke6
+SpotifyAB.SpotifyMusic | Location: C:\Program Files\WindowsApps\SpotifyAB.SpotifyMusic_1.286.502.0_x64__zpdnekdrzrea0
+DropboxInc.Dropbox | Location: C:\Program Files\WindowsApps\DropboxInc.Dropbox_246.4.3513.0_x64__wkt425jdc3sga
+Microsoft.OfficePushNotificationUtility | Location: C:\Program Files\WindowsApps\Microsoft.OfficePushNotificationUtility_16.0.19822.20142_neutral__8wekyb3d8bbwe
+Microsoft.Office.ActionsServer | Location: C:\Program Files\WindowsApps\Microsoft.Office.ActionsServer_16.0.19822.20142_neutral__8wekyb3d8bbwe
+Microsoft.HEIFImageExtension | Location: C:\Program Files\WindowsApps\Microsoft.HEIFImageExtension_1.2.30.0_x64__8wekyb3d8bbwe
+Microsoft.StorePurchaseApp | Location: C:\Program Files\WindowsApps\Microsoft.StorePurchaseApp_22601.1401.7.0_x64__8wekyb3d8bbwe
+Microsoft.PowerAutomateDesktop | Location: C:\Program Files\WindowsApps\Microsoft.PowerAutomateDesktop_11.2603.154.0_x64__8wekyb3d8bbwe
+AD2F1837.HPPCHardwareDiagnosticsWindows | Location: C:\Program Files\WindowsApps\AD2F1837.HPPCHardwareDiagnosticsWindows_3.1.0.0_x64__v10z8vjag6ke6
+5319275A.WhatsAppDesktop | Location: C:\Program Files\WindowsApps\5319275A.WhatsAppDesktop_2.2611.102.0_x64__cv1g1gvanyjgm
+Microsoft.MicrosoftPCManager | Location: C:\Program Files\WindowsApps\Microsoft.MicrosoftPCManager_3.20.9.0_x64__8wekyb3d8bbwe
+Microsoft.StartExperiencesApp | Location: C:\Program Files\WindowsApps\Microsoft.StartExperiencesApp_1.241.0.0_x64__8wekyb3d8bbwe
+Microsoft.Todos | Location: C:\Program Files\WindowsApps\Microsoft.Todos_0.175.6901.0_x64__8wekyb3d8bbwe
+Microsoft.MicrosoftOfficeHub | Location: C:\Program Files\WindowsApps\Microsoft.MicrosoftOfficeHub_19.2604.33111.0_x64__8wekyb3d8bbwe
+MSTeams | Location: C:\Program Files\WindowsApps\MSTeams_26072.519.4556.7438_x64__8wekyb3d8bbwe

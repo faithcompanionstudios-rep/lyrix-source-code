@@ -1,12 +1,14 @@
 {
-  "name": "desktop",
-  "version": "1.4.6",
-  "description": "Church LyriX Desktop Application for lyrics and presentation management",
+  "name": "church-lyrics-system",
+  "version": "1.5.9",
+  "description": "Church Lyrics System with Web Remote Control",
   "main": "src/main.js",
   "scripts": {
+    "start": "electron .",
     "dev": "concurrently \"vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron .\"",
-    "build": "cross-env NODE_ENV=production vite build && electron-builder build --win --publish never -c.directories.output=release_v1_4_6",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "vite build && electron-builder --win --x64 -c.directories.output=release_v1_5_8",
+    "dist": "vite build && electron-builder --win --x64 -c.directories.output=release_v1_5_8",
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [],
   "author": "",
@@ -40,7 +42,7 @@
     "autoprefixer": "^10.4.23",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
-    "electron": "^31.3.0",
+    "electron": "31.7.7",
     "electron-builder": "^24.13.3",
     "electron-packager": "^17.1.2",
     "postcss": "^8.5.6",
@@ -61,7 +63,7 @@
       "public/remote/**/*"
     ],
     "directories": {
-      "output": "release_v1_4_2"
+      "output": "release_v1_5_9"
     },
     "win": {
       "target": "nsis",

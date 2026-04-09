@@ -3,7 +3,7 @@ import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-    apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+    apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyAGcC_oF9aLuK_ofHuE7I3wEafBs5ckfbo", // Fallback for existing build, but user should move to .env
     authDomain: "church-lyrics-viewer.firebaseapp.com",
     projectId: "church-lyrics-viewer",
     storageBucket: "church-lyrics-viewer.firebasestorage.app",

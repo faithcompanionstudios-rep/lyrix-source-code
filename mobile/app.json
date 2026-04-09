@@ -2,7 +2,7 @@
   "expo": {
     "name": "LyriX Mobile",
     "slug": "mobile",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -30,7 +30,7 @@
       "eas": {
         "projectId": "8f79e421-f1e5-4723-b554-0d56a693c33b"
       },
-      "buildNumber": "25"
+      "buildNumber": "27"
     },
     "runtimeVersion": "1.0.0",
     "updates": {
