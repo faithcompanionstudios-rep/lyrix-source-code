@@ -157,6 +157,14 @@ if (!gotTheLock) {
                 repo: 'LyriX-Church-System'
             });
             console.log("Updater feed configured for github:justforaitoolz-ops/LyriX-Church-System");
+            
+            // Automatic Update Check on Startup (5s delay)
+            setTimeout(() => {
+                console.log("Checking for updates automatically...");
+                autoUpdater.checkForUpdates().catch(err => {
+                    console.error("Auto-update check failed:", err);
+                });
+            }, 5000);
         } catch (e) {
             console.error("Failed to set manual feed URL:", e);
         }
