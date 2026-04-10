@@ -23,10 +23,10 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [customAlert, setCustomAlert] = useState(null);
   
-  // Auto-dismiss custom alerts after 2.5 seconds
+  // Auto-dismiss custom alerts after 1.5 seconds
   useEffect(() => {
     if (customAlert) {
-      const timer = setTimeout(() => setCustomAlert(null), 2500);
+      const timer = setTimeout(() => setCustomAlert(null), 1500);
       return () => clearTimeout(timer);
     }
   }, [customAlert]);
