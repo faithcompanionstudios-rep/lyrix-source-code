@@ -98,8 +98,8 @@ const normalize = (text) => {
     return text.toString()
         .toLowerCase()
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^\w\s]/gi, ' ')
-        .replace(/\s+/g, ' ')
+        .replace(/[^\w\s]|_/g, "")
+        .replace(/\s+/g, " ")
         .trim();
 };
 
@@ -175,6 +175,14 @@ async function syncRemoteData() {
         }
     } catch(e) {
         console.error('SyncRemoteData failed:', e);
+    }
+    
+    // Also trigger full song library sync (honoring Last-Write-Wins)
+    try {
+        console.log('SyncRemoteData: Triggering background song sync...');
+        await syncSongs();
+    } catch (e) {
+        console.error('Background song sync failed:', e);
     }
 }
 

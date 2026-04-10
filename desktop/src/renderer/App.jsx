@@ -81,10 +81,10 @@ function App() {
     const [schedule, setSchedule] = useState([]);
     const [customAlert, setCustomAlert] = useState(null);
 
-    // Auto-dismiss custom alerts after 1.5 seconds
+    // Auto-dismiss custom alerts after 0.5 seconds
     useEffect(() => {
         if (customAlert) {
-            const timer = setTimeout(() => setCustomAlert(null), 1500);
+            const timer = setTimeout(() => setCustomAlert(null), 500);
             return () => clearTimeout(timer);
         }
     }, [customAlert]);
@@ -1645,6 +1645,37 @@ function App() {
                                                 <button onClick={() => window.electron.invoke('install-update')} className="px-5 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-bold shadow-md hover:bg-emerald-700 transition-all uppercase tracking-wider">Restart & Install</button>
                                             </div>
                                         )}
+                                    </div>
+
+                                    {/* 8. Database Management Card */}
+                                    <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 relative group mb-8">
+                                        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center justify-center shadow-inner">
+                                                    <svg className="w-6 h-6 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
+                                                </div>
+                                                <div>
+                                                    <h3 className="text-lg font-bold text-slate-800 tracking-tight">Database Maintenance</h3>
+                                                    <p className="text-[11px] font-semibold text-slate-400 italic">Safely synchronize your library with the cloud using Last-Write-Wins.</p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={async () => {
+                                                    setCustomAlert('Starting Deep Sync... Please wait.');
+                                                    try {
+                                                        const res = await window.electron.invoke('sync-songs');
+                                                        setCustomAlert(`Sync Complete! Verified ${res.count} items.`);
+                                                        handleSearch('', activeFilter); // Refresh UI
+                                                    } catch (e) {
+                                                        setCustomAlert('Sync failed. Please check your internet connection.');
+                                                    }
+                                                }}
+                                                className="px-8 py-3 bg-white text-slate-600 border border-slate-200 hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 rounded-2xl text-[11px] font-bold uppercase tracking-widest transition-all shadow-md active:scale-95 flex items-center gap-2"
+                                            >
+                                                <RefreshIcon className="w-3.5 h-3.5" />
+                                                Deep Library Sync
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             )}
