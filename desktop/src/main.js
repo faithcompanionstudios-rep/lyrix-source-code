@@ -6,6 +6,8 @@ const { startServer } = require('./server/index.js');
 const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork } = require('./database/db.js');
 const axios = require('axios');
 const { spawn } = require('child_process');
+const bibleDb = require('./database/bible_db.js');
+const { setupBible } = require('./database/bible_setup.js');
 
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -267,6 +269,23 @@ if (!gotTheLock) {
         // Bulk & Recategorize Handlers
         ipcMain.handle('bulk-delete-songs', async (event, ids) => bulkDeleteSongs(ids));
         ipcMain.handle('recategorize-song', async (event, songId, newCategory) => recategorizeSong(songId, newCategory));
+
+        // Bible Module Handlers
+        ipcMain.handle('bible:get-books', async () => bibleDb.getBooks());
+        ipcMain.handle('bible:get-chapters', async (event, bookId) => bibleDb.getChapters(bookId));
+        ipcMain.handle('bible:get-verses', async (event, translationId, bookId, chapter) => bibleDb.getVerses(translationId, bookId, chapter));
+        ipcMain.handle('bible:search', async (event, translationId, query) => bibleDb.searchVerses(translationId, query));
+        ipcMain.handle('bible:setup-status', async () => {
+            const books = bibleDb.getBooks();
+            return { ready: books.length > 0 };
+        });
+        ipcMain.handle('bible:setup-start', async () => {
+            return setupBible((message, progress) => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('bible:setup-progress', { message, progress });
+                }
+            });
+        });
 
         ipcMain.handle('refresh-ip', async () => {
             const { getAllLocalIPs } = require('./server/index.js');
@@ -652,6 +671,9 @@ if (!gotTheLock) {
                 } else if (data.type === 'black') {
                     io.emit('blank-screen', data.isBlack);
                     if (projectorWindow && !projectorWindow.isDestroyed()) projectorWindow.webContents.send('blank-screen', data.isBlack);
+                } else if (data.type === 'bible-verse') {
+                    io.emit('bible-verse-update', data.content);
+                    if (projectorWindow && !projectorWindow.isDestroyed()) projectorWindow.webContents.send('bible-verse-update', data.content);
                 }
             }
         });

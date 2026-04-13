@@ -183,6 +183,17 @@ function App() {
     const [availableRollbacks, setAvailableRollbacks] = useState([]);
     const [isLoadingRollbacks, setIsLoadingRollbacks] = useState(false);
 
+    // Bible Module State
+    const [bibleBooks, setBibleBooks] = useState([]);
+    const [selectedBibleBook, setSelectedBibleBook] = useState(null);
+    const [selectedBibleChapter, setSelectedBibleChapter] = useState(1);
+    const [selectedBibleVerse, setSelectedBibleVerse] = useState(1);
+    const [bibleChaptersCount, setBibleChaptersCount] = useState(0);
+    const [bibleVerses, setBibleVerses] = useState({ KJV: [], HINDI: [] });
+    const [bibleSearching, setBibleSearching] = useState(false);
+    const [bibleSetupStatus, setBibleSetupStatus] = useState({ ready: false, loading: true });
+    const [bibleSetupProgress, setBibleSetupProgress] = useState({ message: '', progress: 0 });
+
     const stateRef = useRef({ slides: [], index: 0, currentSong: null, isModalOpen: false, schedule: [] });
 
     useEffect(() => { stateRef.current = { slides, index: currentSlideIndex, currentSong, isModalOpen: showAddModal || !!songToDelete, schedule }; }, [slides, currentSlideIndex, currentSong, showAddModal, songToDelete, schedule]);
@@ -378,6 +389,18 @@ function App() {
 
             const unsubCloseConfirm = window.electron.onConfirmAppClose(() => {
                 setShowCloseConfirm(true);
+            });
+
+            // Bible Listeners
+            window.electron.invoke('bible:setup-status').then(status => {
+                setBibleSetupStatus({ ready: status.ready, loading: false });
+                if (status.ready) {
+                    window.electron.invoke('bible:get-books').then(books => setBibleBooks(books));
+                }
+            });
+
+            const unsubBibleSetup = window.electron.invoke('bible:setup-progress', (event, data) => {
+                setBibleSetupProgress(data);
             });
 
             handleSearch('', 'All');
@@ -755,6 +778,7 @@ function App() {
                             <NavItem icon={<HeartIcon />} label="Favourites" active={activeTab === 'favourites'} onClick={() => { setActiveTab('favourites'); handleSearch('', 'All'); }} />
                             <NavItem icon={<GlobeIcon />} label="Search Web" active={activeTab === 'web'} onClick={() => setActiveTab('web')} />
                             <NavItem icon={<CalendarIcon />} label="Sunday Service" active={activeTab === 'service'} onClick={() => { setActiveTab('service'); handleSearch('', 'All'); }} />
+                            <NavItem icon={<BibleIcon />} label="Holy Bible" active={activeTab === 'bible'} onClick={() => setActiveTab('bible')} />
                             <div className="pt-6">
                                 <NavItem icon={<SettingsIcon />} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
                             </div>
@@ -779,7 +803,29 @@ function App() {
                 </div>
 
                 {/* Main Content Area */}
-                {activeTab === 'web' ? (
+                {activeTab === 'bible' ? (
+                    <BibleSection
+                        setStatus={setCustomAlert}
+                        isProjectorOpen={isProjectorOpen}
+                        bibleBooks={bibleBooks}
+                        selectedBook={selectedBibleBook}
+                        setSelectedBook={setSelectedBibleBook}
+                        selectedChapter={selectedBibleChapter}
+                        setSelectedChapter={setSelectedBibleChapter}
+                        selectedVerse={selectedBibleVerse}
+                        setSelectedVerse={setSelectedBibleVerse}
+                        verses={bibleVerses}
+                        setVerses={setBibleVerses}
+                        chaptersCount={bibleChaptersCount}
+                        setChaptersCount={setBibleChaptersCount}
+                        setupStatus={bibleSetupStatus}
+                        setSetupStatus={setBibleSetupStatus}
+                        setupStatus={bibleSetupStatus}
+                        setSetupStatus={setBibleSetupStatus}
+                        setupProgress={bibleSetupProgress}
+                        setBibleBooks={setBibleBooks}
+                    />
+                ) : activeTab === 'web' ? (
                     <WebSearch onImport={(data) => { setAddSongInitialData(data); setShowAddModal(true); }} setCustomAlert={setCustomAlert} />
                 ) : activeTab === 'settings' ? (
                     <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
@@ -2447,6 +2493,263 @@ function App() {
         </div >
     );
 }
+
+const BibleIcon = () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5S19.832 5.477 21 6.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+);
+
+function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, setSelectedBook, selectedChapter, setSelectedChapter, selectedVerse, setSelectedVerse, verses, setVerses, chaptersCount, setChaptersCount, setupStatus, setSetupStatus, setupProgress, setBibleBooks }) {
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectorMode, setSelectorMode] = useState('book'); // book, chapter, verse
+
+    useEffect(() => {
+        if (selectedBook) {
+            window.electron.invoke('bible:get-chapters', selectedBook.id).then(count => {
+                setChaptersCount(count);
+                if (selectedChapter > count) setSelectedChapter(1);
+            });
+        }
+    }, [selectedBook]);
+
+    useEffect(() => {
+        if (selectedBook && selectedChapter) {
+            const fetchVerses = async () => {
+                const kjv = await window.electron.invoke('bible:get-verses', 'KJV', selectedBook.id, selectedChapter);
+                const hindi = await window.electron.invoke('bible:get-verses', 'HINDI', selectedBook.id, selectedChapter);
+                setVerses({ KJV: kjv, HINDI: hindi });
+            };
+            fetchVerses();
+        }
+    }, [selectedBook, selectedChapter]);
+
+    const handleProject = (vNum) => {
+        const kjvVerse = verses.KJV.find(v => v.verse === vNum)?.text || '';
+        const hindiVerse = verses.HINDI.find(v => v.verse === vNum)?.text || '';
+
+        window.electron.invoke('projector-sync', {
+            type: 'bible-verse',
+            content: {
+                reference: `${selectedBook.name} ${selectedChapter}:${vNum}`,
+                primaryText: kjvVerse,
+                secondaryText: hindiVerse
+            }
+        });
+        setSelectedVerse(vNum);
+    };
+
+    const handleSmartJump = (query) => {
+        setSearchQuery(query);
+        // Basic Smart Jump: "Joh 3:16" or "1 Sam 2:3"
+        const match = query.match(/^(\d?\s*[a-zA-Z]+)\s*(\d+)[:\s]*(\d*)$/);
+        if (match) {
+            const bookNamePart = match[1].toLowerCase().trim();
+            const chapter = parseInt(match[2]);
+            const verse = match[3] ? parseInt(match[3]) : 1;
+
+            const book = bibleBooks.find(b =>
+                b.name.toLowerCase().startsWith(bookNamePart) ||
+                (b.id && b.id.toLowerCase().startsWith(bookNamePart))
+            );
+
+            if (book) {
+                setSelectedBook(book);
+                setSelectedChapter(chapter);
+                setSelectedVerse(verse);
+                setSelectorMode('verse');
+            }
+        }
+    };
+
+    return (
+        <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
+            <div className="p-8 pb-4 shrink-0">
+                <div className="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 className="text-3xl font-black text-slate-800 italic">Holy Bible</h2>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Select passage to project</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <div className="relative">
+                            <input
+                                type="text"
+                                placeholder="Smart Jump (e.g. Joh 3:16)"
+                                value={searchQuery}
+                                onChange={(e) => handleSmartJump(e.target.value)}
+                                className="w-64 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm italic font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all shadow-sm pl-10"
+                            />
+                            <svg className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Sub-navigation for Selectors */}
+                {setupStatus.ready && (
+                    <div className="flex gap-1 bg-slate-200/50 p-1 rounded-2xl w-fit mb-4">
+                        <button onClick={() => setSelectorMode('book')} className={clsx("px-6 py-2 rounded-xl text-xs font-bold transition-all", selectorMode === 'book' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700")}>BOOK</button>
+                        <button onClick={() => setSelectorMode('chapter')} className={clsx("px-6 py-2 rounded-xl text-xs font-bold transition-all", selectorMode === 'chapter' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700")}>CHAPTER</button>
+                        <button onClick={() => setSelectorMode('verse')} className={clsx("px-6 py-2 rounded-xl text-xs font-bold transition-all", selectorMode === 'verse' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700")}>VERSE</button>
+                    </div>
+                )}
+            </div>
+
+            <div className="flex-1 flex flex-col px-8 pb-8 min-h-0 overflow-hidden">
+                {!setupStatus.ready ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30">
+                        <div className="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center shadow-inner mb-6">
+                            <BibleIcon />
+                        </div>
+                        {setupStatus.loading ? (
+                            <div className="animate-pulse">
+                                <h3 className="text-xl font-bold text-slate-800">Checking Bible Database...</h3>
+                            </div>
+                        ) : (
+                            <div className="max-w-md p-6">
+                                <h3 className="text-xl font-bold text-slate-800 mb-2">Bible Database Not Initialized</h3>
+                                <p className="text-sm text-slate-500 mb-8 italic">Please initialize the database to access Bible verses.</p>
+                                {setupProgress.progress > 0 ? (
+                                    <div className="space-y-4">
+                                        <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                                            <div className="h-full bg-indigo-600 transition-all duration-300" style={{ width: `${setupProgress.progress}%` }}></div>
+                                        </div>
+                                        <p className="text-xs font-bold text-indigo-600 uppercase tracking-widest">{setupProgress.message} ({setupProgress.progress}%)</p>
+                                    </div>
+                                ) : (
+                                    <button
+                                        onClick={async () => {
+                                            setSetupStatus({ ready: false, loading: true });
+                                            const res = await window.electron.invoke('bible:setup-start');
+                                            if (res.success) {
+                                                const status = await window.electron.invoke('bible:setup-status');
+                                                setSetupStatus({ ready: status.ready, loading: false });
+                                                if (status.ready) {
+                                                    const books = await window.electron.invoke('bible:get-books');
+                                                    setBibleBooks(books);
+                                                }
+                                            } else {
+                                                setStatus("Error setting up Bible: " + res.error);
+                                                setSetupStatus({ ready: false, loading: false });
+                                            }
+                                        }}
+                                        className="px-8 py-3 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 hover:scale-105 transition-all"
+                                    >
+                                        Initialize Bible Database
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="flex-1 flex gap-6 min-h-0">
+                        {/* Selector Area */}
+                        <div className="w-1/3 bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 overflow-hidden flex flex-col">
+                            <div className="p-6 border-b border-slate-50 shrink-0">
+                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                                    {selectorMode === 'book' ? 'Select Book' : selectorMode === 'chapter' ? `Chapters: ${selectedBook?.name}` : `Verses: ${selectedBook?.name} ${selectedChapter}`}
+                                </h3>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                                {selectorMode === 'book' && (
+                                    <div className="grid grid-cols-1 gap-1">
+                                        {bibleBooks.map(book => (
+                                            <button
+                                                key={book.id}
+                                                onClick={() => { setSelectedBook(book); setSelectorMode('chapter'); }}
+                                                className={clsx(
+                                                    "px-4 py-3 rounded-xl text-left text-sm font-bold transition-all flex justify-between items-center group",
+                                                    selectedBook?.id === book.id ? "bg-indigo-50 text-indigo-600 italic" : "text-slate-600 hover:bg-slate-50 italic"
+                                                )}
+                                            >
+                                                <span>{book.name}</span>
+                                                <svg className={clsx("w-4 h-4 transition-transform group-hover:translate-x-1", selectedBook?.id === book.id ? "text-indigo-400" : "text-slate-200")} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                {selectorMode === 'chapter' && (
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {Array.from({ length: chaptersCount }, (_, i) => i + 1).map(c => (
+                                            <button
+                                                key={c}
+                                                onClick={() => { setSelectedChapter(c); setSelectorMode('verse'); }}
+                                                className={clsx(
+                                                    "aspect-square rounded-xl text-sm font-black flex items-center justify-center transition-all",
+                                                    selectedChapter === c ? "bg-indigo-600 text-white shadow-lg" : "bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                                                )}
+                                            >
+                                                {c}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                {selectorMode === 'verse' && (
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {verses.KJV.map(v => (
+                                            <button
+                                                key={v.verse}
+                                                onClick={() => handleProject(v.verse)}
+                                                className={clsx(
+                                                    "aspect-square rounded-xl text-sm font-black flex items-center justify-center transition-all",
+                                                    selectedVerse === v.verse ? "bg-indigo-600 text-white shadow-lg" : "bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                                                )}
+                                            >
+                                                {v.verse}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Preview Area */}
+                        <div className="flex-1 flex flex-col gap-6 min-h-0">
+                            <div className="flex-1 bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 p-8 overflow-y-auto custom-scrollbar flex flex-col relative group">
+                                {!selectedBook ? (
+                                    <div className="flex-1 flex items-center justify-center text-slate-300 italic font-medium">Select a book to preview verses</div>
+                                ) : (
+                                    <div className="space-y-10">
+                                        <div className="flex justify-between items-start">
+                                            <div className="bg-indigo-50 px-4 py-1.5 rounded-full text-[10px] font-black text-indigo-600 uppercase tracking-widest border border-indigo-100/50">Passage Preview</div>
+                                            <div className="text-right">
+                                                <h4 className="text-xl font-black text-slate-800 italic">{selectedBook.name} {selectedChapter}</h4>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-8">
+                                            {verses.KJV.map((v, idx) => (
+                                                <div
+                                                    key={v.verse}
+                                                    onClick={() => handleProject(v.verse)}
+                                                    className={clsx(
+                                                        "group/v p-6 rounded-[2rem] border transition-all cursor-pointer relative",
+                                                        selectedVerse === v.verse ? "bg-slate-50/50 border-indigo-100 shadow-inner" : "border-transparent hover:bg-slate-50/30"
+                                                    )}
+                                                >
+                                                    <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white border border-slate-100 rounded-xl shadow-sm flex items-center justify-center text-[10px] font-black text-slate-400 group-hover/v:text-indigo-600 transition-colors z-10">
+                                                        {v.verse}
+                                                    </div>
+                                                    <div className="space-y-4 pl-4">
+                                                        <p className="text-slate-600 text-lg leading-relaxed font-lyrics italic">{v.text}</p>
+                                                        <p className="text-slate-400 text-base leading-relaxed font-sans font-medium">{verses.HINDI[idx]?.text}</p>
+                                                    </div>
+                                                    {selectedVerse === v.verse && (
+                                                        <div className="absolute top-4 right-6 flex items-center gap-1.5 text-indigo-600 font-black text-[10px] uppercase tracking-widest">
+                                                            <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse"></div> Live on Stage
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 
 
 function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurrentSlideIndex, isBlack, setIsBlack, previewMode, previewFont, onEdit, onDelete, isFavourite, onToggleFavourite }) {

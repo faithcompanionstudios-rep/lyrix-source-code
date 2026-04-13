@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LyriX Stage</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Outfit:wght@100..900&display=swap');
+
         body,
         html {
             margin: 0;
@@ -14,10 +16,9 @@
             height: 100%;
             background-color: black;
             color: white;
-            font-family: sans-serif;
+            font-family: 'Outfit', sans-serif;
             overflow: hidden;
             cursor: none;
-            /* Hide cursor for cleanliness */
         }
 
         #content {
@@ -26,17 +27,50 @@
             justify-content: center;
             height: 100vh;
             text-align: center;
-            padding: 40px;
+            padding: 60px;
             box-sizing: border-box;
             transition: opacity 0.5s ease;
         }
 
         .text {
             font-size: 5vw;
-            /* Responsive large text */
             font-weight: bold;
             line-height: 1.4;
             white-space: pre-wrap;
+            transition: all 0.3s ease;
+        }
+
+        /* Bible Specific Styles */
+        #bible-container {
+            display: none;
+            flex-direction: column;
+            gap: 2vh;
+            width: 100%;
+            max-width: 90vw;
+        }
+
+        .bible-primary {
+            font-family: 'Lora', serif;
+            font-style: italic;
+            font-size: 5vw;
+            color: #ffffff;
+            text-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .bible-secondary {
+            font-family: 'Outfit', sans-serif;
+            font-size: 4vw;
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 500;
+        }
+
+        .bible-ref {
+            font-size: 2vw;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 4vh;
+            font-weight: 800;
         }
 
         .hidden {
@@ -49,9 +83,13 @@
 <body>
     <div id="content">
         <div id="slide-text" class="text"></div>
+        <div id="bible-container">
+            <div id="bible-primary" class="bible-primary"></div>
+            <div id="bible-secondary" class="bible-secondary"></div>
+            <div id="bible-ref" class="bible-ref"></div>
+        </div>
     </div>
 
-    <!-- Minimalist Church Profile Watermark -->
     <div id="church-watermark"
         style="position: absolute; bottom: 15px; right: 20px; font-size: 1.5vh; color: rgba(255,255,255,0.4); font-style: italic; font-weight: 300; letter-spacing: 0.05em; transition: opacity 0.5s ease; opacity: 0; pointer-events: none; z-index: 10;">
         &copy; ChurchLyriXApp<span id="church-info"></span>
@@ -61,16 +99,38 @@
         const socket = io('http://localhost:3001');
         const contentDiv = document.getElementById('content');
         const slideText = document.getElementById('slide-text');
+        const bibleContainer = document.getElementById('bible-container');
+        const biblePrimary = document.getElementById('bible-primary');
+        const bibleSecondary = document.getElementById('bible-secondary');
+        const bibleRef = document.getElementById('bible-ref');
         const watermark = document.getElementById('church-watermark');
         const watermarkInfo = document.getElementById('church-info');
 
-        socket.on('connect', () => {
-            console.log('Connected to server');
+        let currentMode = 'slide'; // slide or bible
+
+        function updateBibleContent(data) {
+            currentMode = 'bible';
+            slideText.style.display = 'none';
+            bibleContainer.style.display = 'flex';
+            
+            biblePrimary.innerText = data.primaryText || '';
+            bibleSecondary.innerText = data.secondaryText || '';
+            bibleRef.innerText = data.reference || '';
+        }
+
+        function updateSlideContent(slide) {
+            currentMode = 'slide';
+            bibleContainer.style.display = 'none';
+            slideText.style.display = 'block';
+            slideText.innerText = slide || '';
+        }
+
+        socket.on('current-slide', (data) => {
+            updateSlideContent(data.slide);
         });
 
-        // Socket.io for generic (web) clients
-        socket.on('current-slide', (data) => {
-            slideText.innerText = data.slide || '';
+        socket.on('bible-verse-update', (data) => {
+            updateBibleContent(data);
         });
 
         socket.on('blank-screen', (isBlack) => {
@@ -87,20 +147,21 @@
             applySettings(settings);
         });
 
-        // Direct IPC bindings for the LyriX Local Projector Client (Zero Latency & Crashproof)
-        if (window.electron) {
-            window.electron.onProjectorStateChanged((event, state) => { /* ignore */ });
-        }
-
-        // Helper function for styling
         function applySettings(settings) {
-            if (settings.fontSize) slideText.style.fontSize = `${settings.fontSize}vw`;
-            if (settings.isBold !== undefined) slideText.style.fontWeight = settings.isBold ? 'bold' : 'normal';
+            if (settings.fontSize) {
+                slideText.style.fontSize = `${settings.fontSize}vw`;
+                biblePrimary.style.fontSize = `${settings.fontSize}vw`;
+                bibleSecondary.style.fontSize = `${settings.fontSize * 0.8}vw`;
+            }
+            if (settings.isBold !== undefined) {
+                const weight = settings.isBold ? 'bold' : 'normal';
+                slideText.style.fontWeight = weight;
+                bibleSecondary.style.fontWeight = weight;
+            }
 
             if (settings.color) document.body.style.color = settings.color;
             if (settings.backgroundColor) {
                 document.body.style.backgroundColor = settings.backgroundColor;
-                // Adjust watermark color for light backgrounds
                 const isLight = (settings.backgroundColor.match(/^#([0-9a-f]{6})$/i) &&
                     ((parseInt(settings.backgroundColor.substring(1, 3), 16) * 299 +
                         parseInt(settings.backgroundColor.substring(3, 5), 16) * 587 +
@@ -111,15 +172,17 @@
                 document.body.style.backgroundImage = `url("${settings.backgroundImage}")`;
                 document.body.style.backgroundSize = 'cover';
                 document.body.style.backgroundPosition = 'center';
-                watermark.style.color = 'rgba(255,255,255,0.6)'; // Assume dark/mixed bg needs slightly stronger white
+                watermark.style.color = 'rgba(255,255,255,0.6)';
             } else if (settings.backgroundImage === '') {
                 document.body.style.backgroundImage = 'none';
             }
 
-            if (settings.textAlign) slideText.style.textAlign = settings.textAlign;
+            if (settings.textAlign) {
+                contentDiv.style.textAlign = settings.textAlign;
+                contentDiv.style.justifyContent = settings.textAlign === 'center' ? 'center' : (settings.textAlign === 'left' ? 'flex-start' : 'flex-end');
+            }
             if (settings.fontFamily) slideText.style.fontFamily = settings.fontFamily;
 
-            // Display Church Info
             if (settings.churchName || settings.churchPlace) {
                 let infoText = '';
                 if (settings.churchName) infoText += ` | ${settings.churchName}`;
@@ -127,18 +190,14 @@
                 watermarkInfo.innerText = infoText;
                 watermark.style.opacity = '1';
             } else {
-                // If they cleared settings but we still want just the app copyright, we leave it visible.
                 watermarkInfo.innerText = '';
                 watermark.style.opacity = '1';
             }
         }
 
-        // Attach generic IPC receiver for Projector
         if (window.electron) {
             if (window.electron.onProjectorSyncSlide) {
-                window.electron.onProjectorSyncSlide((event, data) => {
-                    slideText.innerText = data.slide || '';
-                });
+                window.electron.onProjectorSyncSlide((event, data) => updateSlideContent(data.slide));
             }
             if (window.electron.onProjectorSyncBlank) {
                 window.electron.onProjectorSyncBlank((event, isBlack) => {
@@ -147,9 +206,16 @@
                 });
             }
             if (window.electron.onProjectorSyncSettings) {
-                window.electron.onProjectorSyncSettings((event, settings) => {
-                    applySettings(settings);
-                });
+                window.electron.onProjectorSyncSettings((event, settings) => applySettings(settings));
+            }
+            if (window.electron.onBibleVerseUpdate) {
+                window.electron.onBibleVerseUpdate((event, data) => updateBibleContent(data));
+            }
+            // Bible listener for direct IPC
+            if (window.electron.invoke) {
+                // We use contextBridge to expose listeners, so we should use onBibleVerseUpdate if we added it to preload.
+                // But for now, I'll use a generic listener if I added it to main.js and preload.js.
+                // Wait, I didn't add the bible-verse-update listener to preload.js. I should do that!
             }
         }
     </script>
