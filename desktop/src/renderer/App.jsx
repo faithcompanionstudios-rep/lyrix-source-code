@@ -2509,16 +2509,27 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
         }
     }, [selectedBook]);
 
+    const [pendingProjectVerse, setPendingProjectVerse] = useState(null);
+
     useEffect(() => {
         if (selectedBook && selectedChapter) {
             const fetchVerses = async () => {
                 const kjv = await window.electron.invoke('bible:get-verses', 'KJV', selectedBook.id, selectedChapter);
                 const hindi = await window.electron.invoke('bible:get-verses', 'HINDI', selectedBook.id, selectedChapter);
                 setVerses({ KJV: kjv, HINDI: hindi });
+
+                if (pendingProjectVerse) {
+                    setTimeout(() => {
+                        handleProject(pendingProjectVerse, kjv, hindi);
+                        const el = document.getElementById(`verse-${pendingProjectVerse}`);
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        setPendingProjectVerse(null);
+                    }, 50);
+                }
             };
             fetchVerses();
         }
-    }, [selectedBook, selectedChapter]);
+    }, [selectedBook, selectedChapter, pendingProjectVerse]);
 
     useEffect(() => {
         if (selectedVerse && selectorMode === 'verse') {
@@ -2551,9 +2562,11 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
         }
     };
 
-    const handleProject = (vNum) => {
-        const kjvVerse = verses.KJV.find(v => v.verse === vNum)?.text || '';
-        const hindiVerse = verses.HINDI.find(v => v.verse === vNum)?.text || '';
+    const handleProject = (vNum, customKjv = null, customHindi = null) => {
+        const sourceKjv = customKjv || verses.KJV;
+        const sourceHindi = customHindi || verses.HINDI;
+        const kjvVerse = sourceKjv.find(v => v.verse === vNum)?.text || '';
+        const hindiVerse = sourceHindi.find(v => v.verse === vNum)?.text || '';
 
         window.electron.invoke('projector-sync', {
             type: 'bible-verse',
@@ -2566,9 +2579,8 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
         setSelectedVerse(vNum);
     };
 
-    const handleSmartJump = (query) => {
-        setSearchQuery(query);
-        // Basic Smart Jump: "Joh 3:16" or "1 Sam 2:3"
+    const executeSmartJump = (query) => {
+        if (!query.trim()) return;
         const match = query.match(/^(\d?\s*[a-zA-Z]+)\s*(\d+)[:\s]*(\d*)$/);
         if (match) {
             const bookNamePart = match[1].toLowerCase().trim();
@@ -2585,7 +2597,14 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                 setSelectedChapter(chapter);
                 setSelectedVerse(verse);
                 setSelectorMode('verse');
+                if (match[3]) {
+                    setPendingProjectVerse(verse);
+                }
+            } else {
+                setStatus('Smart Jump: Book not found -> ' + match[1]);
             }
+        } else {
+            setStatus('Smart Jump: Invalid format. Use "Joh 3:16" or "1 Sam 2").');
         }
     };
 
@@ -2603,7 +2622,8 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                                 type="text"
                                 placeholder="Smart Jump (e.g. Joh 3:16)"
                                 value={searchQuery}
-                                onChange={(e) => handleSmartJump(e.target.value)}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') executeSmartJump(searchQuery); }}
                                 className="w-64 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm italic font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all shadow-sm pl-10"
                             />
                             <svg className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
