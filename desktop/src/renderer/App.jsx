@@ -1,11 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
 import QRCode from 'react-qr-code';
-import Tooltip from './components/Tooltip';
+
 import securityImg from '../assets/security.png';
 
 // Helper to strip leading numbers (e.g. "1. Title" -> "Title")
 const cleanText = (text) => text ? text.replace(/^\d+\.?\s*/, '') : '';
+
+// Helper to remove KJV marginal notes (has colon or Heb/Gr) but keep italics
+const cleanBibleText = (text) => {
+    if (!text) return '';
+    return text.replace(/\{([^}]+)\}/g, (match, inner) => {
+        if (inner.includes(':') || inner.match(/Heb\.|Gr\.|etc\./i)) {
+            return ''; // Remove completely
+        }
+        return inner; // Keep the text without brackets
+    }).replace(/\s+/g, ' ').trim();
+};
 
 const CustomSelect = ({ value, onChange, options, className, placeholder = "Select..." }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -63,6 +74,39 @@ const CustomSelect = ({ value, onChange, options, className, placeholder = "Sele
     );
 };
 
+const Tooltip = ({ text, children, position = 'bottom' }) => {
+    const [isVisible, setIsVisible] = useState(false);
+    
+    // Whitelist per user request
+    const allowedTooltips = [
+        "Add to Sunday schedule",
+        "Add verse range to Sunday Schedule (leave empty for full chapter)",
+        "Import slides from PowerPoint (.pptx)"
+    ];
+
+    if (!allowedTooltips.includes(text)) {
+        return children;
+    }
+
+    return (
+        <div className="relative inline-block group" onMouseEnter={() => setIsVisible(true)} onMouseLeave={() => setIsVisible(false)}>
+            {children}
+            {isVisible && text && (
+                <div className={clsx(
+                    "absolute z-[200] px-3 py-1.5 bg-slate-900/80 backdrop-blur-md text-white text-[10px] font-bold rounded-xl shadow-xl whitespace-nowrap animate-in fade-in zoom-in-95 duration-200 pointer-events-none",
+                    position === 'bottom' ? "top-full mt-2 left-1/2 -translate-x-1/2" : position === 'top' ? "bottom-full mb-2 left-1/2 -translate-x-1/2" : position === 'left' ? "right-full mr-2 top-1/2 -translate-y-1/2" : position === 'right' ? "left-full ml-2 top-1/2 -translate-y-1/2" : ""
+                )}>
+                    <div className={clsx(
+                        "absolute w-2 h-2 bg-slate-900/80 rotate-45",
+                        position === 'bottom' ? "-top-1 left-1/2 -translate-x-1/2" : position === 'top' ? "-bottom-1 left-1/2 -translate-x-1/2" : "hidden"
+                    )}></div>
+                    {text}
+                </div>
+            )}
+        </div>
+    );
+};
+
 function App() {
     const [status, setStatus] = useState('Disconnected');
     const [ip, setIp] = useState('Unknown');
@@ -106,7 +150,7 @@ function App() {
     const [updateProgress, setUpdateProgress] = useState(0);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
-    const [appVersion, setAppVersion] = useState('1.6.7');
+    const [appVersion, setAppVersion] = useState('1.6.8');
     const [isSyncing, setIsSyncing] = useState(false);
 
     const confirmOverwrite = (title) => {
@@ -132,6 +176,7 @@ function App() {
     const [maxRemoteDevices, setMaxRemoteDevices] = useState(() => Number(localStorage.getItem('setting_maxRemoteDevices')) || 1);
     const [churchName, setChurchName] = useState(() => localStorage.getItem('setting_churchName') || '');
     const [churchPlace, setChurchPlace] = useState(() => localStorage.getItem('setting_churchPlace') || '');
+    const [autoProjectBible, setAutoProjectBible] = useState(() => localStorage.getItem('setting_autoProjectBible') !== 'false');
     const [isEditingProfile, setIsEditingProfile] = useState(() => !localStorage.getItem('setting_churchName'));
     const [welcomeStep, setWelcomeStep] = useState(() => !localStorage.getItem('setting_churchName') ? 1 : 0);
     const [showAppControls, setShowAppControls] = useState(() => localStorage.getItem('setting_showAppControls') !== 'false');
@@ -218,9 +263,10 @@ function App() {
         localStorage.setItem('setting_visibleCategories', JSON.stringify(visibleCategories));
         localStorage.setItem('setting_showAppControls', showAppControls);
         localStorage.setItem('setting_showDatabaseManagement', showDatabaseManagement);
+        localStorage.setItem('setting_autoProjectBible', autoProjectBible);
 
         // Removed aggressive pruning: we now trust visibleCategories from localStorage or remote.
-    }, [favourites, fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, defaultCategory, autoFormat, previewMode, previewFont, maxRemoteDevices, churchName, churchPlace, visibleCategories, showAppControls, showDatabaseManagement, allCategories]);
+    }, [favourites, fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, defaultCategory, autoFormat, previewMode, previewFont, maxRemoteDevices, churchName, churchPlace, visibleCategories, showAppControls, showDatabaseManagement, allCategories, autoProjectBible]);
 
     useEffect(() => {
         if (window.electron) {
@@ -1365,6 +1411,7 @@ function App() {
                                                     {isSyncing ? (
                                                         <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
                                                     ) : (
+                                                    <Tooltip text="Push local changes and pull updates from the cloud">
                                                         <button
                                                             onClick={async () => {
                                                                 setIsSyncing(true);
@@ -1376,6 +1423,7 @@ function App() {
                                                         >
                                                             Sync Now
                                                         </button>
+                                                    </Tooltip>
                                                     )}
                                                 </div>
                                                 <p className="text-[10px] text-slate-400 italic">Push local changes and pull updates from the cloud.</p>
@@ -1387,16 +1435,18 @@ function App() {
                                                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status Check</span>
                                                         <span className="text-sm font-bold text-slate-700">Connection Health</span>
                                                     </div>
-                                                    <button
-                                                        onClick={async () => {
-                                                            const status = await window.electron.invoke('get-db-status');
-                                                            setDbStatus(status);
-                                                            setCustomAlert(status.status === 'connected' ? "Connection verified!" : "Unable to reach database.");
-                                                        }}
-                                                        className="px-4 py-2 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100 shadow-sm transition-all active:scale-95 text-[10px] font-bold uppercase tracking-widest group-hover/rec:shadow-md"
-                                                    >
-                                                        Reconnect
-                                                    </button>
+                                                    <Tooltip text="Verify connection to Firebase">
+                                                        <button
+                                                            onClick={async () => {
+                                                                const status = await window.electron.invoke('get-db-status');
+                                                                setDbStatus(status);
+                                                                setCustomAlert(status.status === 'connected' ? "Connection verified!" : "Unable to reach database.");
+                                                            }}
+                                                            className="px-4 py-2 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100 shadow-sm transition-all active:scale-95 text-[10px] font-bold uppercase tracking-widest group-hover/rec:shadow-md"
+                                                        >
+                                                            Reconnect
+                                                        </button>
+                                                    </Tooltip>
                                                 </div>
                                                 <p className="text-[10px] text-slate-400 italic">Verify your connection to the Firebase services.</p>
                                             </div>
@@ -1543,14 +1593,20 @@ function App() {
                                                     </div>
                                                 </div>
 
-                                                <div className="flex gap-3 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
-                                                    <div className="flex-1 flex flex-col gap-1.5">
+                                                <div className="flex gap-3 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm items-end">
+                                                    <div className="flex-1 flex flex-col gap-1.5 items-center">
                                                         <span className="text-[9px] font-bold text-slate-400 uppercase">Text</span>
-                                                        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-full h-8 rounded-lg cursor-pointer border-none bg-transparent" />
+                                                        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-full h-8 rounded-lg cursor-pointer border-none bg-transparent p-0 block" />
                                                     </div>
-                                                    <div className="flex-1 flex flex-col gap-1.5">
+                                                    <button 
+                                                        onClick={() => { const temp = color; setColor(backgroundColor); setBackgroundColor(temp); }} 
+                                                        className="w-7 h-7 mb-0.5 shrink-0 bg-slate-50 hover:bg-slate-100 hover:text-indigo-600 rounded-full flex items-center justify-center border border-slate-200 text-slate-400 shadow-sm transition-all group/swap"
+                                                    >
+                                                        <svg className="w-4 h-4 transition-transform duration-300 group-hover/swap:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                                                    </button>
+                                                    <div className="flex-1 flex flex-col gap-1.5 items-center">
                                                         <span className="text-[9px] font-bold text-slate-400 uppercase">BACKGROUND</span>
-                                                        <input type="color" value={backgroundColor} onChange={(e) => setBackgroundColor(e.target.value)} className="w-full h-8 rounded-lg cursor-pointer border-none bg-transparent" />
+                                                        <input type="color" value={backgroundColor} onChange={(e) => setBackgroundColor(e.target.value)} className="w-full h-8 rounded-lg cursor-pointer border-none bg-transparent p-0 block" />
                                                     </div>
                                                 </div>
                                             </div>
@@ -1579,6 +1635,7 @@ function App() {
                                                         options={[
                                                             { value: "sans-serif", label: "Projector: Modern (Sans)" },
                                                             { value: "serif", label: "Projector: Classic (Serif)" },
+                                                            { value: "'Lora', serif", label: "Projector: Bible Serif (Lora)" },
                                                             { value: "'Times New Roman', Times, serif", label: "Projector: Times New Roman" },
                                                             { value: "'Arial', sans-serif", label: "Projector: Arial" }
                                                         ]}
@@ -1608,53 +1665,80 @@ function App() {
                                             </div>
                                             <h3 className="text-xl font-bold text-slate-800 tracking-tight">Application Behavior</h3>
                                         </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            <div className="space-y-4">
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Default Category</label>
-                                                    <CustomSelect
-                                                        value={defaultCategory}
-                                                        onChange={(e) => setDefaultCategory(e.target.value)}
-                                                        options={allCategories.map(cat => ({ value: cat, label: cat }))}
-                                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 focus:bg-white focus:border-indigo-500 transition-all shadow-inner italic"
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Lyrics Preview Layout</label>
-                                                    <CustomSelect
-                                                        value={previewMode}
-                                                        onChange={(e) => setPreviewMode(e.target.value)}
-                                                        options={[
-                                                            { value: "single", label: "Single Slide (Large Text)" },
-                                                            { value: "grid", label: "Grid Overview (Compact)" }
-                                                        ]}
-                                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 focus:bg-white focus:border-indigo-500 transition-all shadow-inner italic"
-                                                    />
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                            <div className="space-y-6">
+                                                <div className="space-y-4">
+                                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                                        <span className="w-8 h-px bg-slate-200"></span>
+                                                        Preferences
+                                                    </h4>
+                                                    <div className="space-y-3">
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Default Category</label>
+                                                            <CustomSelect
+                                                                value={defaultCategory}
+                                                                onChange={(e) => setDefaultCategory(e.target.value)}
+                                                                options={allCategories.map(cat => ({ value: cat, label: cat }))}
+                                                                className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 focus:bg-white focus:border-indigo-500 transition-all shadow-inner italic"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Lyrics Preview Layout</label>
+                                                            <CustomSelect
+                                                                value={previewMode}
+                                                                onChange={(e) => setPreviewMode(e.target.value)}
+                                                                options={[
+                                                                    { value: "single", label: "Single Slide (Large Text)" },
+                                                                    { value: "grid", label: "Grid Overview (Compact)" }
+                                                                ]}
+                                                                className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 focus:bg-white focus:border-indigo-500 transition-all shadow-inner italic"
+                                                            />
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div className="space-y-3 pt-6">
-                                                <label className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl cursor-pointer hover:bg-white hover:border-indigo-100 transition-all shadow-inner group/tog">
-                                                    <div className="flex flex-col">
-                                                        <span className="font-bold text-slate-700 text-sm group-hover/tog:text-indigo-600 transition-colors">Auto-Format Lyrics</span>
-                                                        <span className="text-[10px] text-slate-400 italic">Automatically try to format pasted lyrics into stanzas.</span>
+                                            <div className="space-y-6">
+                                                <div className="space-y-4">
+                                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                                        <span className="w-8 h-px bg-slate-200"></span>
+                                                        System Toggles
+                                                    </h4>
+                                                    <div className="grid grid-cols-1 gap-3">
+                                                        <label className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl cursor-pointer hover:bg-white hover:border-indigo-100 transition-all shadow-inner group/tog">
+                                                            <div className="flex flex-col">
+                                                                <span className="font-bold text-slate-700 text-sm group-hover/tog:text-indigo-600 transition-colors">Auto-Format Lyrics</span>
+                                                                <span className="text-[10px] text-slate-400 italic">Format pasted text into stanzas.</span>
+                                                            </div>
+                                                            <div className="relative w-10 h-5 shrink-0">
+                                                                <input type="checkbox" checked={autoFormat} onChange={(e) => setAutoFormat(e.target.checked)} className="peer sr-only" id="tog-auto" />
+                                                                <label htmlFor="tog-auto" className="block w-10 h-5 bg-slate-200 rounded-full cursor-pointer transition-colors peer-checked:bg-indigo-600"></label>
+                                                                <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-5 shadow-sm"></div>
+                                                            </div>
+                                                        </label>
+                                                        <label className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl cursor-pointer hover:bg-white hover:border-indigo-100 transition-all shadow-inner group/tog">
+                                                            <div className="flex flex-col">
+                                                                <span className="font-bold text-slate-700 text-sm group-hover/tog:text-indigo-600 transition-colors">Auto-Project Bible</span>
+                                                                <span className="text-[10px] text-slate-400 italic">Project verse immediately on click.</span>
+                                                            </div>
+                                                            <div className="relative w-10 h-5 shrink-0">
+                                                                <input type="checkbox" checked={autoProjectBible} onChange={(e) => setAutoProjectBible(e.target.checked)} className="peer sr-only" id="tog-bible" />
+                                                                <label htmlFor="tog-bible" className="block w-10 h-5 bg-slate-200 rounded-full cursor-pointer transition-colors peer-checked:bg-indigo-600"></label>
+                                                                <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-5 shadow-sm"></div>
+                                                            </div>
+                                                        </label>
+                                                        <label className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl cursor-pointer hover:bg-white hover:border-indigo-100 transition-all shadow-inner group/tog">
+                                                            <div className="flex flex-col">
+                                                                <span className="font-bold text-slate-700 text-sm group-hover/tog:text-indigo-600 transition-colors">Application Controls</span>
+                                                                <span className="text-[10px] text-slate-400 italic">Show developer & system tools.</span>
+                                                            </div>
+                                                            <div className="relative w-10 h-5 shrink-0">
+                                                                <input type="checkbox" checked={showAppControls} onChange={(e) => setShowAppControls(e.target.checked)} className="peer sr-only" id="tog-controls" />
+                                                                <label htmlFor="tog-controls" className="block w-10 h-5 bg-slate-200 rounded-full cursor-pointer transition-colors peer-checked:bg-indigo-600"></label>
+                                                                <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-5 shadow-sm"></div>
+                                                            </div>
+                                                        </label>
                                                     </div>
-                                                    <div className="relative w-10 h-5 shrink-0">
-                                                        <input type="checkbox" checked={autoFormat} onChange={(e) => setAutoFormat(e.target.checked)} className="peer sr-only" id="tog-auto" />
-                                                        <label htmlFor="tog-auto" className="block w-10 h-5 bg-slate-200 rounded-full cursor-pointer transition-colors peer-checked:bg-indigo-600"></label>
-                                                        <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-5 shadow-sm"></div>
-                                                    </div>
-                                                </label>
-                                                <label className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl cursor-pointer hover:bg-white hover:border-indigo-100 transition-all shadow-inner group/tog">
-                                                    <div className="flex flex-col">
-                                                        <span className="font-bold text-slate-700 text-sm group-hover/tog:text-indigo-600 transition-colors">Show Application Controls</span>
-                                                        <span className="text-[10px] text-slate-400 italic">Show or hide the system refresh, zoom, and developer tools.</span>
-                                                    </div>
-                                                    <div className="relative w-10 h-5 shrink-0">
-                                                        <input type="checkbox" checked={showAppControls} onChange={(e) => setShowAppControls(e.target.checked)} className="peer sr-only" id="tog-controls" />
-                                                        <label htmlFor="tog-controls" className="block w-10 h-5 bg-slate-200 rounded-full cursor-pointer transition-colors peer-checked:bg-indigo-600"></label>
-                                                        <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-5 shadow-sm"></div>
-                                                    </div>
-                                                </label>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -2539,8 +2623,12 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
         }
     }, [selectedVerse]);
 
-    const handleProject = (vNum) => {
-        const kjvVerse = verses.KJV.find(v => v.verse === vNum)?.text || '';
+    const handleProject = (vNum, forceProject = false) => {
+        setSelectedVerse(vNum);
+        if (!forceProject && !autoProjectBible) return;
+
+        const rawKjv = verses.KJV.find(v => v.verse === vNum)?.text || '';
+        const kjvVerse = cleanBibleText(rawKjv);
         const hindiVerse = verses.HINDI.find(v => v.verse === vNum)?.text || '';
 
         window.electron.invoke('projector-sync', {
@@ -2551,7 +2639,11 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                 secondaryText: hindiVerse
             }
         });
-        setSelectedVerse(vNum);
+
+        // Ensure projector is open
+        if (!isProjectorOpen) {
+            window.electron.invoke('toggle-projector-window').then(isOpen => setIsProjectorOpen(isOpen));
+        }
     };
 
     const handleAddToSchedule = async () => {
@@ -2567,14 +2659,16 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
         const title = `\u{1F4D6} ${selectedBook.name} ${selectedChapter}${rangeLabel}`;
 
         const filteredKJV = verses.KJV.filter(v => v.verse >= fromV && v.verse <= toV);
-        const lyricsLines = filteredKJV.map(v => {
+        const slideArray = filteredKJV.map(v => {
             const hindiVerse = verses.HINDI.find(h => h.verse === v.verse);
             const hindiText = hindiVerse?.text || '';
-            return `${v.verse}. ${v.text}${hindiText ? '\n' + hindiText : ''}`;
-        }).join('\n\n');
+            const cleanedKJV = cleanBibleText(v.text);
+            const reference = `${selectedBook.name} ${selectedChapter}:${v.verse}`;
+            return `${cleanedKJV}${hindiText ? '\n\n' + hindiText : ''}\n\n${reference}`;
+        });
 
         try {
-            await window.electron.invoke('bible:add-to-schedule', title, lyricsLines);
+            await window.electron.invoke('bible:add-to-schedule', title, slideArray);
             setStatus(`Added "${title}" to Sunday Schedule`);
         } catch (err) {
             setStatus('Could not add to schedule: ' + err.message);
@@ -2585,9 +2679,9 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
         setSearchQuery(query);
         if (!query.trim()) return;
 
-        // Enhanced Smart Jump: handles "John 3:16", "1 Sam 2:3", "Gen 1", "Joh 3 16", "genesis 1:1"
-        const match = query.trim().match(/^(\d?\s*[a-zA-Z][a-zA-Z\s]*?)\s+(\d+)\s*[:\s.,]\s*(\d+)$/);
-        const matchChapterOnly = query.trim().match(/^(\d?\s*[a-zA-Z][a-zA-Z\s]*?)\s+(\d+)$/);
+        // Enhanced Smart Jump: handles "John 3:16", "1 Sam 2:3", "Gen 1", "Joh 3 16", "gen 1 5", "Gen1:5"
+        const match = query.trim().match(/^(\d?\s*[a-zA-Z][a-zA-Z\s]*?)\s*(\d+)\s*[:\s.,]\s*(\d+)$/);
+        const matchChapterOnly = query.trim().match(/^(\d?\s*[a-zA-Z][a-zA-Z\s]*?)\s*(\d+)$/);
 
         let bookNamePart, chapter, verse;
 
@@ -2606,7 +2700,7 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
         // Try multiple matching strategies
         const book = bibleBooks.find(b => {
             const name = b.name.toLowerCase();
-            const id = (b.id || '').toLowerCase();
+            const id = String(b.id || '').toLowerCase();
             return name === bookNamePart ||
                    name.startsWith(bookNamePart) ||
                    id === bookNamePart ||
@@ -2622,6 +2716,32 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
             setSelectorMode('verse');
         }
     };
+
+    // Keyboard Navigation for verses
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (activeTab !== 'bible' || !verses.KJV.length) return;
+            // Ignore if user is typing in an input field
+            const isInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
+            if (isInput) return;
+
+            if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+                e.preventDefault();
+                if (selectedVerse < verses.KJV.length) {
+                    handleProject(selectedVerse + 1, true); // Force project on keyboard nav
+                }
+            } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+                e.preventDefault();
+                if (selectedVerse > 1) {
+                    handleProject(selectedVerse - 1, true); // Force project on keyboard nav
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedVerse, verses, selectedBook, selectorMode]);
+
 
     return (
         <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
@@ -2639,7 +2759,7 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                                     placeholder="From"
                                     value={rangeStart}
                                     onChange={e => setRangeStart(e.target.value)}
-                                    className="w-14 px-2 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-center focus:ring-2 focus:ring-amber-400/30 outline-none"
+                                    className="w-14 px-2 py-1.5 bg-white border border-amber-200 rounded-xl text-[10px] font-bold text-center italic focus:ring-2 focus:ring-amber-400/30 outline-none placeholder:text-slate-300"
                                     min={1}
                                     max={verses.KJV.length}
                                 />
@@ -2649,39 +2769,63 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                                     placeholder="To"
                                     value={rangeEnd}
                                     onChange={e => setRangeEnd(e.target.value)}
-                                    className="w-14 px-2 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-center focus:ring-2 focus:ring-amber-400/30 outline-none"
+                                    className="w-14 px-2 py-1.5 bg-white border border-amber-200 rounded-xl text-[10px] font-bold text-center italic focus:ring-2 focus:ring-amber-400/30 outline-none placeholder:text-slate-300"
                                     min={1}
                                     max={verses.KJV.length}
                                 />
-                                <button
-                                    onClick={handleAddToSchedule}
-                                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-bold shadow-sm transition-all active:scale-95 flex items-center gap-1 whitespace-nowrap"
-                                    title="Add verse range to Sunday Schedule (leave empty for full chapter)"
-                                >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
-                                    Schedule
-                                </button>
+                                <Tooltip text="Add verse range to Sunday Schedule (leave empty for full chapter)" position="top">
+                                    <button
+                                        onClick={handleAddToSchedule}
+                                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-bold shadow-sm transition-all active:scale-95 flex items-center gap-1 whitespace-nowrap"
+                                    >
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
+                                        Schedule
+                                    </button>
+                                </Tooltip>
                             </div>
                         )}
-                        <div className="relative">
-                            <input
-                                type="text"
-                                placeholder="Smart Jump (e.g. Joh 3:16)"
-                                value={searchQuery}
-                                onChange={(e) => handleSmartJump(e.target.value)}
-                                className="w-64 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm italic font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all shadow-sm pl-10"
-                            />
-                            <svg className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                        <div className="flex flex-col gap-2">
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="Smart Jump (e.g. Joh 3:16)"
+                                    value={searchQuery}
+                                    onChange={(e) => handleSmartJump(e.target.value)}
+                                    className="w-64 px-4 py-2 bg-white border border-slate-200 rounded-2xl text-sm italic font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all shadow-sm pl-10"
+                                />
+                                <svg className="w-4 h-4 absolute left-3.5 top-2.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Sub-navigation for Selectors */}
                 {setupStatus.ready && (
-                    <div className="flex gap-1 bg-slate-200/50 p-1 rounded-2xl w-fit mb-4">
-                        <button onClick={() => setSelectorMode('book')} className={clsx("px-6 py-2 rounded-xl text-xs font-bold transition-all", selectorMode === 'book' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700")}>BOOK</button>
-                        <button onClick={() => setSelectorMode('chapter')} className={clsx("px-6 py-2 rounded-xl text-xs font-bold transition-all", selectorMode === 'chapter' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700")}>CHAPTER</button>
-                        <button onClick={() => setSelectorMode('verse')} className={clsx("px-6 py-2 rounded-xl text-xs font-bold transition-all", selectorMode === 'verse' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700")}>VERSE</button>
+                    <div className="flex items-center justify-between bg-slate-200/50 p-1 rounded-2xl w-full mb-4">
+                        <div className="flex gap-1">
+                            <button onClick={() => setSelectorMode('book')} className={clsx("px-6 py-2 rounded-xl text-xs font-bold transition-all", selectorMode === 'book' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700")}>BOOK</button>
+                            <button onClick={() => setSelectorMode('chapter')} className={clsx("px-6 py-2 rounded-xl text-xs font-bold transition-all", selectorMode === 'chapter' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700")}>CHAPTER</button>
+                            <button onClick={() => setSelectorMode('verse')} className={clsx("px-6 py-2 rounded-xl text-xs font-bold transition-all", selectorMode === 'verse' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700")}>VERSE</button>
+                        </div>
+                        <div className="flex items-center gap-2 pr-2">
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mr-1 shadow-sm">Navigate Verse</span>
+                            <Tooltip text="Prev Verse (Arrow Left/Up)" position="top">
+                                <button
+                                    onClick={() => { if (selectedVerse > 1) handleProject(selectedVerse - 1, true); }}
+                                    className="p-1.5 bg-white border border-slate-100 rounded-lg hover:bg-slate-50 hover:border-slate-300 text-indigo-500 hover:text-indigo-700 transition-all active:scale-95 shadow-sm"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
+                                </button>
+                            </Tooltip>
+                            <Tooltip text="Next Verse (Arrow Right/Down)" position="top">
+                                <button
+                                    onClick={() => { if (selectedVerse < verses.KJV.length) handleProject(selectedVerse + 1, true); }}
+                                    className="p-1.5 bg-white border border-slate-100 rounded-lg hover:bg-slate-50 hover:border-slate-300 text-indigo-500 hover:text-indigo-700 transition-all active:scale-95 shadow-sm"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
+                                </button>
+                            </Tooltip>
+                        </div>
                     </div>
                 )}
             </div>
@@ -2823,7 +2967,7 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                                                         {v.verse}
                                                     </div>
                                                     <div className="space-y-4 pl-4">
-                                                        <p className="text-slate-600 text-lg leading-relaxed font-lyrics italic">{v.text}</p>
+                                                        <p className="text-slate-600 text-lg leading-relaxed font-lyrics italic">{cleanBibleText(v.text)}</p>
                                                         <p className="text-slate-400 text-base leading-relaxed font-sans font-medium">{verses.HINDI[idx]?.text}</p>
                                                     </div>
                                                     {selectedVerse === v.verse && (
@@ -2924,7 +3068,7 @@ function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurren
             {/* Bottom Control Bar */}
             <div className="h-16 bg-white border-t border-slate-200 flex items-center justify-between px-6 shadow-sm">
                 <div className="flex items-center gap-4">
-                    <Tooltip text={isFavourite ? "Remove from Favourites" : "Add to Favourites"}>
+                    <Tooltip text={isFavourite ? "Remove from Favourites" : "Add to Favourites"} position="top">
                         <button
                             onClick={onToggleFavourite}
                             disabled={!currentSong}
@@ -2939,7 +3083,7 @@ function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurren
                             {isFavourite ? 'Favourited' : 'Favourite'}
                         </button>
                     </Tooltip>
-                    <Tooltip text="Edit Lyrics">
+                    <Tooltip text="Edit Lyrics" position="top">
                         <button
                             onClick={onEdit}
                             disabled={!currentSong}
@@ -2949,7 +3093,7 @@ function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurren
                             Edit
                         </button>
                     </Tooltip>
-                    <Tooltip text="Delete Song">
+                    <Tooltip text="Delete Song" position="top">
                         <button
                             onClick={onDelete}
                             disabled={!currentSong}
@@ -2959,43 +3103,49 @@ function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurren
                             Delete
                         </button>
                     </Tooltip>
-                    <button
-                        onClick={() => setIsBlack(!isBlack)}
-                        className={clsx(
-                            "flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold transition-all border",
-                            isBlack
-                                ? "bg-red-100 text-red-600 border-red-200"
-                                : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
-                        )}
-                    >
-                        <div className={clsx("w-2 h-2 rounded-full", isBlack ? "bg-red-500" : "bg-slate-400")}></div>
-                        {isBlack ? 'OFF AIR' : 'LIVE'}
-                    </button>
+                    <Tooltip text={isBlack ? "Turn Projector ON" : "Black out Projector"}>
+                        <button
+                            onClick={() => setIsBlack(!isBlack)}
+                            className={clsx(
+                                "flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold transition-all border",
+                                isBlack
+                                    ? "bg-red-100 text-red-600 border-red-200"
+                                    : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                            )}
+                        >
+                            <div className={clsx("w-2 h-2 rounded-full", isBlack ? "bg-red-500" : "bg-slate-400")}></div>
+                            {isBlack ? 'OFF AIR' : 'LIVE'}
+                        </button>
+                    </Tooltip>
                     <span className="text-xs text-slate-400 italic">
                         {isBlack ? 'Projector is blacked out' : 'Projector showing content'}
                     </span>
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => { if (currentSlideIndex > 0) setCurrentSlideIndex(i => i - 1) }}
-                        disabled={!currentSong || currentSlideIndex === 0}
-                        className="p-2 rounded-full hover:bg-slate-100 text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                    >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                    </button>
+                    <Tooltip text="Previous Slide (Arrow Left/Up)">
+                        <button
+                            onClick={() => { if (currentSlideIndex > 0) setCurrentSlideIndex(i => i - 1) }}
+                            disabled={!currentSong || currentSlideIndex === 0}
+                            className="p-2 rounded-full hover:bg-slate-100 text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                        </button>
+                    </Tooltip>
 
                     <div className="text-sm font-medium text-slate-500 w-16 text-center tabular-nums">
                         {currentSong ? `${currentSlideIndex + 1} / ${slides.length}` : '- / -'}
                     </div>
 
-                    <button
-                        onClick={() => { if (currentSlideIndex < slides.length - 1) setCurrentSlideIndex(i => i + 1) }}
-                        disabled={!currentSong || currentSlideIndex === slides.length - 1}
-                        className="p-2 rounded-full hover:bg-blue-50 text-blue-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                    >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                    </button>
+                    <Tooltip text="Next Slide (Arrow Right/Down)">
+                        <button
+                            onClick={() => { if (currentSlideIndex < slides.length - 1) setCurrentSlideIndex(i => i + 1) }}
+                            disabled={!currentSong || currentSlideIndex === slides.length - 1}
+                            className="p-2 rounded-full hover:bg-blue-50 text-blue-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        </button>
+                    </Tooltip>
                 </div>
             </div>
         </div>
@@ -3095,26 +3245,32 @@ function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh,
                         </div>
 
                         <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                                onClick={(e) => moveItem(e, index, 'up')}
-                                disabled={index === 0}
-                                className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 disabled:opacity-0"
-                            >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-                            </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); onRemove(item.instanceId); }}
-                                className="p-1 hover:bg-red-100 rounded text-slate-300 hover:text-red-500"
-                            >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
-                            <button
-                                onClick={(e) => moveItem(e, index, 'down')}
-                                disabled={index === schedule.length - 1}
-                                className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 disabled:opacity-0"
-                            >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                            </button>
+                            <Tooltip text="Move Up" position="top">
+                                <button
+                                    onClick={(e) => moveItem(e, index, 'up')}
+                                    disabled={index === 0}
+                                    className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 disabled:opacity-0"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                                </button>
+                            </Tooltip>
+                            <Tooltip text="Remove" position="top">
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onRemove(item.instanceId); }}
+                                    className="p-1 hover:bg-red-100 rounded text-slate-300 hover:text-red-500"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                            </Tooltip>
+                            <Tooltip text="Move Down" position="top">
+                                <button
+                                    onClick={(e) => moveItem(e, index, 'down')}
+                                    disabled={index === schedule.length - 1}
+                                    className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 disabled:opacity-0"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                </button>
+                            </Tooltip>
                         </div>
                     </div>
                 ))}

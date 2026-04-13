@@ -781,14 +781,14 @@ async function addToSchedule(songId) {
     return scheduleCache;
 }
 
-async function addBibleToSchedule(title, content) {
+async function addBibleToSchedule(title, slides) {
     const newItem = {
         instanceId: Date.now().toString(),
         songId: `bible-${Date.now()}`,
         title: title,
         category: 'Bible Reading',
         isBibleReading: true,
-        bibleContent: content
+        slides: slides
     };
 
     scheduleCache = [...scheduleCache, newItem];

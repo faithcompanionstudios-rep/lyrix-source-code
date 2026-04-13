@@ -2,7 +2,7 @@
   "expo": {
     "name": "LyriX Mobile",
     "slug": "mobile",
-    "version": "1.0.1",
+    "version": "1.6.8",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",

@@ -260,8 +260,8 @@ if (!gotTheLock) {
         ipcMain.handle('get-uncategorized-songs', async () => getUncategorizedSongs());
 
         // Bible Schedule Handler
-        ipcMain.handle('bible:add-to-schedule', async (event, title, content) => {
-            return addBibleToSchedule(title, content);
+        ipcMain.handle('bible:add-to-schedule', async (event, title, slides) => {
+            return addBibleToSchedule(title, slides);
         });
 
         // Admin Handlers

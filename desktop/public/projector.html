@@ -32,43 +32,46 @@
             transition: opacity 0.5s ease;
         }
 
-        .text {
-            font-size: 5vw;
-            font-weight: bold;
-            line-height: 1.4;
-            white-space: pre-wrap;
-            transition: all 0.3s ease;
+        #slide-text {
+            font-size: calc(var(--base-font-size, 6) * 1vw * var(--auto-scale, 1));
+            line-height: 1.2;
+            word-wrap: break-word;
+            max-width: 90vw;
         }
 
         /* Bible Specific Styles */
         #bible-container {
             display: none;
             flex-direction: column;
-            gap: 2vh;
+            gap: 4vh;
             width: 100%;
             max-width: 90vw;
         }
 
         .bible-primary {
             font-family: 'Lora', serif;
-            font-style: italic;
-            font-size: 5vw;
-            color: #ffffff;
-            text-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            font-weight: bold;
+            font-size: calc(var(--base-font-size, 5) * 1vw * var(--auto-scale, 1));
+            color: inherit;
+            text-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            line-height: 1.2;
         }
 
         .bible-secondary {
             font-family: 'Outfit', sans-serif;
-            font-size: 4vw;
-            color: rgba(255, 255, 255, 0.8);
+            font-size: calc(var(--base-font-size, 5) * 0.8vw * var(--auto-scale, 1));
+            color: inherit;
+            opacity: 0.85;
             font-weight: 500;
+            line-height: 1.3;
         }
 
         .bible-ref {
-            font-size: 2vw;
+            font-size: calc(2vw * var(--auto-scale, 1));
             text-transform: uppercase;
             letter-spacing: 0.1em;
-            color: rgba(255, 255, 255, 0.5);
+            color: inherit;
+            opacity: 0.5;
             margin-top: 4vh;
             font-weight: 800;
         }
@@ -116,6 +119,7 @@
             biblePrimary.innerText = data.primaryText || '';
             bibleSecondary.innerText = data.secondaryText || '';
             bibleRef.innerText = data.reference || '';
+            autoScale();
         }
 
         function updateSlideContent(slide) {
@@ -123,7 +127,26 @@
             bibleContainer.style.display = 'none';
             slideText.style.display = 'block';
             slideText.innerText = slide || '';
+            autoScale();
         }
+        
+        function autoScale() {
+            // Reset to allow measurement
+            document.documentElement.style.setProperty('--auto-scale', '1');
+            requestAnimationFrame(() => {
+                const inner = currentMode === 'slide' ? slideText : bibleContainer;
+                const availableHeight = window.innerHeight - 180; // Safety margin
+                
+                let scale = 1.0;
+                // Simple iterative shrink if it overflows
+                while (inner.scrollHeight > availableHeight && scale > 0.3) {
+                    scale -= 0.05;
+                    document.documentElement.style.setProperty('--auto-scale', scale);
+                }
+            });
+        }
+        
+        window.addEventListener('resize', autoScale);
 
         socket.on('current-slide', (data) => {
             updateSlideContent(data.slide);
@@ -149,9 +172,7 @@
 
         function applySettings(settings) {
             if (settings.fontSize) {
-                slideText.style.fontSize = `${settings.fontSize}vw`;
-                biblePrimary.style.fontSize = `${settings.fontSize}vw`;
-                bibleSecondary.style.fontSize = `${settings.fontSize * 0.8}vw`;
+                document.documentElement.style.setProperty('--base-font-size', settings.fontSize);
             }
             if (settings.isBold !== undefined) {
                 const weight = settings.isBold ? 'bold' : 'normal';
@@ -181,7 +202,10 @@
                 contentDiv.style.textAlign = settings.textAlign;
                 contentDiv.style.justifyContent = settings.textAlign === 'center' ? 'center' : (settings.textAlign === 'left' ? 'flex-start' : 'flex-end');
             }
-            if (settings.fontFamily) slideText.style.fontFamily = settings.fontFamily;
+            if (settings.fontFamily) {
+                slideText.style.fontFamily = settings.fontFamily;
+                biblePrimary.style.fontFamily = settings.fontFamily;
+            }
 
             if (settings.churchName || settings.churchPlace) {
                 let infoText = '';
