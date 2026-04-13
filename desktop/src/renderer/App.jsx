@@ -164,7 +164,7 @@ function App() {
     const [adminUsernameInput, setAdminUsernameInput] = useState('');
     const [adminPasswordInput, setAdminPasswordInput] = useState('');
     const [adminLoginError, setAdminLoginError] = useState('');
-    const [adminTab, setAdminTab] = useState('categories'); // categories, uncategorized, bulk_delete, church_profile, projector, app_behavior
+    const [adminTab, setAdminTab] = useState('categories'); // categories, uncategorized, bulk_delete, church_profile, projector, app_behavior, system
 
     // Admin Categories Manager State
     const [newCategoryInput, setNewCategoryInput] = useState('');
@@ -824,7 +824,8 @@ function App() {
                                             { id: 'categories', label: 'Categories' },
                                             { id: 'uncategorized', label: 'Uncategorized' },
                                             { id: 'bulk_delete', label: 'Bulk Delete' },
-                                            { id: 'security', label: 'Security' }
+                                            { id: 'security', label: 'Security' },
+                                            { id: 'system', label: 'System Rollback' }
                                         ].map(tab => (
                                             <button
                                                 key={tab.id}
@@ -1050,6 +1051,69 @@ function App() {
                                                         </div>
                                                     </div>
                                                 )}
+                                            </div>
+                                        )}
+                                        {adminTab === 'system' && (
+                                            <div className="animate-fade-in-up">
+                                                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 flex flex-col gap-8 relative overflow-hidden group">
+                                                    <div className="absolute right-[-20px] top-[-20px] opacity-[0.03] group-hover:rotate-12 transition-transform duration-700 pointer-events-none">
+                                                        <svg className="w-48 h-48" fill="currentColor" viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+                                                    </div>
+                                                    <div className="flex items-start justify-between">
+                                                        <div>
+                                                            <div className="flex items-center gap-3 mb-2">
+                                                                <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center shadow-inner">
+                                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                                </div>
+                                                                <h3 className="text-xl font-bold text-slate-800 tracking-tight">System Version & Rollback</h3>
+                                                            </div>
+                                                            <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">If you encounter bugs in a new release, you can instantly rollback to a previous version. Your song data will remain safe.</p>
+                                                        </div>
+                                                        <div className="px-4 py-1.5 bg-slate-100 text-slate-500 border border-slate-200 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-sm">
+                                                            Active: v{appVersion}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 shadow-inner">
+                                                        {isLoadingRollbacks ? (
+                                                            <div className="flex items-center justify-center py-6 gap-3">
+                                                                <div className="w-5 h-5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></div>
+                                                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest italic">Fetching previous versions...</span>
+                                                            </div>
+                                                        ) : availableRollbacks.length > 0 ? (
+                                                            <div className="space-y-4">
+                                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Available Fallback Versions</label>
+                                                                <div className="grid grid-cols-1 gap-3">
+                                                                    {availableRollbacks.slice(0, 3).map(rollback => (
+                                                                        <div key={rollback.tag} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between group/v transition-all hover:border-amber-200">
+                                                                            <div>
+                                                                                <div className="text-sm font-bold text-slate-700 tracking-tight">{rollback.tag} <span className="text-[10px] text-slate-400 font-normal italic ml-2">{new Date(rollback.published_at).toLocaleDateString()}</span></div>
+                                                                                <div className="text-[10px] text-slate-400 italic mt-0.5">{rollback.name || 'Stable Release'}</div>
+                                                                            </div>
+                                                                            <button
+                                                                                onClick={async () => {
+                                                                                    const confirmed = window.confirm(`Are you sure you want to rollback to ${rollback.tag}? This will download ${rollback.assets[0].name} and restart the application.`);
+                                                                                    if (confirmed) {
+                                                                                        setCustomAlert(`Starting Rollback to ${rollback.tag}...`);
+                                                                                        const res = await window.electron.invoke('trigger-rollback', rollback.assets[0].browser_download_url);
+                                                                                        if (res && !res.success) setCustomAlert("Rollback failed: " + res.error);
+                                                                                    }
+                                                                                }}
+                                                                                className="px-4 py-2 bg-amber-50 hover:bg-amber-600 text-amber-600 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border border-amber-100/50 active:scale-95 shadow-sm"
+                                                                            >
+                                                                                Downgrade to {rollback.tag}
+                                                                            </button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-center py-4">
+                                                                <p className="text-xs text-slate-400 italic font-medium">No previous versions available for rollback.</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
                                         {adminTab === 'security' && (
@@ -1319,7 +1383,7 @@ function App() {
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100/50 shadow-inner">
                                             <div className="flex items-center gap-6">
                                                 <div className="bg-white p-3 rounded-2xl shadow-lg border border-slate-100">
-                                                    <QRCode value={`http://${ip}:3001`} size={110} level="M" fgColor="#1e293b" />
+                                                    <QRCode value={`https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk`} size={110} level="M" fgColor="#1e293b" />
                                                 </div>
                                                 <div className="space-y-4 flex-1">
                                                     <div className="space-y-1">
@@ -1345,7 +1409,7 @@ function App() {
                                                     <h4 className="font-bold text-slate-800 tracking-tight">Mobile App Download</h4>
                                                 </div>
                                                 <p className="text-[10px] text-slate-400 italic leading-relaxed mb-4">Download the APK directly to manage your song library from anywhere!</p>
-                                                <button onClick={() => setShowMobileDownloadQR(true)} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-widest">Show APK QR Code</button>
+                                                <button onClick={() => window.electron.invoke('open-url', 'https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk')} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-widest">Download APK</button>
                                             </div>
                                         </div>
                                     </div>
@@ -1382,66 +1446,6 @@ function App() {
                                         </div>
                                     </div>
 
-                                    {/* 5. System Maintenance & Rollback */}
-                                    <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 flex flex-col gap-8 relative overflow-hidden group">
-                                        <div className="absolute right-[-20px] top-[-20px] opacity-[0.03] group-hover:rotate-12 transition-transform duration-700 pointer-events-none">
-                                            <svg className="w-48 h-48" fill="currentColor" viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
-                                        </div>
-                                        <div className="flex items-start justify-between">
-                                            <div>
-                                                <div className="flex items-center gap-3 mb-2">
-                                                    <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center shadow-inner">
-                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                                    </div>
-                                                    <h3 className="text-xl font-bold text-slate-800 tracking-tight">System Version & Rollback</h3>
-                                                </div>
-                                                <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">If you encounter bugs in a new release, you can instantly rollback to a previous version. Your song data will remain safe.</p>
-                                            </div>
-                                            <div className="px-4 py-1.5 bg-slate-100 text-slate-500 border border-slate-200 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-sm">
-                                                Active: v{appVersion}
-                                            </div>
-                                        </div>
-
-                                        <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 shadow-inner">
-                                            {isLoadingRollbacks ? (
-                                                <div className="flex items-center justify-center py-6 gap-3">
-                                                    <div className="w-5 h-5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></div>
-                                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest italic">Fetching previous versions...</span>
-                                                </div>
-                                            ) : availableRollbacks.length > 0 ? (
-                                                <div className="space-y-4">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Available Fallback Versions</label>
-                                                    <div className="grid grid-cols-1 gap-3">
-                                                        {availableRollbacks.slice(0, 3).map(rollback => (
-                                                            <div key={rollback.tag} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between group/v transition-all hover:border-amber-200">
-                                                                <div>
-                                                                    <div className="text-sm font-bold text-slate-700 tracking-tight">{rollback.tag} <span className="text-[10px] text-slate-400 font-normal italic ml-2">{new Date(rollback.published_at).toLocaleDateString()}</span></div>
-                                                                    <div className="text-[10px] text-slate-400 italic mt-0.5">{rollback.name || 'Stable Release'}</div>
-                                                                </div>
-                                                                <button
-                                                                    onClick={async () => {
-                                                                        const confirmed = window.confirm(`Are you sure you want to rollback to ${rollback.tag}? This will download ${rollback.assets[0].name} and restart the application.`);
-                                                                        if (confirmed) {
-                                                                            setCustomAlert(`Starting Rollback to ${rollback.tag}...`);
-                                                                            const res = await window.electron.invoke('trigger-rollback', rollback.assets[0].browser_download_url);
-                                                                            if (res && !res.success) setCustomAlert("Rollback failed: " + res.error);
-                                                                        }
-                                                                    }}
-                                                                    className="px-4 py-2 bg-amber-50 hover:bg-amber-600 text-amber-600 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border border-amber-100/50 active:scale-95 shadow-sm"
-                                                                >
-                                                                    Downgrade to {rollback.tag}
-                                                                </button>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="text-center py-4">
-                                                    <p className="text-xs text-slate-400 italic font-medium">No previous versions available for rollback.</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
 
                                     {/* 5. Projector Styling Card */}
                                     <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 relative group">
