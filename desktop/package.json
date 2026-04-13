@@ -63,7 +63,7 @@
       "public/remote/**/*"
     ],
     "directories": {
-      "output": "release_v1_6_5"
+      "output": "release_v1_6_6"
     },
     "win": {
       "target": "nsis",

@@ -165,7 +165,6 @@ function App() {
     const [adminPasswordInput, setAdminPasswordInput] = useState('');
     const [adminLoginError, setAdminLoginError] = useState('');
     const [adminTab, setAdminTab] = useState('categories'); // categories, uncategorized, bulk_delete, church_profile, projector, app_behavior, system
-    const [showApkModal, setShowApkModal] = useState(false);
 
     // Admin Categories Manager State
     const [newCategoryInput, setNewCategoryInput] = useState('');
@@ -245,14 +244,7 @@ function App() {
                 if (v) setAppVersion(v);
             });
 
-            // Fetch previous releases if in settings or admin system tab
-            if ((activeTab === 'settings' || adminTab === 'system') && availableRollbacks.length === 0 && !isLoadingRollbacks) {
-                setIsLoadingRollbacks(true);
-                window.electron.invoke('get-previous-releases').then(releases => {
-                    setAvailableRollbacks(releases);
-                    setIsLoadingRollbacks(false);
-                }).catch(() => setIsLoadingRollbacks(false));
-            }
+            // Rollback releases are fetched in a separate useEffect triggered by activeTab
 
             // DB Status Listener
             window.electron.invoke('get-db-status').then(status => {
@@ -398,9 +390,9 @@ function App() {
                 if (status.ready) {
                     window.electron.invoke('bible:get-books').then(books => setBibleBooks(books));
                 }
-            });
+            }).catch(() => setBibleSetupStatus({ ready: false, loading: false }));
 
-            const unsubBibleSetup = window.electron.invoke('bible:setup-progress', (event, data) => {
+            const unsubBibleSetup = window.electron.onBibleSetupProgress((event, data) => {
                 setBibleSetupProgress(data);
             });
 
@@ -488,14 +480,26 @@ function App() {
         }
     }, []);
 
-    // Sync Projector whenever state changes or new devices connect
+    // Fetch rollback releases when user navigates to settings tab
     useEffect(() => {
-        if (window.electron) {
+        if (activeTab === 'settings' && availableRollbacks.length === 0 && !isLoadingRollbacks && window.electron) {
+            setIsLoadingRollbacks(true);
+            window.electron.invoke('get-previous-releases').then(releases => {
+                setAvailableRollbacks(releases);
+                setIsLoadingRollbacks(false);
+            }).catch(() => setIsLoadingRollbacks(false));
+        }
+    }, [activeTab]);
+
+    // Sync Projector whenever state changes or new devices connect
+    // Only sync slides when we're NOT in Bible mode (activeTab !== 'bible')
+    useEffect(() => {
+        if (window.electron && activeTab !== 'bible') {
             const content = (slides && slides.length > 0) ? slides[currentSlideIndex] : "";
             window.electron.invoke('projector-sync', { type: 'slide', content });
             window.electron.invoke('projector-sync', { type: 'black', isBlack });
         }
-    }, [currentSlideIndex, slides, isBlack, connections]);
+    }, [currentSlideIndex, slides, isBlack, connections, activeTab]);
 
     // Sync Settings
     useEffect(() => {
@@ -1454,7 +1458,10 @@ function App() {
                                                     <h4 className="font-bold text-slate-800 tracking-tight">Mobile App Download</h4>
                                                 </div>
                                                 <p className="text-[10px] text-slate-400 italic leading-relaxed mb-4">Download the APK directly to manage your song library from anywhere!</p>
-                                                <button onClick={() => setShowApkModal(true)} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-widest">Download APK</button>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => setShowMobileDownloadQR(true)} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-widest">Show QR Code</button>
+                                                    <button onClick={() => window.electron.invoke('open-url', 'https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk')} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-bold transition-all active:scale-95 uppercase tracking-widest border border-slate-200">Download APK</button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -2500,6 +2507,8 @@ const BibleIcon = () => (
 function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, setSelectedBook, selectedChapter, setSelectedChapter, selectedVerse, setSelectedVerse, verses, setVerses, chaptersCount, setChaptersCount, setupStatus, setSetupStatus, setupProgress, setBibleBooks }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectorMode, setSelectorMode] = useState('book'); // book, chapter, verse
+    const previewRef = useRef(null);
+    const verseRefs = useRef({});
 
     useEffect(() => {
         if (selectedBook) {
@@ -2510,64 +2519,27 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
         }
     }, [selectedBook]);
 
-    const [pendingProjectVerse, setPendingProjectVerse] = useState(null);
-
     useEffect(() => {
         if (selectedBook && selectedChapter) {
             const fetchVerses = async () => {
                 const kjv = await window.electron.invoke('bible:get-verses', 'KJV', selectedBook.id, selectedChapter);
                 const hindi = await window.electron.invoke('bible:get-verses', 'HINDI', selectedBook.id, selectedChapter);
                 setVerses({ KJV: kjv, HINDI: hindi });
-
-                if (pendingProjectVerse) {
-                    setTimeout(() => {
-                        handleProject(pendingProjectVerse, kjv, hindi);
-                        const el = document.getElementById(`verse-${pendingProjectVerse}`);
-                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        setPendingProjectVerse(null);
-                    }, 50);
-                }
             };
             fetchVerses();
         }
-    }, [selectedBook, selectedChapter, pendingProjectVerse]);
+    }, [selectedBook, selectedChapter]);
 
+    // Auto-scroll to selected verse in preview
     useEffect(() => {
-        if (selectedVerse && selectorMode === 'verse') {
-            const el = document.getElementById(`verse-${selectedVerse}`);
-            if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
+        if (selectedVerse && verseRefs.current[selectedVerse]) {
+            verseRefs.current[selectedVerse].scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-    }, [selectedVerse, selectorMode]);
+    }, [selectedVerse]);
 
-    const handleAddChapterToSchedule = async () => {
-        if (!selectedBook || !verses.KJV.length) return;
-        
-        const title = `${selectedBook.name} ${selectedChapter}`;
-        const lyrics = verses.KJV.map((v, i) => `${v.verse}. ${v.text}\n${verses.HINDI[i]?.text || ''}`).join('\n\n');
-        
-        try {
-            const songId = await window.electron.invoke('get-next-id', 'BIBLE');
-            await window.electron.invoke('add-song', {
-                id: songId,
-                title: title,
-                lyrics: lyrics,
-                category: 'Bible Reading',
-                isFavourite: 0
-            });
-            await window.electron.invoke('add-to-schedule', songId);
-            setStatus(`Added ${title} to Sunday Service schedule`);
-        } catch (e) {
-            setStatus('Error adding to schedule: ' + e.message);
-        }
-    };
-
-    const handleProject = (vNum, customKjv = null, customHindi = null) => {
-        const sourceKjv = customKjv || verses.KJV;
-        const sourceHindi = customHindi || verses.HINDI;
-        const kjvVerse = sourceKjv.find(v => v.verse === vNum)?.text || '';
-        const hindiVerse = sourceHindi.find(v => v.verse === vNum)?.text || '';
+    const handleProject = (vNum) => {
+        const kjvVerse = verses.KJV.find(v => v.verse === vNum)?.text || '';
+        const hindiVerse = verses.HINDI.find(v => v.verse === vNum)?.text || '';
 
         window.electron.invoke('projector-sync', {
             type: 'bible-verse',
@@ -2580,8 +2552,28 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
         setSelectedVerse(vNum);
     };
 
-    const executeSmartJump = (query) => {
-        if (!query.trim()) return;
+    const handleAddToSchedule = async () => {
+        if (!selectedBook || !verses.KJV.length) return;
+        const title = `\u{1F4D6} ${selectedBook.name} ${selectedChapter}`;
+        const lyricsLines = verses.KJV.map((v, idx) => {
+            const hindiText = verses.HINDI[idx]?.text || '';
+            return `${v.verse}. ${v.text}${hindiText ? '\n' + hindiText : ''}`;
+        }).join('\n\n');
+
+        try {
+            const result = await window.electron.invoke('add-song', { title, lyrics: lyricsLines, category: 'Bible Reading' });
+            if (result && result.id) {
+                await window.electron.invoke('add-to-schedule', result.id);
+                setStatus(`Added "${title}" to Sunday Schedule`);
+            }
+        } catch (err) {
+            setStatus('Could not add to schedule: ' + err.message);
+        }
+    };
+
+    const handleSmartJump = (query) => {
+        setSearchQuery(query);
+        // Basic Smart Jump: "Joh 3:16" or "1 Sam 2:3"
         const match = query.match(/^(\d?\s*[a-zA-Z]+)\s*(\d+)[:\s]*(\d*)$/);
         if (match) {
             const bookNamePart = match[1].toLowerCase().trim();
@@ -2598,14 +2590,7 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                 setSelectedChapter(chapter);
                 setSelectedVerse(verse);
                 setSelectorMode('verse');
-                if (match[3]) {
-                    setPendingProjectVerse(verse);
-                }
-            } else {
-                setStatus('Smart Jump: Book not found -> ' + match[1]);
             }
-        } else {
-            setStatus('Smart Jump: Invalid format. Use "Joh 3:16" or "1 Sam 2").');
         }
     };
 
@@ -2617,14 +2602,23 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                         <h2 className="text-3xl font-black text-slate-800 italic">Holy Bible</h2>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Select passage to project</p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
+                        {setupStatus.ready && selectedBook && (
+                            <button
+                                onClick={handleAddToSchedule}
+                                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl text-xs font-bold shadow-lg shadow-amber-500/20 transition-all active:scale-95 flex items-center gap-1.5"
+                                title="Add this chapter to Sunday Schedule"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
+                                Schedule
+                            </button>
+                        )}
                         <div className="relative">
                             <input
                                 type="text"
                                 placeholder="Smart Jump (e.g. Joh 3:16)"
                                 value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') executeSmartJump(searchQuery); }}
+                                onChange={(e) => handleSmartJump(e.target.value)}
                                 className="w-64 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm italic font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all shadow-sm pl-10"
                             />
                             <svg className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -2752,22 +2746,15 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
 
                         {/* Preview Area */}
                         <div className="flex-1 flex flex-col gap-6 min-h-0">
-                            <div className="flex-1 bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 p-8 overflow-y-auto custom-scrollbar flex flex-col relative group">
+                            <div ref={previewRef} className="flex-1 bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 p-8 overflow-y-auto custom-scrollbar flex flex-col relative group">
                                 {!selectedBook ? (
                                     <div className="flex-1 flex items-center justify-center text-slate-300 italic font-medium">Select a book to preview verses</div>
                                 ) : (
                                     <div className="space-y-10">
                                         <div className="flex justify-between items-start">
                                             <div className="bg-indigo-50 px-4 py-1.5 rounded-full text-[10px] font-black text-indigo-600 uppercase tracking-widest border border-indigo-100/50">Passage Preview</div>
-                                            <div className="text-right flex items-center gap-4">
+                                            <div className="text-right">
                                                 <h4 className="text-xl font-black text-slate-800 italic">{selectedBook.name} {selectedChapter}</h4>
-                                                <button 
-                                                    onClick={handleAddChapterToSchedule}
-                                                    title="Add Chapter to Schedule"
-                                                    className="w-8 h-8 flex items-center justify-center bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors"
-                                                >
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                                                </button>
                                             </div>
                                         </div>
 
@@ -2775,11 +2762,11 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                                             {verses.KJV.map((v, idx) => (
                                                 <div
                                                     key={v.verse}
-                                                    id={`verse-${v.verse}`}
+                                                    ref={el => verseRefs.current[v.verse] = el}
                                                     onClick={() => handleProject(v.verse)}
                                                     className={clsx(
                                                         "group/v p-6 rounded-[2rem] border transition-all cursor-pointer relative",
-                                                        selectedVerse === v.verse ? "bg-slate-50/50 border-indigo-100 shadow-inner" : "border-transparent hover:bg-slate-50/30"
+                                                        selectedVerse === v.verse ? "bg-indigo-50/50 border-indigo-200 shadow-lg shadow-indigo-100/50 ring-2 ring-indigo-200/50" : "border-transparent hover:bg-slate-50/30"
                                                     )}
                                                 >
                                                     <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white border border-slate-100 rounded-xl shadow-sm flex items-center justify-center text-[10px] font-black text-slate-400 group-hover/v:text-indigo-600 transition-colors z-10">
@@ -2803,47 +2790,7 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                         </div>
                     </div>
                 )}
-            {/* APK Download Modal */}
-            {
-                showApkModal && (
-                    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center text-center relative overflow-hidden">
-                            <button onClick={() => setShowApkModal(false)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                            
-                            <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner mb-6">
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                            </div>
-                            
-                            <h3 className="text-xl font-bold text-slate-800 mb-2">Install Mobile App</h3>
-                            <p className="text-[11px] text-slate-500 leading-relaxed italic mb-6">Scan this QR code with your phone's camera to install the LyriX Remote APK directly.</p>
-                            
-                            <div className="p-4 bg-white rounded-3xl shadow-xl shadow-indigo-500/10 border border-slate-100 mb-6">
-                                <QRCodeSVG value="https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk" size={160} level="M" fgColor="#4f46e5" />
-                            </div>
-                            
-                            <div className="w-full flex gap-3">
-                                <button
-                                    onClick={() => setShowApkModal(false)}
-                                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
-                                >
-                                    Close
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        window.electron.invoke('open-url', 'https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk');
-                                        setShowApkModal(false);
-                                    }}
-                                    className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
-                                >
-                                    Download to PC
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
+            </div>
         </div>
     );
 }

@@ -211,12 +211,6 @@
             if (window.electron.onBibleVerseUpdate) {
                 window.electron.onBibleVerseUpdate((event, data) => updateBibleContent(data));
             }
-            // Bible listener for direct IPC
-            if (window.electron.invoke) {
-                // We use contextBridge to expose listeners, so we should use onBibleVerseUpdate if we added it to preload.
-                // But for now, I'll use a generic listener if I added it to main.js and preload.js.
-                // Wait, I didn't add the bible-verse-update listener to preload.js. I should do that!
-            }
         }
     </script>
 </body>
