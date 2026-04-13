@@ -179,6 +179,10 @@ function App() {
     // Admin Uncategorized State
     const [uncategorizedSongs, setUncategorizedSongs] = useState([]);
 
+    // Rollback State
+    const [availableRollbacks, setAvailableRollbacks] = useState([]);
+    const [isLoadingRollbacks, setIsLoadingRollbacks] = useState(false);
+
     const stateRef = useRef({ slides: [], index: 0, currentSong: null, isModalOpen: false, schedule: [] });
 
     useEffect(() => { stateRef.current = { slides, index: currentSlideIndex, currentSong, isModalOpen: showAddModal || !!songToDelete, schedule }; }, [slides, currentSlideIndex, currentSong, showAddModal, songToDelete, schedule]);
@@ -228,6 +232,15 @@ function App() {
             window.electron.invoke('get-app-version').then(v => {
                 if (v) setAppVersion(v);
             });
+
+            // Fetch previous releases if in settings
+            if (activeTab === 'settings' && availableRollbacks.length === 0 && !isLoadingRollbacks) {
+                setIsLoadingRollbacks(true);
+                window.electron.invoke('get-previous-releases').then(releases => {
+                    setAvailableRollbacks(releases);
+                    setIsLoadingRollbacks(false);
+                }).catch(() => setIsLoadingRollbacks(false));
+            }
 
             // DB Status Listener
             window.electron.invoke('get-db-status').then(status => {
@@ -738,10 +751,10 @@ function App() {
                         </div>
 
                         <div className="px-3 space-y-1">
-                            <NavItem icon={<LibraryIcon />} label="Song Library" active={activeTab === 'library'} onClick={() => setActiveTab('library')} />
-                            <NavItem icon={<HeartIcon />} label="Favourites" active={activeTab === 'favourites'} onClick={() => setActiveTab('favourites')} />
+                            <NavItem icon={<LibraryIcon />} label="Song Library" active={activeTab === 'library'} onClick={() => { setActiveTab('library'); handleSearch('', 'All'); }} />
+                            <NavItem icon={<HeartIcon />} label="Favourites" active={activeTab === 'favourites'} onClick={() => { setActiveTab('favourites'); handleSearch('', 'All'); }} />
                             <NavItem icon={<GlobeIcon />} label="Search Web" active={activeTab === 'web'} onClick={() => setActiveTab('web')} />
-                            <NavItem icon={<CalendarIcon />} label="Sunday Service" active={activeTab === 'service'} onClick={() => setActiveTab('service')} />
+                            <NavItem icon={<CalendarIcon />} label="Sunday Service" active={activeTab === 'service'} onClick={() => { setActiveTab('service'); handleSearch('', 'All'); }} />
                             <div className="pt-6">
                                 <NavItem icon={<SettingsIcon />} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
                             </div>
@@ -1366,6 +1379,67 @@ function App() {
                                                     </button>
                                                 );
                                             })}
+                                        </div>
+                                    </div>
+
+                                    {/* 5. System Maintenance & Rollback */}
+                                    <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 flex flex-col gap-8 relative overflow-hidden group">
+                                        <div className="absolute right-[-20px] top-[-20px] opacity-[0.03] group-hover:rotate-12 transition-transform duration-700 pointer-events-none">
+                                            <svg className="w-48 h-48" fill="currentColor" viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+                                        </div>
+                                        <div className="flex items-start justify-between">
+                                            <div>
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center shadow-inner">
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                    </div>
+                                                    <h3 className="text-xl font-bold text-slate-800 tracking-tight">System Version & Rollback</h3>
+                                                </div>
+                                                <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">If you encounter bugs in a new release, you can instantly rollback to a previous version. Your song data will remain safe.</p>
+                                            </div>
+                                            <div className="px-4 py-1.5 bg-slate-100 text-slate-500 border border-slate-200 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-sm">
+                                                Active: v{appVersion}
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 shadow-inner">
+                                            {isLoadingRollbacks ? (
+                                                <div className="flex items-center justify-center py-6 gap-3">
+                                                    <div className="w-5 h-5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></div>
+                                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest italic">Fetching previous versions...</span>
+                                                </div>
+                                            ) : availableRollbacks.length > 0 ? (
+                                                <div className="space-y-4">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Available Fallback Versions</label>
+                                                    <div className="grid grid-cols-1 gap-3">
+                                                        {availableRollbacks.slice(0, 3).map(rollback => (
+                                                            <div key={rollback.tag} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between group/v transition-all hover:border-amber-200">
+                                                                <div>
+                                                                    <div className="text-sm font-bold text-slate-700 tracking-tight">{rollback.tag} <span className="text-[10px] text-slate-400 font-normal italic ml-2">{new Date(rollback.published_at).toLocaleDateString()}</span></div>
+                                                                    <div className="text-[10px] text-slate-400 italic mt-0.5">{rollback.name || 'Stable Release'}</div>
+                                                                </div>
+                                                                <button
+                                                                    onClick={async () => {
+                                                                        const confirmed = window.confirm(`Are you sure you want to rollback to ${rollback.tag}? This will download ${rollback.assets[0].name} and restart the application.`);
+                                                                        if (confirmed) {
+                                                                            setCustomAlert(`Starting Rollback to ${rollback.tag}...`);
+                                                                            const res = await window.electron.invoke('trigger-rollback', rollback.assets[0].browser_download_url);
+                                                                            if (res && !res.success) setCustomAlert("Rollback failed: " + res.error);
+                                                                        }
+                                                                    }}
+                                                                    className="px-4 py-2 bg-amber-50 hover:bg-amber-600 text-amber-600 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border border-amber-100/50 active:scale-95 shadow-sm"
+                                                                >
+                                                                    Downgrade to {rollback.tag}
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="text-center py-4">
+                                                    <p className="text-xs text-slate-400 italic font-medium">No previous versions available for rollback.</p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 

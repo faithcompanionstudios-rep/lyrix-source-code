@@ -4,6 +4,8 @@ const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const { startServer } = require('./server/index.js');
 const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork } = require('./database/db.js');
+const axios = require('axios');
+const { spawn } = require('child_process');
 
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -729,6 +731,61 @@ if (!gotTheLock) {
 
             } catch (e) {
                 console.error("PPTX Import Error:", e);
+                return { success: false, error: e.message };
+            }
+        });
+
+        ipcMain.handle('get-previous-releases', async () => {
+            try {
+                const response = await axios.get('https://api.github.com/repos/justforaitoolz-ops/LyriX-Church-System/releases');
+                const releases = response.data;
+                const currentVersion = app.getVersion();
+                
+                return releases
+                    .filter(r => r.tag_name !== `v${currentVersion}`)
+                    .map(r => ({
+                        tag: r.tag_name,
+                        name: r.name,
+                        published_at: r.published_at,
+                        assets: r.assets.filter(a => a.name.endsWith('.exe')).map(a => ({
+                            name: a.name,
+                            browser_download_url: a.browser_download_url
+                        }))
+                    }))
+                    .filter(r => r.assets.length > 0);
+            } catch (e) {
+                return [];
+            }
+        });
+
+        ipcMain.handle('trigger-rollback', async (event, downloadUrl) => {
+            try {
+                const tempDir = app.getPath('temp');
+                const fileName = path.basename(downloadUrl);
+                const filePath = path.join(tempDir, fileName);
+
+                const response = await axios({
+                    url: downloadUrl,
+                    method: 'GET',
+                    responseType: 'stream'
+                });
+
+                const writer = fs.createWriteStream(filePath);
+                response.data.pipe(writer);
+
+                await new Promise((resolve, reject) => {
+                    writer.on('finish', resolve);
+                    writer.on('error', reject);
+                });
+
+                spawn(filePath, [], {
+                    detached: true,
+                    stdio: 'ignore'
+                }).unref();
+
+                app.quit();
+                return { success: true };
+            } catch (e) {
                 return { success: false, error: e.message };
             }
         });
