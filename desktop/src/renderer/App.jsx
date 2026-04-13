@@ -165,6 +165,7 @@ function App() {
     const [adminPasswordInput, setAdminPasswordInput] = useState('');
     const [adminLoginError, setAdminLoginError] = useState('');
     const [adminTab, setAdminTab] = useState('categories'); // categories, uncategorized, bulk_delete, church_profile, projector, app_behavior, system
+    const [showApkModal, setShowApkModal] = useState(false);
 
     // Admin Categories Manager State
     const [newCategoryInput, setNewCategoryInput] = useState('');
@@ -1445,20 +1446,15 @@ function App() {
                                                 </div>
                                             </div>
 
-                                            <div className="border-t lg:border-t-0 lg:border-l border-slate-200/50 pt-6 lg:pt-0 lg:pl-10 h-full flex flex-col sm:flex-row items-center gap-6 justify-center">
-                                                <div className="shrink-0 p-3 bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 group-hover:shadow-indigo-500/10 group-hover:border-indigo-100 transition-all">
-                                                    <QRCodeSVG value="https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk" size={100} level="M" fgColor="#4f46e5" />
-                                                </div>
-                                                <div className="flex-1 flex flex-col justify-center">
-                                                    <div className="flex items-center gap-3 mb-2">
-                                                        <div className="w-8 h-8 bg-indigo-50 text-indigo-500 rounded-lg flex items-center justify-center shadow-inner">
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 0l-2-2m2 2l2-2" /></svg>
-                                                        </div>
-                                                        <h4 className="font-bold text-slate-800 tracking-tight">Android App</h4>
+                                            <div className="border-t lg:border-t-0 lg:border-l border-slate-200/50 pt-6 lg:pt-0 lg:pl-10 h-full flex flex-col justify-center">
+                                                <div className="flex items-center gap-4 mb-4">
+                                                    <div className="w-10 h-10 bg-indigo-50 text-indigo-500 rounded-xl flex items-center justify-center shadow-inner">
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 0l-2-2m2 2l2-2" /></svg>
                                                     </div>
-                                                    <p className="text-[10px] text-slate-400 italic leading-relaxed mb-3">Scan to download APK directly.</p>
-                                                    <button onClick={() => window.electron.invoke('open-url', 'https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk')} className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-widest">Download APK</button>
+                                                    <h4 className="font-bold text-slate-800 tracking-tight">Mobile App Download</h4>
                                                 </div>
+                                                <p className="text-[10px] text-slate-400 italic leading-relaxed mb-4">Download the APK directly to manage your song library from anywhere!</p>
+                                                <button onClick={() => setShowApkModal(true)} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-widest">Download APK</button>
                                             </div>
                                         </div>
                                     </div>
@@ -2807,7 +2803,47 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                         </div>
                     </div>
                 )}
-            </div>
+            {/* APK Download Modal */}
+            {
+                showApkModal && (
+                    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                        <div className="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center text-center relative overflow-hidden">
+                            <button onClick={() => setShowApkModal(false)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                            
+                            <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner mb-6">
+                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                            </div>
+                            
+                            <h3 className="text-xl font-bold text-slate-800 mb-2">Install Mobile App</h3>
+                            <p className="text-[11px] text-slate-500 leading-relaxed italic mb-6">Scan this QR code with your phone's camera to install the LyriX Remote APK directly.</p>
+                            
+                            <div className="p-4 bg-white rounded-3xl shadow-xl shadow-indigo-500/10 border border-slate-100 mb-6">
+                                <QRCodeSVG value="https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk" size={160} level="M" fgColor="#4f46e5" />
+                            </div>
+                            
+                            <div className="w-full flex gap-3">
+                                <button
+                                    onClick={() => setShowApkModal(false)}
+                                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
+                                >
+                                    Close
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        window.electron.invoke('open-url', 'https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk');
+                                        setShowApkModal(false);
+                                    }}
+                                    className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
+                                >
+                                    Download to PC
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
         </div>
     );
 }
