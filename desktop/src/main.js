@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const { startServer } = require('./server/index.js');
-const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork } = require('./database/db.js');
+const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, addBibleToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork } = require('./database/db.js');
 const axios = require('axios');
 const { spawn } = require('child_process');
 const bibleDb = require('./database/bible_db.js');
@@ -14,6 +14,7 @@ const gotTheLock = app.requestSingleInstanceLock();
 let mainWindow;
 let io; // Declare io in module scope
 let projectorWindow = null;
+let lastBibleVerse = null; // Store last Bible verse for projector sync
 let currentServerStatus = { status: 'Disconnected', ip: 'Unknown', connections: 0 };
 
 if (!gotTheLock) {
@@ -258,6 +259,11 @@ if (!gotTheLock) {
         ipcMain.handle('delete-category', async (event, name) => deleteCategory(name));
         ipcMain.handle('get-uncategorized-songs', async () => getUncategorizedSongs());
 
+        // Bible Schedule Handler
+        ipcMain.handle('bible:add-to-schedule', async (event, title, content) => {
+            return addBibleToSchedule(title, content);
+        });
+
         // Admin Handlers
         ipcMain.handle('get-admin-credentials', async () => {
             const creds = getAdminCredentials();
@@ -461,6 +467,13 @@ if (!gotTheLock) {
                         win.webContents.send('projector-state-changed', false);
                     }
                 });
+            });
+
+            // When projector finishes loading, resend the current state
+            projectorWindow.webContents.on('did-finish-load', () => {
+                if (lastBibleVerse) {
+                    projectorWindow.webContents.send('bible-verse-update', lastBibleVerse);
+                }
             });
 
             return true;
@@ -672,6 +685,7 @@ if (!gotTheLock) {
                     io.emit('blank-screen', data.isBlack);
                     if (projectorWindow && !projectorWindow.isDestroyed()) projectorWindow.webContents.send('blank-screen', data.isBlack);
                 } else if (data.type === 'bible-verse') {
+                    lastBibleVerse = data.content; // Store for projector reopens
                     io.emit('bible-verse-update', data.content);
                     if (projectorWindow && !projectorWindow.isDestroyed()) projectorWindow.webContents.send('bible-verse-update', data.content);
                 }

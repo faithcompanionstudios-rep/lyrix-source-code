@@ -781,6 +781,28 @@ async function addToSchedule(songId) {
     return scheduleCache;
 }
 
+async function addBibleToSchedule(title, content) {
+    const newItem = {
+        instanceId: Date.now().toString(),
+        songId: `bible-${Date.now()}`,
+        title: title,
+        category: 'Bible Reading',
+        isBibleReading: true,
+        bibleContent: content
+    };
+
+    scheduleCache = [...scheduleCache, newItem];
+    saveLocalSchedule();
+
+    if (!isOffline) {
+        ensureAuth().then(() => setDoc(doc(db, 'schedules', 'sunday-service'), {
+            items: scheduleCache,
+            updatedAt: Date.now()
+        }));
+    }
+    return scheduleCache;
+}
+
 async function removeFromSchedule(instanceId) {
     scheduleCache = scheduleCache.filter(i => i.instanceId !== instanceId);
     saveLocalSchedule();
@@ -919,6 +941,7 @@ module.exports = {
     verifyAdminCredentials,
     getSchedule,
     addToSchedule,
+    addBibleToSchedule,
     removeFromSchedule,
     reorderSchedule,
     clearSchedule,

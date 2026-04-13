@@ -106,7 +106,7 @@ function App() {
     const [updateProgress, setUpdateProgress] = useState(0);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
-    const [appVersion, setAppVersion] = useState('1.6.6');
+    const [appVersion, setAppVersion] = useState('1.6.7');
     const [isSyncing, setIsSyncing] = useState(false);
 
     const confirmOverwrite = (title) => {
@@ -2509,6 +2509,8 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
     const [selectorMode, setSelectorMode] = useState('book'); // book, chapter, verse
     const previewRef = useRef(null);
     const verseRefs = useRef({});
+    const [rangeStart, setRangeStart] = useState('');
+    const [rangeEnd, setRangeEnd] = useState('');
 
     useEffect(() => {
         if (selectedBook) {
@@ -2554,18 +2556,26 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
 
     const handleAddToSchedule = async () => {
         if (!selectedBook || !verses.KJV.length) return;
-        const title = `\u{1F4D6} ${selectedBook.name} ${selectedChapter}`;
-        const lyricsLines = verses.KJV.map((v, idx) => {
-            const hindiText = verses.HINDI[idx]?.text || '';
+
+        const start = rangeStart ? parseInt(rangeStart) : 1;
+        const end = rangeEnd ? parseInt(rangeEnd) : verses.KJV.length;
+        const fromV = Math.max(1, Math.min(start, end));
+        const toV = Math.min(verses.KJV.length, Math.max(start, end));
+
+        const rangeLabel = fromV === 1 && toV === verses.KJV.length
+            ? '' : `:${fromV}-${toV}`;
+        const title = `\u{1F4D6} ${selectedBook.name} ${selectedChapter}${rangeLabel}`;
+
+        const filteredKJV = verses.KJV.filter(v => v.verse >= fromV && v.verse <= toV);
+        const lyricsLines = filteredKJV.map(v => {
+            const hindiVerse = verses.HINDI.find(h => h.verse === v.verse);
+            const hindiText = hindiVerse?.text || '';
             return `${v.verse}. ${v.text}${hindiText ? '\n' + hindiText : ''}`;
         }).join('\n\n');
 
         try {
-            const result = await window.electron.invoke('add-song', { title, lyrics: lyricsLines, category: 'Bible Reading' });
-            if (result && result.id) {
-                await window.electron.invoke('add-to-schedule', result.id);
-                setStatus(`Added "${title}" to Sunday Schedule`);
-            }
+            await window.electron.invoke('bible:add-to-schedule', title, lyricsLines);
+            setStatus(`Added "${title}" to Sunday Schedule`);
         } catch (err) {
             setStatus('Could not add to schedule: ' + err.message);
         }
@@ -2573,24 +2583,43 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
 
     const handleSmartJump = (query) => {
         setSearchQuery(query);
-        // Basic Smart Jump: "Joh 3:16" or "1 Sam 2:3"
-        const match = query.match(/^(\d?\s*[a-zA-Z]+)\s*(\d+)[:\s]*(\d*)$/);
+        if (!query.trim()) return;
+
+        // Enhanced Smart Jump: handles "John 3:16", "1 Sam 2:3", "Gen 1", "Joh 3 16", "genesis 1:1"
+        const match = query.trim().match(/^(\d?\s*[a-zA-Z][a-zA-Z\s]*?)\s+(\d+)\s*[:\s.,]\s*(\d+)$/);
+        const matchChapterOnly = query.trim().match(/^(\d?\s*[a-zA-Z][a-zA-Z\s]*?)\s+(\d+)$/);
+
+        let bookNamePart, chapter, verse;
+
         if (match) {
-            const bookNamePart = match[1].toLowerCase().trim();
-            const chapter = parseInt(match[2]);
-            const verse = match[3] ? parseInt(match[3]) : 1;
+            bookNamePart = match[1].toLowerCase().trim();
+            chapter = parseInt(match[2]);
+            verse = parseInt(match[3]);
+        } else if (matchChapterOnly) {
+            bookNamePart = matchChapterOnly[1].toLowerCase().trim();
+            chapter = parseInt(matchChapterOnly[2]);
+            verse = 1;
+        } else {
+            return;
+        }
 
-            const book = bibleBooks.find(b =>
-                b.name.toLowerCase().startsWith(bookNamePart) ||
-                (b.id && b.id.toLowerCase().startsWith(bookNamePart))
-            );
+        // Try multiple matching strategies
+        const book = bibleBooks.find(b => {
+            const name = b.name.toLowerCase();
+            const id = (b.id || '').toLowerCase();
+            return name === bookNamePart ||
+                   name.startsWith(bookNamePart) ||
+                   id === bookNamePart ||
+                   id.startsWith(bookNamePart) ||
+                   // Handle abbreviations without spaces: "gen" matches "Genesis"
+                   name.replace(/\s+/g, '').startsWith(bookNamePart.replace(/\s+/g, ''));
+        });
 
-            if (book) {
-                setSelectedBook(book);
-                setSelectedChapter(chapter);
-                setSelectedVerse(verse);
-                setSelectorMode('verse');
-            }
+        if (book) {
+            setSelectedBook(book);
+            setSelectedChapter(chapter);
+            setSelectedVerse(verse);
+            setSelectorMode('verse');
         }
     };
 
@@ -2604,14 +2633,35 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                     </div>
                     <div className="flex gap-2 items-center">
                         {setupStatus.ready && selectedBook && (
-                            <button
-                                onClick={handleAddToSchedule}
-                                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl text-xs font-bold shadow-lg shadow-amber-500/20 transition-all active:scale-95 flex items-center gap-1.5"
-                                title="Add this chapter to Sunday Schedule"
-                            >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
-                                Schedule
-                            </button>
+                            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200/50 rounded-2xl px-3 py-1.5">
+                                <input
+                                    type="number"
+                                    placeholder="From"
+                                    value={rangeStart}
+                                    onChange={e => setRangeStart(e.target.value)}
+                                    className="w-14 px-2 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-center focus:ring-2 focus:ring-amber-400/30 outline-none"
+                                    min={1}
+                                    max={verses.KJV.length}
+                                />
+                                <span className="text-[10px] text-amber-600 font-black">—</span>
+                                <input
+                                    type="number"
+                                    placeholder="To"
+                                    value={rangeEnd}
+                                    onChange={e => setRangeEnd(e.target.value)}
+                                    className="w-14 px-2 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-center focus:ring-2 focus:ring-amber-400/30 outline-none"
+                                    min={1}
+                                    max={verses.KJV.length}
+                                />
+                                <button
+                                    onClick={handleAddToSchedule}
+                                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-bold shadow-sm transition-all active:scale-95 flex items-center gap-1 whitespace-nowrap"
+                                    title="Add verse range to Sunday Schedule (leave empty for full chapter)"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
+                                    Schedule
+                                </button>
+                            </div>
                         )}
                         <div className="relative">
                             <input
