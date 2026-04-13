@@ -244,8 +244,8 @@ function App() {
                 if (v) setAppVersion(v);
             });
 
-            // Fetch previous releases if in settings
-            if (activeTab === 'settings' && availableRollbacks.length === 0 && !isLoadingRollbacks) {
+            // Fetch previous releases if in settings or admin system tab
+            if ((activeTab === 'settings' || adminTab === 'system') && availableRollbacks.length === 0 && !isLoadingRollbacks) {
                 setIsLoadingRollbacks(true);
                 window.electron.invoke('get-previous-releases').then(releases => {
                     setAvailableRollbacks(releases);
@@ -818,8 +818,6 @@ function App() {
                         setVerses={setBibleVerses}
                         chaptersCount={bibleChaptersCount}
                         setChaptersCount={setBibleChaptersCount}
-                        setupStatus={bibleSetupStatus}
-                        setSetupStatus={setBibleSetupStatus}
                         setupStatus={bibleSetupStatus}
                         setSetupStatus={setBibleSetupStatus}
                         setupProgress={bibleSetupProgress}
@@ -2522,6 +2520,37 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
         }
     }, [selectedBook, selectedChapter]);
 
+    useEffect(() => {
+        if (selectedVerse && selectorMode === 'verse') {
+            const el = document.getElementById(`verse-${selectedVerse}`);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    }, [selectedVerse, selectorMode]);
+
+    const handleAddChapterToSchedule = async () => {
+        if (!selectedBook || !verses.KJV.length) return;
+        
+        const title = `${selectedBook.name} ${selectedChapter}`;
+        const lyrics = verses.KJV.map((v, i) => `${v.verse}. ${v.text}\n${verses.HINDI[i]?.text || ''}`).join('\n\n');
+        
+        try {
+            const songId = await window.electron.invoke('get-next-id', 'BIBLE');
+            await window.electron.invoke('add-song', {
+                id: songId,
+                title: title,
+                lyrics: lyrics,
+                category: 'Bible Reading',
+                isFavourite: 0
+            });
+            await window.electron.invoke('add-to-schedule', songId);
+            setStatus(`Added ${title} to Sunday Service schedule`);
+        } catch (e) {
+            setStatus('Error adding to schedule: ' + e.message);
+        }
+    };
+
     const handleProject = (vNum) => {
         const kjvVerse = verses.KJV.find(v => v.verse === vNum)?.text || '';
         const hindiVerse = verses.HINDI.find(v => v.verse === vNum)?.text || '';
@@ -2709,8 +2738,15 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                                     <div className="space-y-10">
                                         <div className="flex justify-between items-start">
                                             <div className="bg-indigo-50 px-4 py-1.5 rounded-full text-[10px] font-black text-indigo-600 uppercase tracking-widest border border-indigo-100/50">Passage Preview</div>
-                                            <div className="text-right">
+                                            <div className="text-right flex items-center gap-4">
                                                 <h4 className="text-xl font-black text-slate-800 italic">{selectedBook.name} {selectedChapter}</h4>
+                                                <button 
+                                                    onClick={handleAddChapterToSchedule}
+                                                    title="Add Chapter to Schedule"
+                                                    className="w-8 h-8 flex items-center justify-center bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                                </button>
                                             </div>
                                         </div>
 
@@ -2718,6 +2754,7 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                                             {verses.KJV.map((v, idx) => (
                                                 <div
                                                     key={v.verse}
+                                                    id={`verse-${v.verse}`}
                                                     onClick={() => handleProject(v.verse)}
                                                     className={clsx(
                                                         "group/v p-6 rounded-[2rem] border transition-all cursor-pointer relative",

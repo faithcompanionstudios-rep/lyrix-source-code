@@ -438,6 +438,15 @@ if (!gotTheLock) {
 
             projectorWindow.loadFile(path.join(__dirname, '../public/projector.html'));
 
+            projectorWindow.webContents.on('did-finish-load', () => {
+                projectorWindow.webContents.send('settings-update', currentSettings);
+                if (currentProjectorState.type === 'slide') {
+                    projectorWindow.webContents.send('current-slide', { slide: currentProjectorState.content });
+                } else if (currentProjectorState.type === 'bible-verse') {
+                    projectorWindow.webContents.send('bible-verse-update', currentProjectorState.content);
+                }
+            });
+
             // Handle Native Keys on Projector Window
             projectorWindow.webContents.on('before-input-event', (event, input) => {
                 if (input.key === 'Escape' && projectorWindow) {
@@ -663,8 +672,14 @@ if (!gotTheLock) {
             });
         }
 
+        let currentProjectorState = { type: 'slide', content: '' };
+
         ipcMain.handle('projector-sync', (event, data) => {
             if (io) {
+                if (data.type !== 'black') {
+                    currentProjectorState = data;
+                }
+                
                 if (data.type === 'slide') {
                     io.emit('current-slide', { slide: data.content });
                     if (projectorWindow && !projectorWindow.isDestroyed()) projectorWindow.webContents.send('current-slide', { slide: data.content });
