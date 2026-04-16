@@ -10,7 +10,8 @@ const cleanText = (text) => text ? text.replace(/^\d+\.?\s*/, '') : '';
 // Helper to remove KJV marginal notes (has colon or Heb/Gr) but keep italics
 const cleanBibleText = (text) => {
     if (!text) return '';
-    return text.replace(/\{([^}]+)\}/g, (match, inner) => {
+    let processed = text.replace(/\[.*?\]/g, ''); // Remove [] completely
+    return processed.replace(/\{([^}]+)\}/g, (match, inner) => {
         if (inner.includes(':') || inner.match(/Heb\.|Gr\.|etc\./i)) {
             return ''; // Remove completely
         }
@@ -52,7 +53,7 @@ const CustomSelect = ({ value, onChange, options, className, placeholder = "Sele
                         <div
                             key={idx}
                             className={clsx(
-                                "px-3 py-2.5 my-0.5 text-sm cursor-pointer transition-all rounded-xl flex items-center justify-between",
+                                "px-3 py-2 my-0.5 text-[11px] cursor-pointer transition-all rounded-xl flex items-center justify-between",
                                 value === option.value
                                     ? "bg-indigo-50/80 text-indigo-700 font-bold shadow-sm italic"
                                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium italic"
@@ -150,7 +151,7 @@ function App() {
     const [updateProgress, setUpdateProgress] = useState(0);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
-    const [appVersion, setAppVersion] = useState('1.6.8');
+    const [appVersion, setAppVersion] = useState('1.7.0');
     const [isSyncing, setIsSyncing] = useState(false);
 
     const confirmOverwrite = (title) => {
@@ -177,6 +178,7 @@ function App() {
     const [churchName, setChurchName] = useState(() => localStorage.getItem('setting_churchName') || '');
     const [churchPlace, setChurchPlace] = useState(() => localStorage.getItem('setting_churchPlace') || '');
     const [autoProjectBible, setAutoProjectBible] = useState(() => localStorage.getItem('setting_autoProjectBible') !== 'false');
+    const [watermarkSize, setWatermarkSize] = useState(() => Number(localStorage.getItem('setting_watermarkSize')) || 2.0);
     const [isEditingProfile, setIsEditingProfile] = useState(() => !localStorage.getItem('setting_churchName'));
     const [welcomeStep, setWelcomeStep] = useState(() => !localStorage.getItem('setting_churchName') ? 1 : 0);
     const [showAppControls, setShowAppControls] = useState(() => localStorage.getItem('setting_showAppControls') !== 'false');
@@ -239,9 +241,9 @@ function App() {
     const [bibleSetupStatus, setBibleSetupStatus] = useState({ ready: false, loading: true });
     const [bibleSetupProgress, setBibleSetupProgress] = useState({ message: '', progress: 0 });
 
-    const stateRef = useRef({ slides: [], index: 0, currentSong: null, isModalOpen: false, schedule: [] });
+    const stateRef = useRef({ slides: [], index: 0, currentSong: null, isModalOpen: false, schedule: [], activeTab: 'library' });
 
-    useEffect(() => { stateRef.current = { slides, index: currentSlideIndex, currentSong, isModalOpen: showAddModal || !!songToDelete, schedule }; }, [slides, currentSlideIndex, currentSong, showAddModal, songToDelete, schedule]);
+    useEffect(() => { stateRef.current = { slides, index: currentSlideIndex, currentSong, isModalOpen: showAddModal || !!songToDelete, schedule, activeTab }; }, [slides, currentSlideIndex, currentSong, showAddModal, songToDelete, schedule, activeTab]);
 
     // Save settings to localStorage whenever they change
     useEffect(() => {
@@ -260,13 +262,14 @@ function App() {
         localStorage.setItem('setting_maxRemoteDevices', maxRemoteDevices);
         localStorage.setItem('setting_churchName', churchName);
         localStorage.setItem('setting_churchPlace', churchPlace);
+        localStorage.setItem('setting_watermarkSize', watermarkSize);
         localStorage.setItem('setting_visibleCategories', JSON.stringify(visibleCategories));
         localStorage.setItem('setting_showAppControls', showAppControls);
         localStorage.setItem('setting_showDatabaseManagement', showDatabaseManagement);
         localStorage.setItem('setting_autoProjectBible', autoProjectBible);
 
         // Removed aggressive pruning: we now trust visibleCategories from localStorage or remote.
-    }, [favourites, fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, defaultCategory, autoFormat, previewMode, previewFont, maxRemoteDevices, churchName, churchPlace, visibleCategories, showAppControls, showDatabaseManagement, allCategories, autoProjectBible]);
+    }, [favourites, fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, defaultCategory, autoFormat, previewMode, previewFont, maxRemoteDevices, churchName, churchPlace, watermarkSize, visibleCategories, showAppControls, showDatabaseManagement, allCategories, autoProjectBible]);
 
     useEffect(() => {
         if (window.electron) {
@@ -339,11 +342,16 @@ function App() {
                         return prev;
                     });
                 } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-                    const { slides, index } = stateRef.current;
-                    if (slides && index < slides.length - 1) setCurrentSlideIndex(index + 1);
+                    // Only handle song slide navigation when NOT in Bible mode
+                    if (stateRef.current.activeTab !== 'bible') {
+                        const { slides, index } = stateRef.current;
+                        if (slides && index < slides.length - 1) setCurrentSlideIndex(index + 1);
+                    }
                 } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-                    const { index } = stateRef.current;
-                    if (index > 0) setCurrentSlideIndex(index - 1);
+                    if (stateRef.current.activeTab !== 'bible') {
+                        const { index } = stateRef.current;
+                        if (index > 0) setCurrentSlideIndex(index - 1);
+                    }
                 } else if (e.key === 'Delete') {
                     const { currentSong, isModalOpen } = stateRef.current;
                     if (currentSong && !isModalOpen) {
@@ -380,7 +388,12 @@ function App() {
             });
 
             const unsubKeyPress = window.electron.onProjectorKeyPress((event, key) => {
-                const { slides, index } = stateRef.current;
+                const { slides, index, activeTab } = stateRef.current;
+                // If in Bible mode, dispatch event so BibleSection handles verse navigation
+                if (activeTab === 'bible') {
+                    window.dispatchEvent(new KeyboardEvent('keydown', { key }));
+                    return;
+                }
                 if (key === 'ArrowRight' || key === 'ArrowDown') {
                     if (slides && index < slides.length - 1) setCurrentSlideIndex(index + 1);
                 } else if (key === 'ArrowLeft' || key === 'ArrowUp') {
@@ -551,10 +564,10 @@ function App() {
     useEffect(() => {
         if (window.electron) {
             window.electron.invoke('update-projector-settings', {
-                fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, maxRemoteDevices, churchName, churchPlace
+                fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, maxRemoteDevices, churchName, churchPlace, watermarkSize
             });
         }
-    }, [fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, maxRemoteDevices, churchName, churchPlace, connections]);
+    }, [fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, maxRemoteDevices, churchName, churchPlace, watermarkSize, connections]);
 
     const fetchSchedule = async (isManual = false) => {
         if (window.electron) {
@@ -858,6 +871,7 @@ function App() {
                     <BibleSection
                         setStatus={setCustomAlert}
                         isProjectorOpen={isProjectorOpen}
+                        setIsProjectorOpen={setIsProjectorOpen}
                         bibleBooks={bibleBooks}
                         selectedBook={selectedBibleBook}
                         setSelectedBook={setSelectedBibleBook}
@@ -873,6 +887,7 @@ function App() {
                         setSetupStatus={setBibleSetupStatus}
                         setupProgress={bibleSetupProgress}
                         setBibleBooks={setBibleBooks}
+                        autoProjectBible={autoProjectBible}
                     />
                 ) : activeTab === 'web' ? (
                     <WebSearch onImport={(data) => { setAddSongInitialData(data); setShowAddModal(true); }} setCustomAlert={setCustomAlert} />
@@ -1482,7 +1497,7 @@ function App() {
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100/50 shadow-inner">
                                             <div className="flex items-center gap-6">
                                                 <div className="bg-white p-3 rounded-2xl shadow-lg border border-slate-100">
-                                                    <QRCode value={`https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk`} size={110} level="M" fgColor="#1e293b" />
+                                                    <QRCode value={`http://${ip}:3001`} size={110} level="M" fgColor="#1e293b" />
                                                 </div>
                                                 <div className="space-y-4 flex-1">
                                                     <div className="space-y-1">
@@ -1564,21 +1579,23 @@ function App() {
                                             <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">Customize how lyrics appear on the big screen! These changes update instantly in the live projector window.</p>
                                         </div>
 
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mt-6">
                                             {/* Font Size Sub-card */}
                                             <div className="bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100 flex flex-col justify-between shadow-inner h-full">
                                                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-1 block">Font Size</label>
 
                                                 {/* Preview Area */}
-                                                <div className="flex-1 flex items-center justify-center bg-white/40 rounded-2xl mb-3 border border-slate-100 overflow-hidden min-h-[60px]">
+                                                <div className="flex-1 flex items-center justify-center bg-white/40 rounded-2xl mb-3 border border-slate-300 overflow-hidden min-h-[60px] relative">
+                                                    <div className="absolute top-1.5 right-1.5 w-6 h-6 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-lg border-2 border-white z-20 font-mono">
+                                                        {fontSize}
+                                                    </div>
                                                     <div className="italic font-extrabold text-slate-400 opacity-50 select-none tracking-tight" style={{ fontSize: `${fontSize * 4}px`, lineHeight: 1 }}>
                                                         Aa
                                                     </div>
                                                 </div>
 
-                                                <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-                                                    <input type="range" min="3" max="15" step="0.5" value={fontSize} onChange={(e) => setFontSize(parseFloat(e.target.value))} className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
-                                                    <span className="text-sm font-bold text-indigo-600 w-8 text-right italic font-mono">{fontSize}</span>
+                                                <div className="flex items-center bg-white p-2.5 rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                                                    <input type="range" min="3" max="15" step="0.5" value={fontSize} onChange={(e) => setFontSize(parseFloat(e.target.value))} className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
                                                 </div>
                                             </div>
 
@@ -1587,26 +1604,28 @@ function App() {
                                                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-1 block">Color Theme</label>
 
                                                 {/* Preview Area */}
-                                                <div className="flex-1 flex items-center justify-center rounded-2xl mb-3 border border-slate-200 shadow-inner overflow-hidden min-h-[60px]" style={{ backgroundColor: backgroundColor || '#000000' }}>
+                                                <div className="flex-1 flex items-center justify-center rounded-2xl mb-3 border border-slate-300 shadow-inner overflow-hidden min-h-[60px]" style={{ backgroundColor: backgroundColor || '#000000' }}>
                                                     <div className="font-extrabold tracking-tighter italic" style={{ color: color || '#ffffff', fontSize: '18px' }}>
                                                         Preview
                                                     </div>
                                                 </div>
 
-                                                <div className="flex gap-3 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm items-end">
-                                                    <div className="flex-1 flex flex-col gap-1.5 items-center">
-                                                        <span className="text-[9px] font-bold text-slate-400 uppercase">Text</span>
-                                                        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-full h-8 rounded-lg cursor-pointer border-none bg-transparent p-0 block" />
+                                                <div className="flex items-center gap-2 bg-white p-2.5 rounded-2xl border border-slate-100 shadow-sm mt-auto">
+                                                    <div className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                                                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Text</span>
+                                                        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-full h-7 rounded-lg cursor-pointer border-none bg-transparent p-0 block" title="Text Color" />
                                                     </div>
+                                                    
                                                     <button 
                                                         onClick={() => { const temp = color; setColor(backgroundColor); setBackgroundColor(temp); }} 
-                                                        className="w-7 h-7 mb-0.5 shrink-0 bg-slate-50 hover:bg-slate-100 hover:text-indigo-600 rounded-full flex items-center justify-center border border-slate-200 text-slate-400 shadow-sm transition-all group/swap"
+                                                        className="w-6 h-6 shrink-0 bg-slate-50 hover:bg-slate-100 hover:text-indigo-600 rounded-full flex items-center justify-center border border-slate-200 text-slate-400 shadow-sm transition-all group/swap mt-3"
                                                     >
-                                                        <svg className="w-4 h-4 transition-transform duration-300 group-hover/swap:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                                                        <svg className="w-3 h-3 transition-transform duration-300 group-hover/swap:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
                                                     </button>
-                                                    <div className="flex-1 flex flex-col gap-1.5 items-center">
-                                                        <span className="text-[9px] font-bold text-slate-400 uppercase">BACKGROUND</span>
-                                                        <input type="color" value={backgroundColor} onChange={(e) => setBackgroundColor(e.target.value)} className="w-full h-8 rounded-lg cursor-pointer border-none bg-transparent p-0 block" />
+
+                                                    <div className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                                                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">BG</span>
+                                                        <input type="color" value={backgroundColor} onChange={(e) => setBackgroundColor(e.target.value)} className="w-full h-7 rounded-lg cursor-pointer border-none bg-transparent p-0 block" title="Background Color" />
                                                     </div>
                                                 </div>
                                             </div>
@@ -1626,18 +1645,18 @@ function App() {
                                                                 { value: "center", label: "Center" },
                                                                 { value: "right", label: "Right" }
                                                             ]}
-                                                            className="flex-1 h-full bg-transparent text-[10px] font-bold px-3 focus:ring-0 cursor-pointer text-slate-600 italic focus:border-indigo-500 rounded-xl"
+                                                            className="flex-1 h-full bg-transparent text-[9px] font-bold px-2 focus:ring-0 cursor-pointer text-slate-600 italic focus:border-indigo-500 rounded-xl"
                                                         />
                                                     </div>
                                                     <CustomSelect
                                                         value={fontFamily}
                                                         onChange={(e) => setFontFamily(e.target.value)}
                                                         options={[
-                                                            { value: "sans-serif", label: "Projector: Modern (Sans)" },
-                                                            { value: "serif", label: "Projector: Classic (Serif)" },
-                                                            { value: "'Lora', serif", label: "Projector: Bible Serif (Lora)" },
-                                                            { value: "'Times New Roman', Times, serif", label: "Projector: Times New Roman" },
-                                                            { value: "'Arial', sans-serif", label: "Projector: Arial" }
+                                                            { value: "sans-serif", label: "Modern (Sans)" },
+                                                            { value: "serif", label: "Classic (Serif)" },
+                                                            { value: "'Lora', serif", label: "Bible Serif (Lora)" },
+                                                            { value: "'Times New Roman', Times, serif", label: "Times New Roman" },
+                                                            { value: "'Arial', sans-serif", label: "Arial" }
                                                         ]}
                                                         placeholder="Projector Font"
                                                         className="w-full px-4 py-2 bg-white border border-slate-100 rounded-2xl text-[10px] font-bold text-slate-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all shadow-sm leading-none italic"
@@ -1646,12 +1665,31 @@ function App() {
                                                         value={previewFont}
                                                         onChange={(e) => setPreviewFont(e.target.value)}
                                                         options={[
-                                                            { value: "lyrics", label: "Preview: Classic (Lora Serif)" },
-                                                            { value: "sans", label: "Preview: Modern (Inter Sans)" }
+                                                            { value: "lyrics", label: "Classic (Lora Serif)" },
+                                                            { value: "sans", label: "Modern (Inter Sans)" }
                                                         ]}
                                                         placeholder="Preview Font"
                                                         className="w-full px-4 py-2 bg-white border border-slate-100 rounded-2xl text-[10px] font-bold text-slate-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all shadow-sm leading-none italic"
                                                     />
+                                                </div>
+                                            </div>
+
+                                            {/* Watermark Size Card */}
+                                            <div className="bg-slate-50/50 p-5 rounded-[2rem] border border-slate-100 flex flex-col justify-between shadow-inner h-full">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-1 block">Watermark Size</label>
+
+                                                {/* Preview Area */}
+                                                <div className="flex-1 flex items-center justify-center bg-transparent rounded-2xl mb-3 border border-slate-300 overflow-hidden min-h-[60px] relative">
+                                                    <div className="absolute top-1.5 right-1.5 w-6 h-6 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-lg border-2 border-white z-20 font-mono">
+                                                        {watermarkSize.toFixed(1)}
+                                                    </div>
+                                                    <div className="italic font-extrabold text-slate-400 opacity-30 select-none tracking-tight absolute inset-0 flex items-center justify-center" style={{ fontSize: `${watermarkSize * 15}px`, lineHeight: 1 }}>
+                                                        &copy;
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center bg-white p-2.5 rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                                                    <input type="range" min="0.5" max="10.0" step="0.1" value={watermarkSize} onChange={(e) => setWatermarkSize(parseFloat(e.target.value))} className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
                                                 </div>
                                             </div>
                                         </div>
@@ -2588,13 +2626,15 @@ const BibleIcon = () => (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5S19.832 5.477 21 6.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
 );
 
-function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, setSelectedBook, selectedChapter, setSelectedChapter, selectedVerse, setSelectedVerse, verses, setVerses, chaptersCount, setChaptersCount, setupStatus, setSetupStatus, setupProgress, setBibleBooks }) {
+function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBooks, selectedBook, setSelectedBook, selectedChapter, setSelectedChapter, selectedVerse, setSelectedVerse, verses, setVerses, chaptersCount, setChaptersCount, setupStatus, setSetupStatus, setupProgress, setBibleBooks, autoProjectBible }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectorMode, setSelectorMode] = useState('book'); // book, chapter, verse
     const previewRef = useRef(null);
     const verseRefs = useRef({});
     const [rangeStart, setRangeStart] = useState('');
     const [rangeEnd, setRangeEnd] = useState('');
+    const [testamentFilter, setTestamentFilter] = useState('OT'); // 'OT' or 'NT'
+    const [pendingProjectVerse, setPendingProjectVerse] = useState(null);
 
     useEffect(() => {
         if (selectedBook) {
@@ -2640,11 +2680,25 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
             }
         });
 
-        // Ensure projector is open
-        if (!isProjectorOpen) {
-            window.electron.invoke('toggle-projector-window').then(isOpen => setIsProjectorOpen(isOpen));
-        }
+        // Ensure projector is open (use open-only, never toggle/close)
+        window.electron.invoke('open-projector-window').then(isOpen => {
+            if (isOpen) setIsProjectorOpen(true);
+        });
     };
+
+    // Auto-project pending verse when chapters load for Smart Jump
+    useEffect(() => {
+        if (pendingProjectVerse && selectedBook && selectedChapter && verses.KJV && verses.KJV.length > 0) {
+            if (selectedBook.id === pendingProjectVerse.bookId && selectedChapter === pendingProjectVerse.chapter) {
+                // Ensure verse actually exists in this chapter before trying to project
+                const verseExists = verses.KJV.some(v => v.verse === pendingProjectVerse.verse);
+                if (verseExists) {
+                    handleProject(pendingProjectVerse.verse, true);
+                }
+                setPendingProjectVerse(null);
+            }
+        }
+    }, [verses, pendingProjectVerse, selectedBook, selectedChapter]);
 
     const handleAddToSchedule = async () => {
         if (!selectedBook || !verses.KJV.length) return;
@@ -2714,13 +2768,14 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
             setSelectedChapter(chapter);
             setSelectedVerse(verse);
             setSelectorMode('verse');
+            setPendingProjectVerse({ bookId: book.id, chapter, verse });
         }
     };
 
-    // Keyboard Navigation for verses
+    // Keyboard Navigation for verses (Arrow keys navigate & project verses)
     useEffect(() => {
         const handleKeyDown = (e) => {
-            if (activeTab !== 'bible' || !verses.KJV.length) return;
+            if (!verses.KJV.length) return;
             // Ignore if user is typing in an input field
             const isInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
             if (isInput) return;
@@ -2887,20 +2942,39 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                             </div>
                             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
                                 {selectorMode === 'book' && (
-                                    <div className="grid grid-cols-1 gap-1">
-                                        {bibleBooks.map(book => (
+                                    <div>
+                                        {/* Old/New Testament Toggle */}
+                                        <div className="flex gap-1 mb-3 bg-slate-100/80 p-1 rounded-xl">
                                             <button
-                                                key={book.id}
-                                                onClick={() => { setSelectedBook(book); setSelectorMode('chapter'); }}
+                                                onClick={() => setTestamentFilter('OT')}
                                                 className={clsx(
-                                                    "px-4 py-3 rounded-xl text-left text-sm font-bold transition-all flex justify-between items-center group",
-                                                    selectedBook?.id === book.id ? "bg-indigo-50 text-indigo-600 italic" : "text-slate-600 hover:bg-slate-50 italic"
+                                                    "flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                                                    testamentFilter === 'OT' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
                                                 )}
-                                            >
-                                                <span>{book.name}</span>
-                                                <svg className={clsx("w-4 h-4 transition-transform group-hover:translate-x-1", selectedBook?.id === book.id ? "text-indigo-400" : "text-slate-200")} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg>
-                                            </button>
-                                        ))}
+                                            >OLD TESTAMENT</button>
+                                            <button
+                                                onClick={() => setTestamentFilter('NT')}
+                                                className={clsx(
+                                                    "flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                                                    testamentFilter === 'NT' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                                                )}
+                                            >NEW TESTAMENT</button>
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-1">
+                                            {bibleBooks.filter(book => book.testament === testamentFilter).map(book => (
+                                                <button
+                                                    key={book.id}
+                                                    onClick={() => { setSelectedBook(book); setSelectorMode('chapter'); }}
+                                                    className={clsx(
+                                                        "px-4 py-3 rounded-xl text-left text-sm font-bold transition-all flex justify-between items-center group",
+                                                        selectedBook?.id === book.id ? "bg-indigo-50 text-indigo-600 italic" : "text-slate-600 hover:bg-slate-50 italic"
+                                                    )}
+                                                >
+                                                    <span>{book.name}</span>
+                                                    <svg className={clsx("w-4 h-4 transition-transform group-hover:translate-x-1", selectedBook?.id === book.id ? "text-indigo-400" : "text-slate-200")} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg>
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                                 {selectorMode === 'chapter' && (
@@ -2924,7 +2998,7 @@ function BibleSection({ setStatus, isProjectorOpen, bibleBooks, selectedBook, se
                                         {verses.KJV.map(v => (
                                             <button
                                                 key={v.verse}
-                                                onClick={() => handleProject(v.verse)}
+                                                onClick={() => handleProject(v.verse, true)}
                                                 className={clsx(
                                                     "aspect-square rounded-xl text-sm font-black flex items-center justify-center transition-all",
                                                     selectedVerse === v.verse ? "bg-indigo-600 text-white shadow-lg" : "bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
