@@ -54,7 +54,7 @@
             font-size: calc(var(--base-font-size, 5) * 1vw * var(--auto-scale, 1));
             color: inherit;
             text-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-            line-height: 1.2;
+            line-height: 1.4;
         }
 
         .bible-secondary {
@@ -63,7 +63,7 @@
             color: inherit;
             opacity: 0.85;
             font-weight: 500;
-            line-height: 1.3;
+            line-height: 1.6;
         }
 
         .bible-ref {
@@ -97,6 +97,11 @@
         &copy; ChurchLyriXApp<span id="church-info"></span>
     </div>
 
+    <div id="video-container"
+        style="position: absolute; inset: 0; background: black; display: none; z-index: 50; align-items: center; justify-content: center;">
+        <video id="projector-video" style="width: 100%; height: 100%; object-fit: contain;"></video>
+    </div>
+
     <script>
         const socket = io('http://localhost:3001');
         const contentDiv = document.getElementById('content');
@@ -107,10 +112,76 @@
         const bibleRef = document.getElementById('bible-ref');
         const watermark = document.getElementById('church-watermark');
         const watermarkInfo = document.getElementById('church-info');
+        const videoContainer = document.getElementById('video-container');
+        const videoPlayer = document.getElementById('projector-video');
 
-        let currentMode = 'slide'; // slide or bible
+        let currentMode = 'slide'; // slide or bible or video
+        let playbackReportInterval = null;
+
+        function startPlaybackReporter() {
+            stopPlaybackReporter();
+            playbackReportInterval = setInterval(() => {
+                if (videoPlayer.src && !videoPlayer.ended) {
+                    const payload = {
+                        currentTime: videoPlayer.currentTime,
+                        duration: videoPlayer.duration || 0,
+                        paused: videoPlayer.paused
+                    };
+                    if (window.electron && window.electron.sendPlaybackUpdate) {
+                        window.electron.sendPlaybackUpdate(payload);
+                    }
+                }
+            }, 500);
+        }
+
+        function stopPlaybackReporter() {
+            if (playbackReportInterval) {
+                clearInterval(playbackReportInterval);
+                playbackReportInterval = null;
+            }
+        }
+
+        videoPlayer.onended = () => {
+            stopVideo();
+        };
+
+        function stopVideo() {
+            videoPlayer.pause();
+            videoPlayer.src = "";
+            videoContainer.style.display = 'none';
+            if (currentMode === 'video') currentMode = 'slide';
+            stopPlaybackReporter();
+            
+            // Go blank after video ends as per user request
+            contentDiv.classList.add('hidden');
+            watermark.classList.add('hidden');
+            
+            // Notify renderer that playback stopped
+            if (window.electron && window.electron.sendPlaybackUpdate) {
+                window.electron.sendPlaybackUpdate({ currentTime: 0, duration: 0, paused: true, stopped: true });
+            }
+        }
+
+        function playVideo(url) {
+            console.log("Projector: playVideo called with", url);
+            currentMode = 'video';
+            videoContainer.style.display = 'flex';
+            videoPlayer.src = url;
+            
+            videoPlayer.play().then(() => {
+                console.log("Projector: Playback started successfully");
+                startPlaybackReporter();
+            }).catch(e => {
+                console.error("Projector: Playback FAILED:", e);
+            });
+            
+            // Auto-wakeup: Ensure video is visible and any blank overlays are removed
+            contentDiv.classList.remove('hidden');
+            watermark.classList.remove('hidden');
+        }
 
         function updateBibleContent(data) {
+
             currentMode = 'bible';
             slideText.style.display = 'none';
             bibleContainer.style.display = 'flex';
@@ -164,8 +235,26 @@
                 watermark.classList.remove('hidden');
             }
         });
+        
+        socket.on('media-command', (data) => {
+            if (data.action === 'media-play') {
+                playVideo(data.url);
+            } else if (data.action === 'media-stop') {
+                stopVideo();
+            } else if (data.action === 'media-pause') {
+                videoPlayer.pause();
+            } else if (data.action === 'media-resume') {
+                videoPlayer.play();
+                startPlaybackReporter();
+            } else if (data.action === 'media-seek') {
+                videoPlayer.currentTime = data.time;
+            } else if (data.action === 'media-volume') {
+                videoPlayer.volume = data.volume;
+            }
+        });
 
         socket.on('settings-update', (settings) => {
+
             applySettings(settings);
         });
 
@@ -236,6 +325,24 @@
             }
             if (window.electron.onBibleVerseUpdate) {
                 window.electron.onBibleVerseUpdate((event, data) => updateBibleContent(data));
+            }
+            if (window.electron.onMediaCommand) {
+                window.electron.onMediaCommand((event, data) => {
+                    if (data.action === 'media-play') {
+                        playVideo(data.url);
+                    } else if (data.action === 'media-stop') {
+                        stopVideo();
+                    } else if (data.action === 'media-pause') {
+                        videoPlayer.pause();
+                    } else if (data.action === 'media-resume') {
+                        videoPlayer.play();
+                        startPlaybackReporter();
+                    } else if (data.action === 'media-seek') {
+                        videoPlayer.currentTime = data.time;
+                    } else if (data.action === 'media-volume') {
+                        videoPlayer.volume = data.volume;
+                    }
+                });
             }
         }
     </script>

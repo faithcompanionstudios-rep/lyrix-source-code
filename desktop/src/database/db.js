@@ -10,6 +10,7 @@ const net = require('net');
 let SONGS_BACKUP_PATH;
 let SCHEDULE_BACKUP_PATH;
 let CATEGORIES_BACKUP_PATH;
+let DELETED_SONGS_PATH;
 
 const DEFAULT_CATEGORIES = [
     'English Choruses',
@@ -98,7 +99,7 @@ const normalize = (text) => {
     return text.toString()
         .toLowerCase()
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^\w\s]|_/g, "")
+        .replace(/[^\p{L}\p{N}\s]/gu, "")
         .replace(/\s+/g, " ")
         .trim();
 };
@@ -198,6 +199,7 @@ async function initDb(userDataPath) {
     SONGS_BACKUP_PATH = path.join(dataDir, 'songs.json');
     SCHEDULE_BACKUP_PATH = path.join(dataDir, 'schedule.json');
     CATEGORIES_BACKUP_PATH = path.join(dataDir, 'categories.json');
+    DELETED_SONGS_PATH = path.join(dataDir, 'deleted_songs.json');
 
     // Load local backups IMMEDIATELY
     try {
@@ -670,6 +672,15 @@ async function recategorizeSong(songId, newCategory) {
 }
 
 async function deleteSong(id) {
+    const song = songsCache.find(s => s.id === id);
+    
+    // Save to recycle bin before deleting
+    if (song) {
+        try {
+            saveToRecycleBin(song);
+        } catch (e) { console.error('Recycle bin save failed:', e); }
+    }
+
     const match = id.match(/^([a-zA-Z]+)(\d+)$/);
     if (!match) {
         songsCache = songsCache.filter(s => s.id !== id);
@@ -726,6 +737,14 @@ async function deleteSong(id) {
 }
 
 async function bulkDeleteSongs(ids) {
+    // Save all songs to recycle bin before deleting
+    try {
+        const songsToDelete = songsCache.filter(s => ids.includes(s.id));
+        for (const song of songsToDelete) {
+            saveToRecycleBin(song);
+        }
+    } catch (e) { console.error('Recycle bin bulk save failed:', e); }
+
     songsCache = songsCache.filter(s => !ids.includes(s.id));
     scheduleCache = scheduleCache.filter(item => !ids.includes(item.songId));
     saveLocalSongs();
@@ -921,6 +940,74 @@ function getDbStatus() {
     return { status: isOffline ? 'disconnected' : dbStatus, authenticated: !!auth.currentUser, isOffline };
 }
 
+// ─── Recycle Bin ──────────────────────────────────────────────────────────────
+
+const MAX_RECYCLE_BIN = 50;
+
+function loadRecycleBin() {
+    try {
+        if (DELETED_SONGS_PATH && fs.existsSync(DELETED_SONGS_PATH)) {
+            return JSON.parse(fs.readFileSync(DELETED_SONGS_PATH, 'utf-8'));
+        }
+    } catch (e) { console.error('Failed to load recycle bin:', e); }
+    return [];
+}
+
+function saveRecycleBin(bin) {
+    try {
+        if (DELETED_SONGS_PATH) {
+            fs.writeFileSync(DELETED_SONGS_PATH, JSON.stringify(bin, null, 2));
+        }
+    } catch (e) { console.error('Failed to save recycle bin:', e); }
+}
+
+function saveToRecycleBin(song) {
+    const bin = loadRecycleBin();
+    bin.unshift({ ...song, deletedAt: Date.now() });
+    // Cap at MAX_RECYCLE_BIN entries (FIFO)
+    while (bin.length > MAX_RECYCLE_BIN) bin.pop();
+    saveRecycleBin(bin);
+}
+
+function getDeletedSongs() {
+    return loadRecycleBin();
+}
+
+async function restoreSong(deletedSongId) {
+    const bin = loadRecycleBin();
+    const idx = bin.findIndex(s => s.id === deletedSongId || s.deletedAt?.toString() === deletedSongId);
+    if (idx === -1) throw new Error('Song not found in recycle bin');
+
+    const song = bin[idx];
+    bin.splice(idx, 1);
+    saveRecycleBin(bin);
+
+    // Assign a new sequential ID in the song's original category
+    const category = song.category || 'English Choruses';
+    const newId = await getNextId(category);
+
+    // Clean up recycle bin metadata
+    const { deletedAt, ...songData } = song;
+    const restoredSong = { ...songData, id: newId, updatedAt: Date.now() };
+
+    // Add back to cache
+    songsCache.push(restoredSong);
+    songsCache.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+    saveLocalSongs();
+
+    // Sync to Firebase
+    if (!isOffline) {
+        ensureAuth().then(() => setDoc(doc(db, 'songs', restoredSong.id), restoredSong)).catch(e => console.error(e));
+    }
+
+    return restoredSong;
+}
+
+function clearDeletedSongs() {
+    saveRecycleBin([]);
+    return true;
+}
+
 module.exports = {
     initDb,
     searchSongs,
@@ -948,5 +1035,8 @@ module.exports = {
     getDbStatus,
     syncSongs,
     checkNetwork,
-    getCategoryPrefix
+    getCategoryPrefix,
+    getDeletedSongs,
+    restoreSong,
+    clearDeletedSongs
 };

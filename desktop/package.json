@@ -1,13 +1,13 @@
 {
   "name": "church-lyrics-system",
-  "version": "1.7.4",
+  "version": "1.8.0",
   "description": "Church Lyrics System with Web Remote Control",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "concurrently \"vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron .\"",
-    "build": "vite build && electron-builder --win --x64 -c.directories.output=release_v1_7_0",
-    "dist": "vite build && electron-builder --win --x64 -c.directories.output=release_v1_7_0",
+    "build": "vite build && electron-builder --win --x64 -c.directories.output=release_v1_8_0",
+    "dist": "vite build && electron-builder --win --x64 -c.directories.output=release_v1_8_0",
     "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [],
@@ -28,6 +28,7 @@
     "express": "^5.2.1",
     "firebase": "^12.8.0",
     "jszip": "^3.10.1",
+    "loudness": "^0.4.2",
     "pptx2json": "^0.0.10",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -63,7 +64,7 @@
       "public/remote/**/*"
     ],
     "directories": {
-      "output": "release_v1_7_0"
+      "output": "release_v1_7_9"
     },
     "win": {
       "target": "nsis",

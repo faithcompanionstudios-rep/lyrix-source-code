@@ -75,14 +75,18 @@ const CustomSelect = ({ value, onChange, options, className, placeholder = "Sele
     );
 };
 
-const Tooltip = ({ text, children, position = 'bottom' }) => {
+const Tooltip = ({ text, children, position = 'bottom', className }) => {
     const [isVisible, setIsVisible] = useState(false);
     
     // Whitelist per user request
     const allowedTooltips = [
         "Add to Sunday schedule",
         "Add verse range to Sunday Schedule (leave empty for full chapter)",
-        "Import slides from PowerPoint (.pptx)"
+        "Import slides from PowerPoint (.pptx)",
+        "Play Video",
+        "Replay Video",
+        "Mark as Played",
+        "Mark as Unplayed"
     ];
 
     if (!allowedTooltips.includes(text)) {
@@ -94,8 +98,9 @@ const Tooltip = ({ text, children, position = 'bottom' }) => {
             {children}
             {isVisible && text && (
                 <div className={clsx(
-                    "absolute z-[200] px-3 py-1.5 bg-slate-900/80 backdrop-blur-md text-white text-[10px] font-bold rounded-xl shadow-xl whitespace-nowrap animate-in fade-in zoom-in-95 duration-200 pointer-events-none",
-                    position === 'bottom' ? "top-full mt-2 left-1/2 -translate-x-1/2" : position === 'top' ? "bottom-full mb-2 left-1/2 -translate-x-1/2" : position === 'left' ? "right-full mr-2 top-1/2 -translate-y-1/2" : position === 'right' ? "left-full ml-2 top-1/2 -translate-y-1/2" : ""
+                    "absolute z-[200] px-3 py-1.5 bg-slate-900/80 backdrop-blur-md text-white text-[10px] font-bold rounded-xl shadow-xl animate-in fade-in zoom-in-95 duration-200 pointer-events-none",
+                    position === 'bottom' ? "top-full mt-2 left-1/2 -translate-x-1/2" : position === 'top' ? "bottom-full mb-2 left-1/2 -translate-x-1/2" : position === 'left' ? "right-full mr-2 top-1/2 -translate-y-1/2" : position === 'right' ? "left-full ml-2 top-1/2 -translate-y-1/2" : "",
+                    className || "whitespace-nowrap"
                 )}>
                     <div className={clsx(
                         "absolute w-2 h-2 bg-slate-900/80 rotate-45",
@@ -107,6 +112,8 @@ const Tooltip = ({ text, children, position = 'bottom' }) => {
         </div>
     );
 };
+
+let smartJumpTimeout = null;
 
 function App() {
     const [status, setStatus] = useState('Disconnected');
@@ -126,17 +133,32 @@ function App() {
     const [schedule, setSchedule] = useState([]);
     const [customAlert, setCustomAlert] = useState(null);
 
-    // Auto-dismiss custom alerts after 0.5 seconds
+    // Auto-dismiss custom alerts after 0.8 seconds (unless it's an error)
     useEffect(() => {
         if (customAlert) {
-            const timer = setTimeout(() => setCustomAlert(null), 500);
-            return () => clearTimeout(timer);
+            const isError = customAlert.toLowerCase().includes('error') || 
+                            customAlert.toLowerCase().includes('failed') || 
+                            customAlert.toLowerCase().includes('empty') || 
+                            customAlert.toLowerCase().includes('not match') ||
+                            customAlert.toLowerCase().includes('connection');
+            
+            if (!isError) {
+                const timer = setTimeout(() => setCustomAlert(null), 800);
+                return () => clearTimeout(timer);
+            }
         }
     }, [customAlert]);
 
+    const [rollbackPrompt, setRollbackPrompt] = useState(null);
     const [songToDelete, setSongToDelete] = useState(null);
     const [overwritePrompt, setOverwritePrompt] = useState(null);
     const [confirmPrompt, setConfirmPrompt] = useState(null);
+    
+    // Admin Verification Modal State
+    const [adminVerifyPrompt, setAdminVerifyPrompt] = useState(null);
+    const [adminVerifyPassword, setAdminVerifyPassword] = useState('');
+    const [adminVerifyError, setAdminVerifyError] = useState('');
+
     const [dbStatus, setDbStatus] = useState({ status: 'connecting', authenticated: false });
     const searchQueryRef = useRef('');
     const activeFilterRef = useRef('All');
@@ -225,6 +247,10 @@ function App() {
 
     // Admin Uncategorized State
     const [uncategorizedSongs, setUncategorizedSongs] = useState([]);
+
+    // Admin Restore Songs State
+    const [deletedSongs, setDeletedSongs] = useState([]);
+    const [deletedLoading, setDeletedLoading] = useState(false);
 
     // Rollback State
     const [availableRollbacks, setAvailableRollbacks] = useState([]);
@@ -385,6 +411,12 @@ function App() {
                         }
                     }
                 }
+                else if (cmd.action === 'smart-jump') {
+                    setActiveTab('bible');
+                    setTimeout(() => {
+                        window.dispatchEvent(new CustomEvent('remote-smart-jump', { detail: cmd.query }));
+                    }, 100);
+                }
             });
 
             const unsubKeyPress = window.electron.onProjectorKeyPress((event, key) => {
@@ -534,6 +566,7 @@ function App() {
                 if (unsubSongsUpdate) unsubSongsUpdate();
                 if (unsubCategoriesUpdate) unsubCategoriesUpdate();
                 if (unsubAppRunning) unsubAppRunning();
+                if (unsubCloseConfirm) unsubCloseConfirm();
                 if (unsubDbStatusUpdate) unsubDbStatusUpdate();
             };
         }
@@ -789,14 +822,39 @@ function App() {
         <div className="flex flex-col h-screen bg-white text-slate-800 font-sans overflow-hidden">
             {/* Custom OS Title Bar */}
             <div
-                className="h-10 bg-white text-slate-800 flex items-center px-4 w-full select-none shrink-0 relative z-[200]"
+                className="h-10 bg-white text-slate-800 flex items-center pl-4 w-full select-none shrink-0 relative z-[1000]"
                 style={{ WebkitAppRegion: 'drag' }}
             >
                 <img src="./icon.ico" className="w-5 h-5 mr-3 drop-shadow" alt="LyriX Logo" />
                 <span className="font-bold text-[13px] tracking-widest uppercase text-slate-800">LyriX Desktop</span>
+
+                {/* Custom Window Control Buttons — always white, no OS color interference */}
+                <div className="ml-auto flex items-center h-full" style={{ WebkitAppRegion: 'no-drag' }}>
+                    {/* Minimize */}
+                    <button
+                        onClick={() => window.electron?.windowMinimize()}
+                        className="w-12 h-10 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors duration-100"
+                    >
+                        <svg width="10" height="1" viewBox="0 0 10 1" fill="currentColor"><rect width="10" height="1"/></svg>
+                    </button>
+                    {/* Maximize / Restore */}
+                    <button
+                        onClick={() => window.electron?.windowMaximize()}
+                        className="w-12 h-10 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors duration-100"
+                    >
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2"><rect x="0.6" y="0.6" width="8.8" height="8.8"/></svg>
+                    </button>
+                    {/* Close */}
+                    <button
+                        onClick={() => window.electron?.windowClose()}
+                        className="w-12 h-10 flex items-center justify-center text-slate-500 hover:bg-red-500 hover:text-white transition-colors duration-100"
+                    >
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>
+                    </button>
+                </div>
             </div>
             {/* Full-width border element behind the overlay area */}
-            <div className="absolute top-10 left-0 w-full h-[1px] bg-slate-200 z-50 pointer-events-none"></div>
+            <div className="absolute top-10 left-0 w-full h-[1px] bg-slate-200 z-[1000] pointer-events-none"></div>
 
             {/* Main Application Content Area */}
             <div className="flex-1 flex overflow-hidden">
@@ -808,20 +866,21 @@ function App() {
                         <div className="text-sm font-bold text-slate-600 tracking-widest uppercase">LyriX Stage</div>
                     </div>
 
-                    <div className="flex-1 py-6 space-y-1">
+                    <div className="flex-1 py-6 space-y-1 overflow-y-auto stealth-scrollbar min-h-0 relative px-1 -mx-1">
                         <div className="flex w-full gap-2 px-3 mb-4">
-                            <Tooltip text="Create a new song entry" position="right" className="flex-[3]">
+                            <Tooltip text="Create a new song entry" position="bottom">
                                 <button
                                     onClick={() => { setAddSongInitialData(null); setShowAddModal(true); }}
-                                    className="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-sm font-bold transition-all duration-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-[1.02]"
+                                    className="flex-[3] w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-sm font-bold transition-all duration-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-[1.02]"
                                 >
                                     <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
                                     New Song
                                 </button>
                             </Tooltip>
-                            <Tooltip text="Import slides from PowerPoint (.pptx)" position="right" className="flex-1">
+                            <Tooltip text="Import slides from PowerPoint (.pptx)" position="bottom" className="whitespace-normal break-words sm:max-w-[200px] text-center leading-tight">
                                 <button
                                     onClick={async () => {
+
                                         const res = await window.electron.invoke('import-pptx');
                                         if (res && res.success) {
                                             setAddSongInitialData({ title: res.filename, preview: res.slides.join('\n\n\n') });
@@ -830,7 +889,7 @@ function App() {
                                             setCustomAlert("Error importing PPTX: " + res.error);
                                         }
                                     }}
-                                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-700 hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-300 transition-all font-bold shadow-sm flex items-center justify-center group"
+                                    className="flex-1 w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-700 hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-300 transition-all font-bold shadow-sm flex items-center justify-center group"
                                 >
                                     <svg className="w-5 h-5 group-hover:scale-110 transition-transform text-orange-600" fill="currentColor" viewBox="0 0 24 24"><path d="M19.5 3h-15C3.12 3 2 4.12 2 5.5v13C2 19.88 3.12 21 4.5 21h15c1.38 0 2.5-1.12 2.5-2.5v-13C22 4.12 20.88 3 19.5 3zm-9 14.5c0 .28-.22.5-.5.5h-5c-.28 0-.5-.22-.5-.5v-11c0-.28.22-.5.5-.5h5c.28 0 .5.22.5.5v11zm8 0c0 .28-.22.5-.5.5h-6c-.28 0-.5-.22-.5-.5v-11c0-.28.22-.5.5-.5h6c.28 0 .5.22.5.5v11zM7.5 10c-.83 0-1.5.67-1.5 1.5S6.67 13 7.5 13 9 12.33 9 11.5 8.33 10 7.5 10z" /></svg>
                                 </button>
@@ -842,8 +901,9 @@ function App() {
                             <NavItem icon={<HeartIcon />} label="Favourites" active={activeTab === 'favourites'} onClick={() => { setActiveTab('favourites'); handleSearch('', 'All'); }} />
                             <NavItem icon={<GlobeIcon />} label="Search Web" active={activeTab === 'web'} onClick={() => setActiveTab('web')} />
                             <NavItem icon={<CalendarIcon />} label="Sunday Service" active={activeTab === 'service'} onClick={() => { setActiveTab('service'); handleSearch('', 'All'); }} />
+                            <NavItem icon={<MediaIcon />} label="Media & Video" active={activeTab === 'media'} onClick={() => setActiveTab('media')} />
                             <NavItem icon={<BibleIcon />} label="Holy Bible" active={activeTab === 'bible'} onClick={() => setActiveTab('bible')} />
-                            <div className="pt-6">
+                            <div className="pt-2">
                                 <NavItem icon={<SettingsIcon />} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
                             </div>
                         </div>
@@ -866,8 +926,13 @@ function App() {
                     </div>
                 </div>
 
-                {/* Main Content Area */}
-                {activeTab === 'bible' ? (
+                {activeTab === 'media' ? (
+                    <MediaSection
+                        setStatus={setCustomAlert}
+                        setAdminVerifyPrompt={setAdminVerifyPrompt}
+                        setIsBlack={setIsBlack}
+                    />
+                ) : activeTab === 'bible' ? (
                     <BibleSection
                         setStatus={setCustomAlert}
                         isProjectorOpen={isProjectorOpen}
@@ -934,6 +999,7 @@ function App() {
                                             { id: 'categories', label: 'Categories' },
                                             { id: 'uncategorized', label: 'Uncategorized' },
                                             { id: 'bulk_delete', label: 'Bulk Delete' },
+                                            { id: 'restore', label: 'Restore Songs' },
                                             { id: 'security', label: 'Security' },
                                             { id: 'system', label: 'System Rollback' }
                                         ].map(tab => (
@@ -1163,6 +1229,97 @@ function App() {
                                                 )}
                                             </div>
                                         )}
+                                        {adminTab === 'restore' && (
+                                            <div className="animate-fade-in-up">
+                                                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40">
+                                                    <div className="flex items-center justify-between mb-6">
+                                                        <div>
+                                                            <h3 className="text-lg font-bold text-slate-800 mb-1 font-display">Restore Deleted Songs</h3>
+                                                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Last {deletedSongs.length} deleted songs (max 50)</p>
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={async () => {
+                                                                    setDeletedLoading(true);
+                                                                    try {
+                                                                        const songs = await window.electron.invoke('get-deleted-songs');
+                                                                        setDeletedSongs(songs || []);
+                                                                    } catch (e) { console.error(e); }
+                                                                    setDeletedLoading(false);
+                                                                }}
+                                                                className="px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl text-xs font-bold transition-all flex items-center gap-2"
+                                                            >
+                                                                <svg className={clsx("w-3.5 h-3.5", deletedLoading && "animate-spin")} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                                                Load Recycle Bin
+                                                            </button>
+                                                            {deletedSongs.length > 0 && (
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setConfirmPrompt({
+                                                                            title: 'Clear Recycle Bin',
+                                                                            message: 'This will permanently delete all songs in the recycle bin. This action cannot be undone.',
+                                                                            confirmText: 'Clear All',
+                                                                            confirmStyle: 'red',
+                                                                            onConfirm: async () => {
+                                                                                await window.electron.invoke('clear-deleted-songs');
+                                                                                setDeletedSongs([]);
+                                                                                setStatus('Recycle bin cleared');
+                                                                            }
+                                                                        });
+                                                                    }}
+                                                                    className="px-4 py-2 bg-rose-50 text-rose-500 hover:bg-rose-100 rounded-xl text-xs font-bold transition-all flex items-center gap-2"
+                                                                >
+                                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                                    Clear All
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {deletedSongs.length === 0 ? (
+                                                        <div className="flex flex-col items-center justify-center py-16 text-center">
+                                                            <svg className="w-16 h-16 text-slate-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                            <p className="text-slate-400 italic text-sm">Recycle bin is empty</p>
+                                                            <p className="text-slate-300 text-xs mt-1">Click "Load Recycle Bin" to check for deleted songs</p>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-2 max-h-[400px] overflow-y-auto custom-scrollbar">
+                                                            {deletedSongs.map((song, i) => (
+                                                                <div key={song.deletedAt || i} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-200 transition-all group">
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-[9px] font-black text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{song.id}</span>
+                                                                            <span className="text-sm font-bold text-slate-700 truncate italic">{song.title || song.displayTitle || 'Untitled'}</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-3 mt-1">
+                                                                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">{song.category}</span>
+                                                                            {song.deletedAt && (
+                                                                                <span className="text-[8px] text-slate-300">Deleted {new Date(song.deletedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={async () => {
+                                                                            try {
+                                                                                const restored = await window.electron.invoke('restore-song', song.id);
+                                                                                setDeletedSongs(prev => prev.filter((_, idx) => idx !== i));
+                                                                                setStatus(`Restored "${song.title}" as ${restored.id}`);
+                                                                            } catch (e) {
+                                                                                setStatus(`Restore failed: ${e.message}`);
+                                                                            }
+                                                                        }}
+                                                                        className="px-4 py-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 opacity-0 group-hover:opacity-100 shrink-0"
+                                                                    >
+                                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
+                                                                        Restore
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
                                         {adminTab === 'system' && (
                                             <div className="animate-fade-in-up">
                                                 <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 flex flex-col gap-8 relative overflow-hidden group">
@@ -1201,13 +1358,11 @@ function App() {
                                                                                 <div className="text-[10px] text-slate-400 italic mt-0.5">{rollback.name || 'Stable Release'}</div>
                                                                             </div>
                                                                             <button
-                                                                                onClick={async () => {
-                                                                                    const confirmed = window.confirm(`Are you sure you want to rollback to ${rollback.tag}? This will download ${rollback.assets[0].name} and restart the application.`);
-                                                                                    if (confirmed) {
-                                                                                        setCustomAlert(`Starting Rollback to ${rollback.tag}...`);
-                                                                                        const res = await window.electron.invoke('trigger-rollback', rollback.assets[0].browser_download_url);
-                                                                                        if (res && !res.success) setCustomAlert("Rollback failed: " + res.error);
-                                                                                    }
+                                                                                onClick={() => {
+                                                                                    setRollbackPrompt({
+                                                                                        tag: rollback.tag,
+                                                                                        url: rollback.assets[0].browser_download_url
+                                                                                    });
                                                                                 }}
                                                                                 className="px-4 py-2 bg-amber-50 hover:bg-amber-600 text-amber-600 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border border-amber-100/50 active:scale-95 shadow-sm"
                                                                             >
@@ -1229,12 +1384,20 @@ function App() {
                                         {adminTab === 'security' && (
                                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
                                                 <div className="bg-white rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 p-8">
-                                                    <h3 className="text-xl font-bold text-slate-800 mb-8 font-display flex items-center gap-3">
-                                                        <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner">
-                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                                                        </div>
-                                                        Admin Credentials
-                                                    </h3>
+                                                    <div className="flex items-center justify-between mb-8">
+                                                        <h3 className="text-xl font-bold text-slate-800 font-display flex items-center gap-3">
+                                                            <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner">
+                                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                                            </div>
+                                                            Admin Credentials
+                                                        </h3>
+                                                        <button 
+                                                            onClick={() => { setAdminUsernameInput(''); setAdminPasswordInput(''); setCustomAlert('Inputs reset.'); }}
+                                                            className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 uppercase tracking-widest transition-colors"
+                                                        >
+                                                            Reset Form
+                                                        </button>
+                                                    </div>
                                                     <div className="space-y-6">
                                                         <div>
                                                             <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 pl-1">Admin Username</label>
@@ -1586,8 +1749,8 @@ function App() {
 
                                                 {/* Preview Area */}
                                                 <div className="flex-1 flex items-center justify-center bg-white/40 rounded-2xl mb-3 border border-slate-300 overflow-hidden min-h-[60px] relative">
-                                                    <div className="absolute top-1.5 right-1.5 w-6 h-6 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-lg border-2 border-white z-20 font-mono">
-                                                        {fontSize}
+                                                    <div className="absolute top-1.5 right-1.5 w-7 h-7 bg-indigo-600 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-lg border-2 border-white z-20">
+                                                        {fontSize.toFixed(1)}
                                                     </div>
                                                     <div className="italic font-extrabold text-slate-400 opacity-50 select-none tracking-tight" style={{ fontSize: `${fontSize * 4}px`, lineHeight: 1 }}>
                                                         Aa
@@ -1680,7 +1843,7 @@ function App() {
 
                                                 {/* Preview Area */}
                                                 <div className="flex-1 flex items-center justify-center bg-transparent rounded-2xl mb-3 border border-slate-300 overflow-hidden min-h-[60px] relative">
-                                                    <div className="absolute top-1.5 right-1.5 w-6 h-6 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-lg border-2 border-white z-20 font-mono">
+                                                    <div className="absolute top-1.5 right-1.5 w-7 h-7 bg-indigo-600 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-lg border-2 border-white z-20">
                                                         {watermarkSize.toFixed(1)}
                                                     </div>
                                                     <div className="italic font-extrabold text-slate-400 opacity-30 select-none tracking-tight absolute inset-0 flex items-center justify-center" style={{ fontSize: `${watermarkSize * 15}px`, lineHeight: 1 }}>
@@ -1958,55 +2121,63 @@ function App() {
                                 </div>
 
                                 {/* List */}
-                                <div className="flex-1 overflow-y-auto w-full">
-                                    <div className="text-[10px] font-bold text-slate-400 px-4 py-2 uppercase tracking-wider bg-slate-50/50 sticky top-0 z-10 backdrop-blur-md italic">
-                                        Showing top results
-                                    </div>
-                                    {searchResults.filter(song => {
+                                {(() => {
+                                    const displaySongs = searchResults.filter(song => {
                                         if (activeTab === 'favourites') return favourites.includes(song.id);
                                         return activeFilter === 'All' ? visibleCategories.includes(song.category) : true;
-                                    }).map(song => (
-                                        <div
-                                            key={song.id}
-                                            onClick={() => selectSong(song)}
-                                            className={clsx(
-                                                "px-4 py-3 cursor-pointer border-b border-slate-50 transition-colors hover:bg-slate-50 group relative",
-                                                currentSong?.id === song.id ? "bg-blue-50/60" : ""
-                                            )}
-                                        >
-                                            <div className="flex justify-between items-start">
-                                                <div className="flex-1 min-w-0 pr-2">
-                                                    <div className="font-semibold text-slate-800 text-sm">{cleanText((song.title || song.preview || '').split('\n')[0].substring(0, 40)) || 'Untitled'}...</div>
-                                                    <div className="text-xs text-slate-500 mt-1 line-clamp-1 italic">{song.category}</div>
-                                                </div>
-                                                <div className="flex flex-col items-end gap-1">
-                                                    <span className={clsx(
-                                                        "text-[10px] font-bold px-1.5 py-0.5 rounded text-blue-600 bg-blue-100",
-                                                        currentSong?.id === song.id ? "bg-blue-200 text-blue-700" : ""
-                                                    )}>{song.id}</span>
+                                    });
 
-                                                    <Tooltip text="Add to Sunday schedule" position="left">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleAddToSchedule(song.id);
-                                                            }}
-                                                            className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                                                        </button>
-                                                    </Tooltip>
+                                    return (
+                                        <>
+                                            <div className="flex-1 overflow-y-auto w-full">
+                                                <div className="text-[10px] font-bold text-slate-400 px-4 py-2 uppercase tracking-wider bg-slate-50/50 sticky top-0 z-10 backdrop-blur-md italic">
+                                                    Showing top results
                                                 </div>
+                                                {displaySongs.map(song => (
+                                                    <div
+                                                        key={song.id}
+                                                        onClick={() => selectSong(song)}
+                                                        className={clsx(
+                                                            "px-4 py-3 cursor-pointer border-b border-slate-50 transition-colors hover:bg-slate-50 group relative",
+                                                            currentSong?.id === song.id ? "bg-blue-50/60" : ""
+                                                        )}
+                                                    >
+                                                        <div className="flex justify-between items-start">
+                                                            <div className="flex-1 min-w-0 pr-2">
+                                                                <div className="font-semibold text-slate-800 text-sm">{cleanText((song.title || song.preview || '').split('\n')[0].substring(0, 40)) || 'Untitled'}...</div>
+                                                                <div className="text-xs text-slate-500 mt-1 line-clamp-1 italic">{song.category}</div>
+                                                            </div>
+                                                            <div className="flex flex-col items-end gap-1">
+                                                                <span className={clsx(
+                                                                    "text-[10px] font-bold px-1.5 py-0.5 rounded text-blue-600 bg-blue-100",
+                                                                    currentSong?.id === song.id ? "bg-blue-200 text-blue-700" : ""
+                                                                )}>{song.id}</span>
+
+                                                                <Tooltip text="Add to Sunday schedule" position="left">
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleAddToSchedule(song.id);
+                                                                        }}
+                                                                        className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                                                    >
+                                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                                                                    </button>
+                                                                </Tooltip>
+                                                            </div>
+                                                        </div>
+                                                        {currentSong?.id === song.id && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>}
+                                                    </div>
+                                                ))}
                                             </div>
-                                            {currentSong?.id === song.id && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>}
-                                        </div>
-                                    ))}
-                                </div>
 
-                                {/* List Footer */}
-                                <div className="p-2 border-t border-slate-100 text-center text-[10px] text-slate-400 bg-slate-50/30 italic">
-                                    Showing {searchResults.length} {searchResults.length === 1 ? 'Song' : 'Songs'}
-                                </div>
+                                            {/* List Footer */}
+                                            <div className="p-2 border-t border-slate-100 text-center text-[10px] text-slate-400 bg-slate-50/30 italic">
+                                                Showing {displaySongs.length} {displaySongs.length === 1 ? 'Song' : 'Songs'}
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                             </div>
                         ) : (
                             <SundayServiceList
@@ -2123,10 +2294,133 @@ function App() {
                     )
                 }
 
+                {/* Admin Verification Modal */}
+                {
+                    adminVerifyPrompt && (
+                        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-[250] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2rem] shadow-2xl p-8 max-w-sm w-full border border-slate-100 animate-fade-in">
+                                <div className="flex flex-col items-center text-center mb-6">
+                                    <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-inner">
+                                        <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                    </div>
+                                    <h3 className="text-xl font-black text-slate-800">{adminVerifyPrompt.title}</h3>
+                                    <p className="text-xs text-slate-400 italic mt-2 leading-relaxed">{adminVerifyPrompt.context}</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Admin Username</label>
+                                        <div className="w-full px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm font-bold text-slate-500 italic">
+                                            {adminVerifyPrompt.username}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Password</label>
+                                        <input
+                                            type="password"
+                                            value={adminVerifyPassword}
+                                            onChange={(e) => { setAdminVerifyPassword(e.target.value); setAdminVerifyError(''); }}
+                                            onKeyDown={async (e) => {
+                                                if (e.key === 'Enter') {
+                                                    const valid = await window.electron.invoke('verify-admin', adminVerifyPrompt.username, adminVerifyPassword);
+                                                    if (valid) {
+                                                        await adminVerifyPrompt.onVerify();
+                                                        setAdminVerifyPrompt(null);
+                                                        setAdminVerifyPassword('');
+                                                        setAdminVerifyError('');
+                                                        setCustomAlert('Action authorized.');
+                                                    } else {
+                                                        setAdminVerifyError('Incorrect password. Please try again.');
+                                                    }
+                                                }
+                                            }}
+                                            autoFocus
+                                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium italic"
+                                            placeholder="Enter admin password"
+                                        />
+                                    </div>
+                                    {adminVerifyError && (
+                                        <p className="text-xs text-red-500 font-bold bg-red-50 py-2 px-3 rounded-lg border border-red-100">{adminVerifyError}</p>
+                                    )}
+                                </div>
+
+                                <div className="mt-6 grid grid-cols-2 gap-3">
+                                    <button
+                                        onClick={() => { setAdminVerifyPrompt(null); setAdminVerifyPassword(''); setAdminVerifyError(''); }}
+                                        className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            const valid = await window.electron.invoke('verify-admin', adminVerifyPrompt.username, adminVerifyPassword);
+                                            if (valid) {
+                                                await adminVerifyPrompt.onVerify();
+                                                setAdminVerifyPrompt(null);
+                                                setAdminVerifyPassword('');
+                                                setAdminVerifyError('');
+                                                setCustomAlert('Action authorized.');
+                                            } else {
+                                                setAdminVerifyError('Incorrect password. Please try again.');
+                                            }
+                                        }}
+                                        className="py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
+                                    >
+                                        Authorize
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                }
+
+                {/* Rollback Prompt Modal */}
+                {
+                    rollbackPrompt && (
+                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2rem] shadow-2xl p-8 max-w-md w-full animate-in fade-in zoom-in duration-200 border border-slate-100">
+                                <div className="flex flex-col items-center text-center">
+                                    <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-6 shadow-inner relative overflow-hidden">
+                                        <div className="absolute inset-0 bg-red-100 animate-pulse"></div>
+                                        <svg className="w-8 h-8 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                    </div>
+                                    <h3 className="text-xl font-bold text-slate-800 mb-2">Confirm System Rollback</h3>
+                                    <p className="text-sm text-slate-500 leading-relaxed italic mb-8">
+                                        Are you absolutely sure you want to downgrade the application to <strong className="text-slate-800 font-black">{rollbackPrompt.tag}</strong>? 
+                                        This will immediately download the older version and forcefully restart LyriX. Your library data will remain safe.
+                                    </p>
+                                    
+                                    <div className="grid grid-cols-2 gap-3 w-full">
+                                        <button
+                                            onClick={() => setRollbackPrompt(null)}
+                                            className="py-3 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-sm font-bold transition-all"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                const url = rollbackPrompt.url;
+                                                const tag = rollbackPrompt.tag;
+                                                setRollbackPrompt(null);
+                                                setCustomAlert(`Starting Rollback to ${tag}... Downloading...`);
+                                                const res = await window.electron.invoke('trigger-rollback', url);
+                                                if (res && !res.success) setCustomAlert("Rollback failed: " + res.error);
+                                            }}
+                                            className="py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/30 transition-all active:scale-[0.98]"
+                                        >
+                                            Downgrade App
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                }
+
                 {/* Custom Alert Modal */}
                 {
                     customAlert && (
-                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
                             <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100">
                                 <div className="flex items-start gap-4">
                                     <div className="shrink-0 w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-inner mt-0.5">
@@ -2137,7 +2431,7 @@ function App() {
                                         <p className="text-sm text-slate-500 leading-relaxed italic">{customAlert}</p>
                                     </div>
                                 </div>
-                                <div className="mt-6 flex justify-end">
+                                <div className="mt-6 flex justify-end gap-2">
                                     <button
                                         onClick={() => setCustomAlert(null)}
                                         className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all active:scale-95"
@@ -2626,7 +2920,407 @@ const BibleIcon = () => (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5S19.832 5.477 21 6.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
 );
 
+const MediaIcon = () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+);
+
+function MediaSection({ setStatus, setAdminVerifyPrompt, setIsBlack }) {
+    const [videos, setVideos] = useState([]);
+    const [nextVideo, setNextVideo] = useState(null);
+    const [mediaPath, setMediaPath] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [volume, setVolume] = useState(1.0);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentPlaying, setCurrentPlaying] = useState(null);
+    const [isPaused, setIsPaused] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
+
+    const refreshList = async () => {
+        setLoading(true);
+        try {
+            const res = await window.electron.invoke('media:get-list');
+            setVideos(res.videos);
+            setNextVideo(res.next);
+            setMediaPath(res.path);
+            
+            // Sync initial volume
+            const initialVol = await window.electron.invoke('media:get-volume');
+            setVolume(initialVol);
+        } catch (e) {
+            console.error(e);
+        }
+        setLoading(false);
+    };
+
+    useEffect(() => {
+        refreshList();
+
+        // Listen for system volume changes (physical keys)
+        if (window.electron.onSystemVolumeChanged) {
+            window.electron.onSystemVolumeChanged((event, newVol) => {
+                setVolume(newVol);
+            });
+        }
+
+        // Listen for playback updates from projector
+        if (window.electron.onMediaPlaybackUpdate) {
+            window.electron.onMediaPlaybackUpdate((event, payload) => {
+                if (payload.stopped) {
+                    setIsPlaying(false);
+                    setCurrentPlaying(null);
+                    setIsPaused(false);
+                    setCurrentTime(0);
+                    setDuration(0);
+                    return;
+                }
+                setCurrentTime(payload.currentTime || 0);
+                setDuration(payload.duration || 0);
+                setIsPaused(payload.paused || false);
+            });
+        }
+    }, []);
+
+    // Keyboard shortcuts for media playback
+    useEffect(() => {
+        const handleMediaKeyDown = (e) => {
+            if (!isPlaying) return;
+            const isInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
+            if (isInput) return;
+
+            if (e.code === 'Space') {
+                e.preventDefault();
+                handlePauseResume();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                handleSkip(-10);
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                handleSkip(10);
+            }
+        };
+        window.addEventListener('keydown', handleMediaKeyDown);
+        return () => window.removeEventListener('keydown', handleMediaKeyDown);
+    }, [isPlaying, isPaused, currentTime, duration]);
+
+    const handlePlay = async (video) => {
+        setIsBlack(false);
+        await window.electron.invoke('media:play', video.name);
+        setIsPlaying(true);
+        setCurrentPlaying(video.name);
+        setStatus(`Playing video: ${video.name}`);
+        refreshList(); // Refresh after playing to update 'next' recommendation
+    };
+
+    const handleStop = async () => {
+        await window.electron.invoke('media:stop');
+        setIsPlaying(false);
+        setCurrentPlaying(null);
+        setIsPaused(false);
+        setCurrentTime(0);
+        setDuration(0);
+    };
+
+    const handlePauseResume = async () => {
+        if (isPaused) {
+            await window.electron.invoke('media:resume');
+            setIsPaused(false);
+        } else {
+            await window.electron.invoke('media:pause');
+            setIsPaused(true);
+        }
+    };
+
+    const handleSeek = async (time) => {
+        await window.electron.invoke('media:seek', time);
+        setCurrentTime(time);
+    };
+
+    const handleSkip = async (seconds) => {
+        const newTime = Math.max(0, Math.min(duration, currentTime + seconds));
+        await handleSeek(newTime);
+    };
+
+    const formatTime = (secs) => {
+        if (!secs || isNaN(secs)) return '0:00';
+        const m = Math.floor(secs / 60);
+        const s = Math.floor(secs % 60);
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const handleMarkPlayed = async (video) => {
+        await window.electron.invoke('media:mark-played', video.name);
+        refreshList();
+    };
+
+    const handleResetHistory = async () => {
+        const setup = await window.electron.invoke('get-admin-credentials');
+        
+        setAdminVerifyPrompt({
+            username: setup.username || 'admin',
+            title: 'Authorize History Reset',
+            context: 'You are attempting to wipe all media playback history. This action requires administrator privileges.',
+            onVerify: async () => {
+                await window.electron.invoke('media:reset-history');
+                refreshList();
+            }
+        });
+    };
+
+    return (
+        <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
+            <div className="p-8 pb-4 shrink-0">
+                <div className="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 className="text-3xl font-black text-slate-800 italic">Media Player</h2>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Wednesday Prayer Service</p>
+                    </div>
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={() => window.electron.invoke('media:open-folder')}
+                            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+                            Open Folder
+                        </button>
+                        <button 
+                            onClick={refreshList}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2"
+                        >
+                            <svg className={clsx("w-4 h-4", loading && "animate-spin")} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex-1 flex gap-6 px-8 pb-8 min-h-0 overflow-hidden">
+                {/* Main Action Area */}
+                <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+                    {/* Wednesday Recommendation */}
+                    <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 p-8 flex items-center gap-8 relative overflow-hidden group">
+                        <div className="absolute right-[-20px] top-[-20px] opacity-[0.03] group-hover:rotate-12 transition-transform duration-700 pointer-events-none">
+                            <MediaIcon className="w-40 h-40" />
+                        </div>
+                        
+                        <div className="shrink-0 w-32 h-32 bg-indigo-50 text-indigo-600 rounded-[2rem] flex items-center justify-center shadow-inner">
+                            <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        </div>
+                        
+                        <div className="flex-1">
+                            <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest border border-amber-200/50 mb-2 inline-block">Wednesday Prayer</span>
+                            <h3 className="text-2xl font-black text-slate-800 italic truncate max-w-md">
+                                {nextVideo ? nextVideo.name : 'No unplayed videos found'}
+                            </h3>
+                            <p className="text-sm text-slate-400 mt-1 italic">
+                                {nextVideo ? 'Automatically selected as the next unplayed video in your folder.' : 'Place new videos in the folder to see them here.'}
+                            </p>
+                            
+                            <div className="flex items-center gap-4 mt-6">
+                                <button
+                                    disabled={!nextVideo || isPlaying}
+                                    onClick={() => handlePlay(nextVideo)}
+                                    className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-2xl text-sm font-black shadow-xl shadow-indigo-500/30 transition-all flex items-center gap-3 active:scale-95"
+                                >
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" /></svg>
+                                    PLAY ON PROJECTOR
+                                </button>
+                                {isPlaying && (
+                                    <button
+                                        onClick={handleStop}
+                                        className="px-6 py-3 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-2xl text-sm font-black transition-all border border-rose-100 flex items-center gap-2"
+                                    >
+                                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" /></svg>
+                                        STOP
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Controls & Volume — compact */}
+                    <div className="bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/30 px-6 py-3 shrink-0">
+                        <div className="flex items-center gap-6">
+                            <div className="flex-1">
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                                        System Volume
+                                    </label>
+                                    <span className="text-xs font-black text-indigo-600 italic">{Math.round(volume * 100)}%</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.01"
+                                    value={volume}
+                                    onChange={(e) => {
+                                        const v = parseFloat(e.target.value);
+                                        setVolume(v);
+                                        window.electron.invoke('media:set-volume', v);
+                                    }}
+                                    className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                                />
+                            </div>
+                            
+                            <div className="w-px h-8 bg-slate-100"></div>
+                            
+                            <button
+                                onClick={handleResetHistory}
+                                className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-xl text-[10px] font-bold transition-all flex items-center gap-1.5 whitespace-nowrap"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                Reset History
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Now Playing Controls — appears BELOW volume when a video is playing */}
+                    {isPlaying && (
+                        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/30 px-6 py-4 shrink-0">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Now Playing</span>
+                                <span className="text-[9px] font-bold text-slate-600 italic truncate">{currentPlaying}</span>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="flex items-center gap-2 mb-3">
+                                <span className="text-[9px] font-mono font-bold text-slate-400 w-9 text-right">{formatTime(currentTime)}</span>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max={duration || 1}
+                                    step="0.1"
+                                    value={currentTime}
+                                    onChange={(e) => handleSeek(parseFloat(e.target.value))}
+                                    className="flex-1 h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                                />
+                                <span className="text-[9px] font-mono font-bold text-indigo-500 w-12">-{formatTime(Math.max(0, duration - currentTime))}</span>
+                            </div>
+
+                            {/* Transport Controls */}
+                            <div className="flex items-center justify-center gap-2">
+                                <button
+                                    onClick={() => handleSkip(-10)}
+                                    className="w-8 h-8 bg-slate-50 hover:bg-slate-100 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-700 transition-all active:scale-95 border border-slate-100"
+                                    title="Skip back 10s"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z" /></svg>
+                                </button>
+                                <button
+                                    onClick={handlePauseResume}
+                                    className="w-10 h-10 bg-indigo-600 hover:bg-indigo-700 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30 transition-all active:scale-95"
+                                    title={isPaused ? 'Resume' : 'Pause'}
+                                >
+                                    {isPaused ? (
+                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" /></svg>
+                                    ) : (
+                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                                    )}
+                                </button>
+                                <button
+                                    onClick={() => handleSkip(10)}
+                                    className="w-8 h-8 bg-slate-50 hover:bg-slate-100 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-700 transition-all active:scale-95 border border-slate-100"
+                                    title="Skip forward 10s"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" /></svg>
+                                </button>
+                                <div className="w-px h-6 bg-slate-100 mx-0.5"></div>
+                                <button
+                                    onClick={handleStop}
+                                    className="w-8 h-8 bg-rose-50 hover:bg-rose-100 rounded-lg flex items-center justify-center text-rose-500 hover:text-rose-600 transition-all active:scale-95 border border-rose-100"
+                                    title="Stop"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Video List Sidebar */}
+                <div className="w-[350px] bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 overflow-hidden flex flex-col">
+                    <div className="p-6 border-b border-slate-50 shrink-0">
+                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Available Videos</h3>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-2">
+                        {videos.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center p-8 text-center text-slate-300">
+                                <svg className="w-12 h-12 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                                <p className="text-sm italic">No videos found in<br/>{mediaPath}</p>
+                            </div>
+                        ) : (
+                            videos.map((vid) => {
+                                const isCurrentlyPlaying = isPlaying && currentPlaying === vid.name;
+                                return (
+                                <div 
+                                    key={vid.name}
+                                    className={clsx(
+                                        "p-4 rounded-2xl border transition-all group relative",
+                                        isCurrentlyPlaying
+                                            ? "bg-indigo-50/50 border-indigo-300 shadow-md shadow-indigo-100 ring-1 ring-indigo-200"
+                                            : vid.played ? "bg-slate-50 border-transparent opacity-60" : "bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md"
+                                    )}
+                                >
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex-1 min-w-0">
+                                            <div className={clsx("text-sm font-bold truncate italic", isCurrentlyPlaying ? "text-indigo-700" : "text-slate-700")}>{vid.name}</div>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                {isCurrentlyPlaying ? (
+                                                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-tighter bg-indigo-100 text-indigo-600 flex items-center gap-1">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse inline-block"></span>
+                                                        Playing
+                                                    </span>
+                                                ) : (
+                                                    <span className={clsx(
+                                                        "text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-tighter",
+                                                        vid.played ? "bg-slate-200 text-slate-400" : "bg-emerald-50 text-emerald-600"
+                                                    )}>
+                                                        {vid.played ? 'Played' : 'New'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <Tooltip text={vid.played ? "Replay Video" : "Play Video"} position="left">
+                                                <button
+                                                    onClick={() => handlePlay(vid)}
+                                                    className={clsx(
+                                                        "p-2 rounded-xl transition-all shadow-sm",
+                                                        vid.played ? "bg-slate-100 text-slate-400 hover:bg-slate-200" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white"
+                                                    )}
+                                                >
+                                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" /></svg>
+                                                </button>
+                                            </Tooltip>
+                                            <Tooltip text={vid.played ? "Mark as Unplayed" : "Mark as Played"} position="left">
+                                                <button
+                                                    onClick={() => handleMarkPlayed(vid)}
+                                                    className={clsx(
+                                                        "p-2 rounded-xl transition-all",
+                                                        vid.played ? "text-amber-500 hover:bg-amber-50" : "text-slate-300 hover:bg-slate-50 hover:text-slate-600"
+                                                    )}
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d={vid.played ? "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" : "M5 13l4 4L19 7"} /></svg>
+                                                </button>
+                                            </Tooltip>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                            })
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBooks, selectedBook, setSelectedBook, selectedChapter, setSelectedChapter, selectedVerse, setSelectedVerse, verses, setVerses, chaptersCount, setChaptersCount, setupStatus, setSetupStatus, setupProgress, setBibleBooks, autoProjectBible }) {
+
     const [searchQuery, setSearchQuery] = useState('');
     const [selectorMode, setSelectorMode] = useState('book'); // book, chapter, verse
     const previewRef = useRef(null);
@@ -2708,8 +3402,7 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
         const fromV = Math.max(1, Math.min(start, end));
         const toV = Math.min(verses.KJV.length, Math.max(start, end));
 
-        const rangeLabel = fromV === 1 && toV === verses.KJV.length
-            ? '' : `:${fromV}-${toV}`;
+        const rangeLabel = `:${fromV}${fromV !== toV ? '-' + toV : ''}`;
         const title = `\u{1F4D6} ${selectedBook.name} ${selectedChapter}${rangeLabel}`;
 
         const filteredKJV = verses.KJV.filter(v => v.verse >= fromV && v.verse <= toV);
@@ -2768,8 +3461,16 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
             setSelectedChapter(chapter);
             setSelectedVerse(verse);
             setSelectorMode('verse');
-            setPendingProjectVerse({ bookId: book.id, chapter, verse });
+            // Delay auto-trigger by 600ms to allow user to finish typing multi-digit verses
+            if (match) {
+                if (smartJumpTimeout) clearTimeout(smartJumpTimeout);
+                smartJumpTimeout = setTimeout(() => {
+                    setPendingProjectVerse({ bookId: book.id, chapter, verse });
+                    setSearchQuery('');
+                }, 600);
+            }
         }
+
     };
 
     // Keyboard Navigation for verses (Arrow keys navigate & project verses)
@@ -2796,6 +3497,17 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [selectedVerse, verses, selectedBook, selectorMode]);
+
+    // Listen for remote Smart Jump commands from the web remote
+    useEffect(() => {
+        const handleRemoteSmartJump = (e) => {
+            if (e.detail) {
+                handleSmartJump(e.detail);
+            }
+        };
+        window.addEventListener('remote-smart-jump', handleRemoteSmartJump);
+        return () => window.removeEventListener('remote-smart-jump', handleRemoteSmartJump);
+    }, [bibleBooks]);
 
 
     return (
@@ -2828,7 +3540,7 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
                                     min={1}
                                     max={verses.KJV.length}
                                 />
-                                <Tooltip text="Add verse range to Sunday Schedule (leave empty for full chapter)" position="top">
+                                <Tooltip text="Add verse range to Sunday Schedule (leave empty for full chapter)" position="bottom">
                                     <button
                                         onClick={handleAddToSchedule}
                                         className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-bold shadow-sm transition-all active:scale-95 flex items-center gap-1 whitespace-nowrap"
@@ -3014,7 +3726,7 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
 
                         {/* Preview Area */}
                         <div className="flex-1 flex flex-col gap-6 min-h-0">
-                            <div ref={previewRef} className="flex-1 bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 p-8 overflow-y-auto custom-scrollbar flex flex-col relative group">
+                            <div ref={previewRef} className="flex-1 bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 p-8 overflow-y-auto stealth-scrollbar flex flex-col relative group">
                                 {!selectedBook ? (
                                     <div className="flex-1 flex items-center justify-center text-slate-300 italic font-medium">Select a book to preview verses</div>
                                 ) : (
@@ -3041,8 +3753,8 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
                                                         {v.verse}
                                                     </div>
                                                     <div className="space-y-4 pl-4">
-                                                        <p className="text-slate-600 text-lg leading-relaxed font-lyrics italic">{cleanBibleText(v.text)}</p>
-                                                        <p className="text-slate-400 text-base leading-relaxed font-sans font-medium">{verses.HINDI[idx]?.text}</p>
+                                                        <p className="text-slate-600 text-base leading-relaxed font-lyrics italic">{cleanBibleText(v.text)}</p>
+                                                        <p className="text-slate-400 text-sm leading-relaxed font-sans font-medium">{verses.HINDI[idx]?.text}</p>
                                                     </div>
                                                     {selectedVerse === v.verse && (
                                                         <div className="absolute top-4 right-6 flex items-center gap-1.5 text-indigo-600 font-black text-[10px] uppercase tracking-widest">
@@ -3470,7 +4182,7 @@ function AddSongModal({ onClose, onSave, initialData, defaultCategory, onConfirm
             if (window.electron) {
                 // Duplicate check for New Songs (and Title changes in Edit)
                 const existingSongs = await window.electron.invoke('search-songs', '', 'All');
-                const sanitizeTitle = t => (t || "").replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                const sanitizeTitle = t => (t || "").replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
                 const duplicateSong = existingSongs.find(s =>
                     s.id !== id &&
                     (!initialData || s.id !== initialData.id) &&

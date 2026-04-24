@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const { startServer } = require('./server/index.js');
-const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, addBibleToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork } = require('./database/db.js');
+const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, addBibleToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork, getDeletedSongs, restoreSong, clearDeletedSongs } = require('./database/db.js');
 const axios = require('axios');
 const { spawn } = require('child_process');
 const bibleDb = require('./database/bible_db.js');
@@ -34,11 +34,6 @@ if (!gotTheLock) {
             width: 1200,
             height: 800,
             titleBarStyle: 'hidden',
-            titleBarOverlay: {
-                color: '#ffffff',
-                symbolColor: '#000000',
-                height: 40
-            },
             autoHideMenuBar: true,
             title: 'LyriX Desktop',
             webPreferences: {
@@ -86,6 +81,19 @@ if (!gotTheLock) {
                 mainWindow.webContents.send('confirm-app-close');
             }
         });
+
+        // Custom window control handlers (replaces native titleBarOverlay)
+        ipcMain.handle('window-minimize', () => mainWindow && mainWindow.minimize());
+        ipcMain.handle('window-maximize', () => {
+            if (mainWindow) {
+                if (mainWindow.isMaximized()) mainWindow.unmaximize();
+                else mainWindow.maximize();
+            }
+        });
+        ipcMain.handle('window-close', () => {
+            if (mainWindow) mainWindow.close();
+        });
+        ipcMain.handle('window-is-maximized', () => mainWindow ? mainWindow.isMaximized() : false);
     }
 
     // Global hook for DB to convert updates
@@ -276,6 +284,11 @@ if (!gotTheLock) {
         ipcMain.handle('bulk-delete-songs', async (event, ids) => bulkDeleteSongs(ids));
         ipcMain.handle('recategorize-song', async (event, songId, newCategory) => recategorizeSong(songId, newCategory));
 
+        // Recycle Bin Handlers
+        ipcMain.handle('get-deleted-songs', async () => getDeletedSongs());
+        ipcMain.handle('restore-song', async (event, id) => restoreSong(id));
+        ipcMain.handle('clear-deleted-songs', async () => clearDeletedSongs());
+
         // Bible Module Handlers
         ipcMain.handle('bible:get-books', async () => bibleDb.getBooks());
         ipcMain.handle('bible:get-chapters', async (event, bookId) => bibleDb.getChapters(bookId));
@@ -371,15 +384,8 @@ if (!gotTheLock) {
                 }
             }
         });
-        ipcMain.handle('set-titlebar-theme', (event, theme) => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                if (theme === 'dark') {
-                    // Match the slate-900/60 color to hide controls during modal
-                    mainWindow.setTitleBarOverlay({ color: '#1e293b', symbolColor: '#475569' });
-                } else {
-                    mainWindow.setTitleBarOverlay({ color: '#ffffff', symbolColor: '#000000' });
-                }
-            }
+        ipcMain.handle('set-titlebar-theme', () => {
+            // No-op: titleBarOverlay removed in favour of custom React window controls
         });
 
         ipcMain.handle('app-control', (event, command) => {
@@ -475,12 +481,8 @@ if (!gotTheLock) {
             return true;
         });
 
-        ipcMain.handle('toggle-projector-window', () => {
-            if (projectorWindow) {
-                projectorWindow.close();
-                // The close event handler will notify clients and nullify the variable
-                return false;
-            }
+        function openProjectorWindow() {
+            if (projectorWindow) return projectorWindow;
 
             const displays = screen.getAllDisplays();
             const externalDisplay = displays.find((display) => {
@@ -497,7 +499,8 @@ if (!gotTheLock) {
                 webPreferences: {
                     preload: path.join(__dirname, 'preload.js'),
                     contextIsolation: true,
-                    nodeIntegration: false
+                    nodeIntegration: false,
+                    webSecurity: false
                 }
             };
 
@@ -513,7 +516,11 @@ if (!gotTheLock) {
                 projectorWindow.setFullScreen(true);
             }
 
-            projectorWindow.loadFile(path.join(__dirname, '../public/projector.html'));
+            if (process.env.NODE_ENV === 'development') {
+                projectorWindow.loadURL('http://localhost:5173/projector.html');
+            } else {
+                projectorWindow.loadFile(path.join(__dirname, '../public/projector.html'));
+            }
 
             // Handle Native Keys on Projector Window
             projectorWindow.webContents.on('before-input-event', (event, input) => {
@@ -547,6 +554,15 @@ if (!gotTheLock) {
                 }
             });
 
+            return projectorWindow;
+        }
+
+        ipcMain.handle('toggle-projector-window', () => {
+            if (projectorWindow) {
+                projectorWindow.close();
+                return false;
+            }
+            openProjectorWindow();
             return true;
         });
 
@@ -727,7 +743,13 @@ if (!gotTheLock) {
                             });
                         }
                     } else if (cmd.action === 'set-song-by-id') {
-                        const song = getSong(cmd.id);
+                        let song = getSong(cmd.id);
+                        if (!song && cmd.id.startsWith('bible-')) {
+                            const scheduleItem = getSchedule().find(s => s.songId === cmd.id);
+                            if (scheduleItem && scheduleItem.isBibleReading) {
+                                song = { ...scheduleItem, id: scheduleItem.songId };
+                            }
+                        }
                         if (song) {
                             BrowserWindow.getAllWindows().forEach(win => {
                                 win.webContents.send('remote-command', { action: 'set-song', song: song });
@@ -868,7 +890,9 @@ if (!gotTheLock) {
         ipcMain.handle('trigger-rollback', async (event, downloadUrl) => {
             try {
                 const tempDir = app.getPath('temp');
-                const fileName = path.basename(downloadUrl);
+                const uniqueId = Math.random().toString(36).substring(2, 8) + '-' + Date.now();
+                const baseName = path.basename(downloadUrl);
+                const fileName = baseName.replace('.exe', `-${uniqueId}.exe`);
                 const filePath = path.join(tempDir, fileName);
 
                 const response = await axios({
@@ -881,23 +905,221 @@ if (!gotTheLock) {
                 response.data.pipe(writer);
 
                 await new Promise((resolve, reject) => {
-                    writer.on('finish', resolve);
+                    writer.on('finish', () => {
+                        writer.close(resolve); // Explicitly close the file handle
+                    });
                     writer.on('error', reject);
                 });
 
-                spawn(filePath, [], {
+                // Small delay to allow Windows/Antivirus to release file lock after closing
+                await new Promise(r => setTimeout(r, 1000));
+
+                console.log("Launching rollback installer:", filePath);
+                
+                spawn(filePath, ['/S'], {
                     detached: true,
                     stdio: 'ignore'
                 }).unref();
 
+                app.isQuitting = true;
                 app.quit();
                 return { success: true };
             } catch (e) {
+                console.error("Rollback trigger failed:", e);
                 return { success: false, error: e.message };
             }
         });
 
+        // --- Media Player Handlers ---
+        const mediaHistoryPath = path.join(newDataDir, 'media_history.json');
+        const videosDir = path.join(app.getPath('documents'), 'LyriX', 'Videos');
+
+        if (!fs.existsSync(videosDir)) {
+            fs.mkdirSync(videosDir, { recursive: true });
+        }
+
+        const getMediaHistory = () => {
+            if (fs.existsSync(mediaHistoryPath)) {
+                try {
+                    return JSON.parse(fs.readFileSync(mediaHistoryPath, 'utf8'));
+                } catch (e) {
+                    return { played: [] };
+                }
+            }
+            return { played: [] };
+        };
+
+        const saveMediaHistory = (history) => {
+            fs.writeFileSync(mediaHistoryPath, JSON.stringify(history, null, 2));
+        };
+
+        ipcMain.handle('media:get-list', async () => {
+            if (!fs.existsSync(videosDir)) return { videos: [], next: null };
+
+            const files = fs.readdirSync(videosDir);
+            const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.webm'];
+            const history = getMediaHistory();
+
+            const videos = files
+                .filter(f => videoExtensions.includes(path.extname(f).toLowerCase()))
+                .map(f => ({
+                    name: f,
+                    path: path.join(videosDir, f),
+                    played: history.played.includes(f)
+                }))
+                .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+            const next = videos.find(v => !v.played) || null;
+
+            return { videos, next, path: videosDir };
+        });
+
+        ipcMain.handle('media:mark-played', async (event, fileName) => {
+            const history = getMediaHistory();
+            if (history.played.includes(fileName)) {
+                history.played = history.played.filter(name => name !== fileName);
+            } else {
+                history.played.push(fileName);
+            }
+            saveMediaHistory(history);
+            return history;
+        });
+
+        ipcMain.handle('media:reset-history', async () => {
+            saveMediaHistory({ played: [] });
+            return { played: [] };
+        });
+
+        ipcMain.handle('media:play', async (event, fileName) => {
+            const { pathToFileURL } = require('url');
+            const videoPath = pathToFileURL(path.join(videosDir, fileName)).href;
+            console.log(`[Media] Playing: ${videoPath}`);
+            const data = { action: 'media-play', url: videoPath, fileName };
+            
+            // Auto-open projector if closed
+            let win = projectorWindow;
+            if (!win || win.isDestroyed()) {
+                win = openProjectorWindow();
+                // Wait for it to load before sending command
+                await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
+            }
+
+            if (io) io.emit('media-command', data);
+            if (win && !win.isDestroyed()) {
+                console.log(`[Media] Sending IPC to projector: ${fileName}`);
+                win.webContents.send('media-command', data);
+            }
+
+            // Mark as played automatically
+            const history = getMediaHistory();
+            if (!history.played.includes(fileName)) {
+                history.played.push(fileName);
+                saveMediaHistory(history);
+            }
+
+            return true;
+        });
+
+        ipcMain.handle('media:stop', () => {
+            const data = { action: 'media-stop' };
+            if (io) io.emit('media-command', data);
+            if (projectorWindow && !projectorWindow.isDestroyed()) {
+                projectorWindow.webContents.send('media-command', data);
+            }
+            return true;
+        });
+
+        ipcMain.handle('media:pause', () => {
+            const data = { action: 'media-pause' };
+            if (io) io.emit('media-command', data);
+            if (projectorWindow && !projectorWindow.isDestroyed()) {
+                projectorWindow.webContents.send('media-command', data);
+            }
+            return true;
+        });
+
+        ipcMain.handle('media:resume', () => {
+            const data = { action: 'media-resume' };
+            if (io) io.emit('media-command', data);
+            if (projectorWindow && !projectorWindow.isDestroyed()) {
+                projectorWindow.webContents.send('media-command', data);
+            }
+            return true;
+        });
+
+        ipcMain.handle('media:seek', (event, time) => {
+            const data = { action: 'media-seek', time };
+            if (io) io.emit('media-command', data);
+            if (projectorWindow && !projectorWindow.isDestroyed()) {
+                projectorWindow.webContents.send('media-command', data);
+            }
+            return true;
+        });
+
+        // Forward playback updates from projector to all renderer windows
+        ipcMain.on('media:playback-update', (event, payload) => {
+            BrowserWindow.getAllWindows().forEach(win => {
+                if (!win.isDestroyed() && win.webContents !== event.sender) {
+                    win.webContents.send('media:playback-update', payload);
+                }
+            });
+        });
+
+        // System Volume Polling & Initial Sync
+        const loudness = require('loudness');
+        let lastSystemVolume = -1;
+
+        ipcMain.handle('media:get-volume', async () => {
+            try {
+                const vol = await loudness.getVolume();
+                return vol / 100;
+            } catch (e) {
+                return 1.0;
+            }
+        });
+
+        // Background poller for physical volume keys
+        setInterval(async () => {
+            try {
+                const currentVol = await loudness.getVolume();
+                const normalizedVol = currentVol / 100;
+                if (Math.abs(normalizedVol - lastSystemVolume) > 0.001) {
+                    lastSystemVolume = normalizedVol;
+                    BrowserWindow.getAllWindows().forEach(win => {
+                        if (!win.isDestroyed()) {
+                            win.webContents.send('media:system-volume-changed', normalizedVol);
+                        }
+                    });
+                }
+            } catch (e) {}
+        }, 1000);
+
+        ipcMain.handle('media:set-volume', async (event, volume) => {
+            try {
+                const volPercent = Math.round(volume * 100);
+                await loudness.setVolume(volPercent);
+                lastSystemVolume = volume; // Prevent loop
+
+                // Still notify projector for UI feedback if needed
+                const data = { action: 'media-volume', volume };
+                if (io) io.emit('media-command', data);
+                if (projectorWindow && !projectorWindow.isDestroyed()) {
+                    projectorWindow.webContents.send('media-command', data);
+                }
+                return true;
+            } catch (e) {
+                console.error("Volume set failed:", e);
+                return false;
+            }
+        });
+
+        ipcMain.handle('media:open-folder', () => {
+            const { shell } = require('electron');
+            shell.openPath(videosDir);
+        });
+
         app.on('activate', function () {
+
             if (BrowserWindow.getAllWindows().length === 0) createWindow();
         });
     });
