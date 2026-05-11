@@ -11,6 +11,9 @@ let SONGS_BACKUP_PATH;
 let SCHEDULE_BACKUP_PATH;
 let CATEGORIES_BACKUP_PATH;
 let DELETED_SONGS_PATH;
+let APP_SETTINGS_PATH;
+
+let forceOfflineMode = false;
 
 const DEFAULT_CATEGORIES = [
     'English Choruses',
@@ -41,7 +44,7 @@ let isOffline = false;
 function broadcastDbStatus() {
     if (global.broadcastDbStatus) {
         global.broadcastDbStatus({
-            status: isOffline ? 'disconnected' : dbStatus,
+            status: isOffline ? (dbStatus === 'offline-mode' ? 'offline-mode' : 'disconnected') : dbStatus,
             authenticated: !!auth.currentUser,
             isOffline: isOffline
         });
@@ -49,6 +52,8 @@ function broadcastDbStatus() {
 }
 
 async function checkNetwork() {
+    if (forceOfflineMode) return;
+    
     // Use a raw TCP connection to a known IP to bypass ALL caching (OS, router, DNS)
     // 8.8.8.8:53 is Google's public DNS - a well-known, reliable endpoint
     return new Promise((resolve) => {
@@ -200,6 +205,15 @@ async function initDb(userDataPath) {
     SCHEDULE_BACKUP_PATH = path.join(dataDir, 'schedule.json');
     CATEGORIES_BACKUP_PATH = path.join(dataDir, 'categories.json');
     DELETED_SONGS_PATH = path.join(dataDir, 'deleted_songs.json');
+    APP_SETTINGS_PATH = path.join(dataDir, 'app_settings.json');
+
+    // Load App Settings
+    try {
+        if (fs.existsSync(APP_SETTINGS_PATH)) {
+            const settings = JSON.parse(fs.readFileSync(APP_SETTINGS_PATH, 'utf-8'));
+            forceOfflineMode = !!settings.forceOffline;
+        }
+    } catch (err) { console.error('Failed to load app settings:', err); }
 
     // Load local backups IMMEDIATELY
     try {
@@ -231,6 +245,14 @@ async function initDb(userDataPath) {
 
     // Initial network check
     await checkNetwork();
+
+    if (forceOfflineMode) {
+        console.log('Init sequence: Pure Offline Mode enabled. Skipping Firebase.');
+        isOffline = true;
+        dbStatus = 'offline-mode';
+        broadcastDbStatus();
+        return; // Halt Firebase setup completely
+    }
 
     // Start background auth and listeners
     ensureAuth()
@@ -937,7 +959,7 @@ async function syncSongs() {
 
 function getDbStatus() {
     broadcastDbStatus(); // Refresh status on query
-    return { status: isOffline ? 'disconnected' : dbStatus, authenticated: !!auth.currentUser, isOffline };
+    return { status: isOffline ? (dbStatus === 'offline-mode' ? 'offline-mode' : 'disconnected') : dbStatus, authenticated: !!auth.currentUser, isOffline };
 }
 
 // ─── Recycle Bin ──────────────────────────────────────────────────────────────
@@ -1008,6 +1030,22 @@ function clearDeletedSongs() {
     return true;
 }
 
+// ─── App Settings ─────────────────────────────────────────────────────────────
+
+function getAppSettings() {
+    return { forceOffline: forceOfflineMode };
+}
+
+function setForceOffline(isForceOffline) {
+    forceOfflineMode = isForceOffline;
+    try {
+        if (APP_SETTINGS_PATH) {
+            fs.writeFileSync(APP_SETTINGS_PATH, JSON.stringify({ forceOffline: forceOfflineMode }, null, 2));
+        }
+    } catch (e) { console.error('Failed to save app settings:', e); }
+    return { success: true };
+}
+
 module.exports = {
     initDb,
     searchSongs,
@@ -1038,5 +1076,7 @@ module.exports = {
     getCategoryPrefix,
     getDeletedSongs,
     restoreSong,
-    clearDeletedSongs
+    clearDeletedSongs,
+    getAppSettings,
+    setForceOffline
 };

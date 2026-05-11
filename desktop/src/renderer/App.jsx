@@ -159,7 +159,9 @@ function App() {
     const [adminVerifyPassword, setAdminVerifyPassword] = useState('');
     const [adminVerifyError, setAdminVerifyError] = useState('');
 
+    const [appVersion, setAppVersion] = useState('1.0.0');
     const [dbStatus, setDbStatus] = useState({ status: 'connecting', authenticated: false });
+    const [isOfflineMode, setIsOfflineMode] = useState(false);
     const searchQueryRef = useRef('');
     const activeFilterRef = useRef('All');
 
@@ -173,7 +175,6 @@ function App() {
     const [updateProgress, setUpdateProgress] = useState(0);
     const [updateInfo, setUpdateInfo] = useState(null);
     const [updateError, setUpdateError] = useState('');
-    const [appVersion, setAppVersion] = useState('1.7.0');
     const [isSyncing, setIsSyncing] = useState(false);
 
     const confirmOverwrite = (title) => {
@@ -1378,6 +1379,80 @@ function App() {
                                                             </div>
                                                         )}
                                                     </div>
+
+                                                    <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                        {/* Offline Mode Toggle */}
+                                                        <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 shadow-inner flex flex-col justify-between">
+                                                            <div>
+                                                                <h4 className="text-sm font-bold text-slate-800 mb-2">Pure Offline Mode</h4>
+                                                                <p className="text-[11px] text-slate-500 italic mb-4 leading-relaxed">
+                                                                    Disable all cloud synchronization (Firebase). The app will run entirely from local storage, and the Android remote app will disconnect.
+                                                                </p>
+                                                            </div>
+                                                            <div className="flex items-center gap-3">
+                                                                <button
+                                                                    onClick={async () => {
+                                                                        const newVal = !isOfflineMode;
+                                                                        await window.electron.invoke('set-force-offline', newVal);
+                                                                        setIsOfflineMode(newVal);
+                                                                        setCustomAlert(newVal ? 'Offline Mode Enabled. Restarting app...' : 'Offline Mode Disabled. Restarting app...');
+                                                                        
+                                                                        // Small delay so the user sees the alert before it violently closes
+                                                                        setTimeout(() => {
+                                                                            window.electron.invoke('app:restart');
+                                                                        }, 1500);
+                                                                    }}
+                                                                    className={clsx(
+                                                                        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2",
+                                                                        isOfflineMode ? "bg-indigo-600" : "bg-slate-200"
+                                                                    )}
+                                                                >
+                                                                    <span className={clsx("pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out", isOfflineMode ? "translate-x-5" : "translate-x-0")}></span>
+                                                                </button>
+                                                                <span className="text-xs font-bold text-slate-600 uppercase tracking-widest">{isOfflineMode ? 'Enabled' : 'Disabled'}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Bible Database Reset */}
+                                                        <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 shadow-inner flex flex-col justify-between">
+                                                            <div>
+                                                                <h4 className="text-sm font-bold text-rose-800 mb-2">Reset Bible Database</h4>
+                                                                <p className="text-[11px] text-rose-500/80 italic mb-4 leading-relaxed">
+                                                                    Delete the downloaded Bible databases. The app will prompt you to redownload them upon restart.
+                                                                </p>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setConfirmPrompt({
+                                                                        title: 'Reset Bible Database?',
+                                                                        message: 'This will delete the local SQLite database. You will need internet access to re-download the Bible texts upon restart.',
+                                                                        confirmText: 'Delete Database',
+                                                                        confirmStyle: 'red',
+                                                                        onConfirm: async () => {
+                                                                            await window.electron.invoke('bible:reset-db');
+                                                                            setCustomAlert('Bible database deleted. Please restart the app.');
+                                                                        }
+                                                                    });
+                                                                }}
+                                                                className="w-full px-4 py-2 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border border-rose-100 active:scale-95 shadow-sm"
+                                                            >
+                                                                Delete Bible Data
+                                                            </button>
+                                                            <button
+                                                                onClick={async () => {
+                                                                    const res = await window.electron.exportSongsDb();
+                                                                    if (res && res.success) {
+                                                                        setCustomAlert('Songs Database successfully exported!');
+                                                                    } else if (res && res.error !== 'Export cancelled.') {
+                                                                        setCustomAlert('Export failed: ' + res.error);
+                                                                    }
+                                                                }}
+                                                                className="w-full mt-3 px-4 py-2 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border border-indigo-100 active:scale-95 shadow-sm"
+                                                            >
+                                                                Export Songs Backup
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
@@ -1556,6 +1631,7 @@ function App() {
                                     </div>
 
                                     {/* 2. Database & Cloud */}
+                                    {dbStatus.status !== 'offline-mode' && (
                                     <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden group">
                                         <div className="absolute right-[-20px] top-[-20px] opacity-[0.03] group-hover:rotate-12 transition-transform duration-700 pointer-events-none">
                                             <DatabaseIcon className="w-48 h-48" />
@@ -1570,13 +1646,20 @@ function App() {
                                                 </div>
                                                 <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">Manage your song database and cloud synchronization status.</p>
                                             </div>
+                                            {dbStatus.status === 'offline-mode' ? (
+                                            <div className="px-3 py-1 bg-slate-100 text-slate-500 border border-slate-200 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 shadow-sm cursor-help" title="Firebase sync disabled. Running locally.">
+                                                <div className="w-2 h-2 rounded-full bg-slate-400"></div>
+                                                Offline Mode
+                                            </div>
+                                        ) : (
                                             <div className={clsx(
-                                                "px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 border shadow-sm",
+                                                "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 shadow-sm transition-all",
                                                 dbStatus.status === 'connected' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-red-50 text-red-600 border-red-100"
                                             )}>
                                                 <div className={clsx("w-2 h-2 rounded-full", dbStatus.status === 'connected' ? "bg-emerald-500 animate-pulse" : "bg-red-500")}></div>
                                                 {dbStatus.status === 'connected' ? "Connected" : "Disconnected"}
                                             </div>
+                                        )}
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1586,23 +1669,26 @@ function App() {
                                                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Cloud Sync</span>
                                                         <span className="text-sm font-bold text-slate-700">Firestore Database</span>
                                                     </div>
-                                                    {isSyncing ? (
-                                                        <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                                                    ) : (
-                                                    <Tooltip text="Push local changes and pull updates from the cloud">
-                                                        <button
-                                                            onClick={async () => {
-                                                                setIsSyncing(true);
-                                                                try { await window.electron.invoke('sync-songs'); setCustomAlert("Database synced successfully!"); }
-                                                                catch (e) { setCustomAlert("Sync failed: " + e.message); }
-                                                                finally { setIsSyncing(false); }
-                                                            }}
-                                                            className="px-4 py-2 bg-white hover:bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 shadow-sm transition-all active:scale-95 text-[10px] font-bold uppercase tracking-widest group-hover/db:shadow-md"
-                                                        >
-                                                            Sync Now
-                                                        </button>
-                                                    </Tooltip>
-                                                    )}
+                                                    {dbStatus.status !== 'offline-mode' && (
+                                            <button
+                                                onClick={async () => {
+                                                    setIsSyncing(true);
+                                                    if (window.electron) {
+                                                        const status = await window.electron.invoke('sync-songs');
+                                                        setDbStatus(status);
+                                                    }
+                                                    setTimeout(() => setIsSyncing(false), 800);
+                                                }}
+                                                disabled={isSyncing}
+                                                className={clsx(
+                                                    "w-10 h-10 flex items-center justify-center rounded-2xl transition-all",
+                                                    isSyncing ? "bg-indigo-50 text-indigo-400 rotate-180" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white shadow-sm hover:shadow-indigo-500/30"
+                                                )}
+                                                title="Force Cloud Sync"
+                                            >
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                            </button>
+                                        )}
                                                 </div>
                                                 <p className="text-[10px] text-slate-400 italic">Push local changes and pull updates from the cloud.</p>
                                             </div>
@@ -1630,6 +1716,7 @@ function App() {
                                             </div>
                                         </div>
                                     </div>
+                                    )}
 
                                     {/* 3. Mobile & Remote Card */}
                                     <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 flex flex-col gap-8 relative group">
@@ -2063,6 +2150,7 @@ function App() {
                                     </div>
 
                                     {/* 8. Database Management Card */}
+                                    {dbStatus.status !== 'offline-mode' && (
                                     <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 relative group mb-8">
                                         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                                             <div className="flex items-center gap-4">
@@ -2092,6 +2180,7 @@ function App() {
                                             </button>
                                         </div>
                                     </div>
+                                    )}
                                 </div>
                             )}
                         </div>

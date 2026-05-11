@@ -93,6 +93,16 @@ const bibleDb = {
         });
 
         transaction(booksData);
+    },
+
+    resetBibleDb: () => {
+        if (db) {
+            db.close();
+            db = null;
+        }
+        if (fs.existsSync(dbPath)) {
+            fs.unlinkSync(dbPath);
+        }
     }
 };
 

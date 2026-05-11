@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const { startServer } = require('./server/index.js');
-const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, addBibleToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork, getDeletedSongs, restoreSong, clearDeletedSongs } = require('./database/db.js');
+const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, addBibleToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork, getDeletedSongs, restoreSong, clearDeletedSongs, getAppSettings, setForceOffline } = require('./database/db.js');
 const axios = require('axios');
 const { spawn } = require('child_process');
 const bibleDb = require('./database/bible_db.js');
@@ -289,6 +289,10 @@ if (!gotTheLock) {
         ipcMain.handle('restore-song', async (event, id) => restoreSong(id));
         ipcMain.handle('clear-deleted-songs', async () => clearDeletedSongs());
 
+        // Offline Mode Settings Handlers
+        ipcMain.handle('get-app-settings', async () => getAppSettings());
+        ipcMain.handle('set-force-offline', async (event, val) => setForceOffline(val));
+
         // Bible Module Handlers
         ipcMain.handle('bible:get-books', async () => bibleDb.getBooks());
         ipcMain.handle('bible:get-chapters', async (event, bookId) => bibleDb.getChapters(bookId));
@@ -297,6 +301,47 @@ if (!gotTheLock) {
         ipcMain.handle('bible:setup-status', async () => {
             const books = bibleDb.getBooks();
             return { ready: books.length > 0 };
+        });
+        ipcMain.handle('bible:reset-db', async () => {
+            bibleDb.resetBibleDb();
+            app.isQuitting = true; // Bypass the exit confirmation
+            app.relaunch();
+            app.quit();
+            return { success: true };
+        });
+
+        ipcMain.handle('app:restart', async () => {
+            app.isQuitting = true; // Bypass the exit confirmation
+            app.relaunch();
+            app.quit();
+            return true;
+        });
+
+        ipcMain.handle('export-songs-db', async () => {
+            try {
+                const { dialog } = require('electron');
+                const fs = require('fs');
+                const path = require('path');
+                
+                const sourcePath = path.join(app.getPath('userData'), 'songs.db');
+                if (!fs.existsSync(sourcePath)) {
+                    return { success: false, error: 'Database file not found.' };
+                }
+
+                const { filePath } = await dialog.showSaveDialog({
+                    title: 'Export Songs Database',
+                    defaultPath: 'church_songs_backup.db',
+                    filters: [{ name: 'SQLite Database', extensions: ['db'] }]
+                });
+
+                if (filePath) {
+                    fs.copyFileSync(sourcePath, filePath);
+                    return { success: true };
+                }
+                return { success: false, error: 'Export cancelled.' };
+            } catch (e) {
+                return { success: false, error: e.message };
+            }
         });
         ipcMain.handle('bible:setup-start', async () => {
             return setupBible((message, progress) => {
