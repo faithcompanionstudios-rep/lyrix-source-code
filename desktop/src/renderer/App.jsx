@@ -1438,19 +1438,6 @@ function App() {
                                                             >
                                                                 Delete Bible Data
                                                             </button>
-                                                            <button
-                                                                onClick={async () => {
-                                                                    const res = await window.electron.exportSongsDb();
-                                                                    if (res && res.success) {
-                                                                        setCustomAlert('Songs Database successfully exported!');
-                                                                    } else if (res && res.error !== 'Export cancelled.') {
-                                                                        setCustomAlert('Export failed: ' + res.error);
-                                                                    }
-                                                                }}
-                                                                className="w-full mt-3 px-4 py-2 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border border-indigo-100 active:scale-95 shadow-sm"
-                                                            >
-                                                                Export Songs Backup
-                                                            </button>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1744,8 +1731,11 @@ function App() {
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100/50 shadow-inner">
-                                            <div className="flex items-center gap-6">
+                                        <div className={clsx(
+                                            "grid grid-cols-1 gap-8 items-center bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100/50 shadow-inner",
+                                            dbStatus.status === 'offline-mode' ? "lg:grid-cols-1" : "lg:grid-cols-2"
+                                        )}>
+                                            <div className={clsx("flex items-center gap-6", dbStatus.status === 'offline-mode' && "justify-center")}>
                                                 <div className="bg-white p-3 rounded-2xl shadow-lg border border-slate-100">
                                                     <QRCode value={`http://${ip}:3001`} size={110} level="M" fgColor="#1e293b" />
                                                 </div>
@@ -1765,19 +1755,21 @@ function App() {
                                                 </div>
                                             </div>
 
-                                            <div className="border-t lg:border-t-0 lg:border-l border-slate-200/50 pt-6 lg:pt-0 lg:pl-10 h-full flex flex-col justify-center">
-                                                <div className="flex items-center gap-4 mb-4">
-                                                    <div className="w-10 h-10 bg-indigo-50 text-indigo-500 rounded-xl flex items-center justify-center shadow-inner">
-                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 0l-2-2m2 2l2-2" /></svg>
+                                            {dbStatus.status !== 'offline-mode' && (
+                                                <div className="border-t lg:border-t-0 lg:border-l border-slate-200/50 pt-6 lg:pt-0 lg:pl-10 h-full flex flex-col justify-center">
+                                                    <div className="flex items-center gap-4 mb-4">
+                                                        <div className="w-10 h-10 bg-indigo-50 text-indigo-500 rounded-xl flex items-center justify-center shadow-inner">
+                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 0l-2-2m2 2l2-2" /></svg>
+                                                        </div>
+                                                        <h4 className="font-bold text-slate-800 tracking-tight">Mobile App Download</h4>
                                                     </div>
-                                                    <h4 className="font-bold text-slate-800 tracking-tight">Mobile App Download</h4>
+                                                    <p className="text-[10px] text-slate-400 italic leading-relaxed mb-4">Download the APK directly to manage your song library from anywhere!</p>
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => setShowMobileDownloadQR(true)} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-widest">Show QR Code</button>
+                                                        <button onClick={() => window.electron.invoke('open-url', 'https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk')} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-bold transition-all active:scale-95 uppercase tracking-widest border border-slate-200">Download APK</button>
+                                                    </div>
                                                 </div>
-                                                <p className="text-[10px] text-slate-400 italic leading-relaxed mb-4">Download the APK directly to manage your song library from anywhere!</p>
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => setShowMobileDownloadQR(true)} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-widest">Show QR Code</button>
-                                                    <button onClick={() => window.electron.invoke('open-url', 'https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk')} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-bold transition-all active:scale-95 uppercase tracking-widest border border-slate-200">Download APK</button>
-                                                </div>
-                                            </div>
+                                            )}
                                         </div>
                                     </div>
 

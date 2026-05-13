@@ -211,7 +211,10 @@ async function initDb(userDataPath) {
     try {
         if (fs.existsSync(APP_SETTINGS_PATH)) {
             const settings = JSON.parse(fs.readFileSync(APP_SETTINGS_PATH, 'utf-8'));
-            forceOfflineMode = !!settings.forceOffline;
+            forceOfflineMode = settings.forceOffline || false;
+            if (settings.adminCredentials) {
+                adminCredentials = settings.adminCredentials;
+            }
         }
     } catch (err) { console.error('Failed to load app settings:', err); }
 
@@ -351,6 +354,7 @@ async function loadConfig() {
         const adminSnap = await getDoc(adminRef);
         if (adminSnap.exists()) {
             adminCredentials = adminSnap.data();
+            saveAppSettings();
         }
     } catch (err) {
         console.error('Failed to load config from Firebase:', err);
@@ -465,6 +469,7 @@ async function setAdminCredentials(username, plainPassword) {
     const passwordHash = crypto.createHash('sha256').update(plainPassword).digest('hex');
     const creds = { username: username.trim(), passwordHash };
     adminCredentials = creds;
+    saveAppSettings();
     if (!isOffline) await setDoc(doc(db, 'config', 'admin-credentials'), creds);
     return true;
 }
@@ -905,9 +910,20 @@ async function syncSongs() {
     remoteSongs.forEach(remoteSong => {
         const localSong = localMap.get(remoteSong.id);
         if (!localSong) {
-            // New song from cloud
-            songsCache.push(remoteSong);
-            hasLocalChanges = true;
+            // Check if it was deleted locally (Offline Mode deletion)
+            const deletedLocal = recycleBinCache.find(s => s.id === remoteSong.id);
+            if (deletedLocal && (deletedLocal.deletedAt || 0) > (remoteSong.updatedAt || 0)) {
+                // It was deleted locally AFTER it was last updated in the cloud -> Delete from cloud
+                if (batchCount < 490) {
+                    batch.delete(doc(db, 'songs', remoteSong.id));
+                    batchCount++;
+                    hasRemoteChanges = true;
+                }
+            } else {
+                // Truly a new song from cloud
+                songsCache.push(remoteSong);
+                hasLocalChanges = true;
+            }
         } else if ((remoteSong.updatedAt || 0) > (localSong.updatedAt || 0)) {
             // Cloud is newer
             songsCache = songsCache.map(s => s.id === remoteSong.id ? remoteSong : s);
@@ -1036,13 +1052,20 @@ function getAppSettings() {
     return { forceOffline: forceOfflineMode };
 }
 
-function setForceOffline(isForceOffline) {
-    forceOfflineMode = isForceOffline;
+function saveAppSettings() {
     try {
         if (APP_SETTINGS_PATH) {
-            fs.writeFileSync(APP_SETTINGS_PATH, JSON.stringify({ forceOffline: forceOfflineMode }, null, 2));
+            fs.writeFileSync(APP_SETTINGS_PATH, JSON.stringify({ 
+                forceOffline: forceOfflineMode,
+                adminCredentials: adminCredentials 
+            }, null, 2));
         }
     } catch (e) { console.error('Failed to save app settings:', e); }
+}
+
+function setForceOffline(isForceOffline) {
+    forceOfflineMode = isForceOffline;
+    saveAppSettings();
     return { success: true };
 }
 

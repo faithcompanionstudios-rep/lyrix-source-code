@@ -316,33 +316,6 @@ if (!gotTheLock) {
             app.quit();
             return true;
         });
-
-        ipcMain.handle('export-songs-db', async () => {
-            try {
-                const { dialog } = require('electron');
-                const fs = require('fs');
-                const path = require('path');
-                
-                const sourcePath = path.join(app.getPath('userData'), 'songs.db');
-                if (!fs.existsSync(sourcePath)) {
-                    return { success: false, error: 'Database file not found.' };
-                }
-
-                const { filePath } = await dialog.showSaveDialog({
-                    title: 'Export Songs Database',
-                    defaultPath: 'church_songs_backup.db',
-                    filters: [{ name: 'SQLite Database', extensions: ['db'] }]
-                });
-
-                if (filePath) {
-                    fs.copyFileSync(sourcePath, filePath);
-                    return { success: true };
-                }
-                return { success: false, error: 'Export cancelled.' };
-            } catch (e) {
-                return { success: false, error: e.message };
-            }
-        });
         ipcMain.handle('bible:setup-start', async () => {
             return setupBible((message, progress) => {
                 if (mainWindow && !mainWindow.isDestroyed()) {

@@ -38,7 +38,6 @@ contextBridge.exposeInMainWorld('electron', {
     getAppSettings: () => ipcRenderer.invoke('get-app-settings'),
     setForceOffline: (val) => ipcRenderer.invoke('set-force-offline', val),
     appControl: (command) => ipcRenderer.invoke('app-control', command),
-    exportSongsDb: () => ipcRenderer.invoke('export-songs-db'),
     setTitlebarTheme: (theme) => ipcRenderer.invoke('set-titlebar-theme', theme),
     windowMinimize: () => ipcRenderer.invoke('window-minimize'),
     windowMaximize: () => ipcRenderer.invoke('window-maximize'),
