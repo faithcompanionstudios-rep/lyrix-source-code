@@ -324,7 +324,10 @@ function App() {
 
             // DB Status Listener
             window.electron.invoke('get-db-status').then(status => {
-                if (status) setDbStatus(status);
+                if (status) {
+                    setDbStatus(status);
+                    setIsOfflineMode(status.status === 'offline-mode');
+                }
             });
 
             // Fetch dynamic categories
@@ -1739,7 +1742,7 @@ function App() {
                                                 <div className="bg-white p-3 rounded-2xl shadow-lg border border-slate-100">
                                                     <QRCode value={`http://${ip}:3001`} size={110} level="M" fgColor="#1e293b" />
                                                 </div>
-                                                <div className="space-y-4 flex-1">
+                                                <div className={clsx("space-y-4", dbStatus.status !== 'offline-mode' && "flex-1")}>
                                                     <div className="space-y-1">
                                                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Server Address</label>
                                                         <div className="text-base font-bold text-slate-800 tracking-tight font-mono break-all leading-tight italic opacity-90">http://{ip}:3001</div>

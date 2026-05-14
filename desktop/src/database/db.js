@@ -345,7 +345,12 @@ async function loadConfig() {
         if (configSnap.exists()) {
             const data = configSnap.data();
             if (Array.isArray(data.categories)) {
-                categoriesCache = data.categories;
+                // Merge local and remote categories to prevent wipeout of offline creations
+                const merged = [...new Set([...categoriesCache, ...data.categories])];
+                if (merged.length > data.categories.length && !isOffline) {
+                    setDoc(configRef, { categories: merged }, { merge: true }).catch(console.error);
+                }
+                categoriesCache = merged;
                 fs.writeFileSync(CATEGORIES_BACKUP_PATH, JSON.stringify(categoriesCache, null, 2));
             }
         }
@@ -964,9 +969,13 @@ async function syncSongs() {
     const scheduleSnap = await getDoc(doc(db, 'schedules', 'sunday-service'));
     if (scheduleSnap.exists()) {
         const remoteSched = scheduleSnap.data();
-        if ((remoteSched.updatedAt || 0) > (scheduleCache.updatedAt || 0)) {
+        if ((remoteSched.updatedAt || 0) > (localScheduleUpdatedAt || 0)) {
            scheduleCache = remoteSched.items || [];
+           localScheduleUpdatedAt = remoteSched.updatedAt || 0;
            saveLocalSchedule();
+        } else if ((localScheduleUpdatedAt || 0) > (remoteSched.updatedAt || 0)) {
+           // Local is newer, push to cloud
+           setDoc(doc(db, 'schedules', 'sunday-service'), { items: scheduleCache, updatedAt: localScheduleUpdatedAt });
         }
     }
 
