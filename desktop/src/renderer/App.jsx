@@ -126,12 +126,14 @@ function App() {
     const [isProjectorOpen, setIsProjectorOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
+    const [visibleCount, setVisibleCount] = useState(100);
     const [activeTab, setActiveTab] = useState('library');
     const [activeFilter, setActiveFilter] = useState('All');
     const [showAddModal, setShowAddModal] = useState(false);
     const [addSongInitialData, setAddSongInitialData] = useState(null);
     const [schedule, setSchedule] = useState([]);
     const [customAlert, setCustomAlert] = useState(null);
+    const [isDragging, setIsDragging] = useState(false);
 
     // Auto-dismiss custom alerts after 0.8 seconds (unless it's an error)
     useEffect(() => {
@@ -591,11 +593,31 @@ function App() {
     // Only sync slides when we're NOT in Bible mode (activeTab !== 'bible')
     useEffect(() => {
         if (window.electron && activeTab !== 'bible') {
-            const content = (slides && slides.length > 0) ? slides[currentSlideIndex] : "";
-            window.electron.invoke('projector-sync', { type: 'slide', content });
+            const currentSlide = (slides && slides.length > 0) ? slides[currentSlideIndex] : "";
+
+            // If the current song is a Bible Reading from the schedule,
+            // use the bible-verse projector mode for proper formatting
+            if (currentSong?.isBibleReading && currentSlide) {
+                // Slides can be objects {text, reference} or legacy plain strings
+                const isStructured = typeof currentSlide === 'object' && currentSlide.text;
+                const primaryText = isStructured ? currentSlide.text : currentSlide;
+                const reference = isStructured ? currentSlide.reference : (currentSong.title || '');
+
+                window.electron.invoke('projector-sync', {
+                    type: 'bible-verse',
+                    content: {
+                        reference,
+                        primaryText,
+                        secondaryText: ''
+                    }
+                });
+            } else {
+                const content = typeof currentSlide === 'object' ? (currentSlide.text || '') : (currentSlide || '');
+                window.electron.invoke('projector-sync', { type: 'slide', content });
+            }
             window.electron.invoke('projector-sync', { type: 'black', isBlack });
         }
-    }, [currentSlideIndex, slides, isBlack, connections, activeTab]);
+    }, [currentSlideIndex, slides, isBlack, connections, currentSong]); // Intentionally omitting activeTab to prevent tab-switching from overwriting live projection
 
     // Sync Settings
     useEffect(() => {
@@ -741,6 +763,7 @@ function App() {
     const handleSearch = async (q, filter = activeFilter) => {
         setSearchQuery(q);
         setActiveFilter(filter);
+        setVisibleCount(100);
         if (window.electron && window.electron.invoke) {
             try {
                 // If it's a numeric search, we search across all categories but then filter to visible ones
@@ -823,7 +846,45 @@ function App() {
     }, [songToDelete, executeDelete]);
 
     return (
-        <div className="flex flex-col h-screen bg-white text-slate-800 font-sans overflow-hidden">
+        <div
+            className="flex flex-col h-screen bg-white text-slate-800 font-sans overflow-hidden"
+            onDragOver={(e) => {
+                e.preventDefault();
+                // Only show import overlay for external file drags, not internal reorder drags
+                if (e.dataTransfer.types.includes('Files') && !e.dataTransfer.types.includes('text/plain')) setIsDragging(true);
+            }}
+            onDragLeave={(e) => {
+                e.preventDefault();
+                if (e.relatedTarget === null || !e.currentTarget.contains(e.relatedTarget)) setIsDragging(false);
+            }}
+            onDrop={async (e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                const files = Array.from(e.dataTransfer.files);
+                if (files.length === 0) return; // Internal drag (schedule reorder), ignore
+                const pptFile = files.find(f => /\.(pptx?|ppsx|pptm)$/i.test(f.name));
+                if (pptFile) {
+                    setCustomAlert('Importing ' + pptFile.name + '...');
+                    const res = await window.electron.invoke('import-pptx-path', pptFile.path);
+                    if (res && res.success) {
+                        setAddSongInitialData({ title: res.filename, preview: res.slides.join('\n\n\n') });
+                        setShowAddModal(true);
+                    } else if (res && res.error) {
+                        setCustomAlert("Import Error: " + res.error);
+                    }
+                }
+            }}
+        >
+            {/* Drag & Drop Overlay */}
+            {isDragging && (
+                <div className="fixed inset-0 bg-blue-600/20 backdrop-blur-sm z-[9999] flex items-center justify-center pointer-events-none">
+                    <div className="bg-white rounded-3xl shadow-2xl p-12 flex flex-col items-center gap-4 border-2 border-dashed border-blue-400 animate-pulse">
+                        <svg className="w-16 h-16 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                        <p className="text-xl font-bold text-slate-800">Drop PowerPoint File to Import</p>
+                        <p className="text-sm text-slate-500 italic">.pptx, .ppt, .ppsx supported</p>
+                    </div>
+                </div>
+            )}
             {/* Custom OS Title Bar */}
             <div
                 className="h-10 bg-white text-slate-800 flex items-center pl-4 w-full select-none shrink-0 relative z-[1000]"
@@ -901,10 +962,10 @@ function App() {
                         </div>
 
                         <div className="px-3 space-y-1">
-                            <NavItem icon={<LibraryIcon />} label="Song Library" active={activeTab === 'library'} onClick={() => { setActiveTab('library'); handleSearch('', 'All'); }} />
-                            <NavItem icon={<HeartIcon />} label="Favourites" active={activeTab === 'favourites'} onClick={() => { setActiveTab('favourites'); handleSearch('', 'All'); }} />
+                            <NavItem icon={<LibraryIcon />} label="Song Library" active={activeTab === 'library'} onClick={() => setActiveTab('library')} />
+                            <NavItem icon={<HeartIcon />} label="Favourites" active={activeTab === 'favourites'} onClick={() => setActiveTab('favourites')} />
                             <NavItem icon={<GlobeIcon />} label="Search Web" active={activeTab === 'web'} onClick={() => setActiveTab('web')} />
-                            <NavItem icon={<CalendarIcon />} label="Sunday Service" active={activeTab === 'service'} onClick={() => { setActiveTab('service'); handleSearch('', 'All'); }} />
+                            <NavItem icon={<CalendarIcon />} label="Sunday Service" active={activeTab === 'service'} onClick={() => setActiveTab('service')} />
                             <NavItem icon={<MediaIcon />} label="Media & Video" active={activeTab === 'media'} onClick={() => setActiveTab('media')} />
                             <NavItem icon={<BibleIcon />} label="Holy Bible" active={activeTab === 'bible'} onClick={() => setActiveTab('bible')} />
                             <div className="pt-2">
@@ -930,13 +991,14 @@ function App() {
                     </div>
                 </div>
 
-                {activeTab === 'media' ? (
+                <div className={clsx("flex-1 flex overflow-hidden", activeTab === 'media' ? "" : "hidden")}>
                     <MediaSection
                         setStatus={setCustomAlert}
                         setAdminVerifyPrompt={setAdminVerifyPrompt}
                         setIsBlack={setIsBlack}
                     />
-                ) : activeTab === 'bible' ? (
+                </div>
+                <div className={clsx("flex-1 flex overflow-hidden", activeTab === 'bible' ? "" : "hidden")}>
                     <BibleSection
                         setStatus={setCustomAlert}
                         isProjectorOpen={isProjectorOpen}
@@ -958,9 +1020,11 @@ function App() {
                         setBibleBooks={setBibleBooks}
                         autoProjectBible={autoProjectBible}
                     />
-                ) : activeTab === 'web' ? (
+                </div>
+                <div className={clsx("flex-1 flex overflow-hidden", activeTab === 'web' ? "" : "hidden")}>
                     <WebSearch onImport={(data) => { setAddSongInitialData(data); setShowAddModal(true); }} setCustomAlert={setCustomAlert} />
-                ) : activeTab === 'settings' ? (
+                </div>
+                <div className={clsx("flex-1 flex overflow-hidden", activeTab === 'settings' ? "" : "hidden")}>
                     <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
                         {/* Settings Header - Always show logout/login */}
                         <div className="bg-white border-b border-slate-200 p-6 flex justify-between items-center shrink-0 shadow-sm z-10">
@@ -2180,7 +2244,8 @@ function App() {
                             )}
                         </div>
                     </div>
-                ) : (
+                </div>
+                <div className={clsx("flex-1 flex overflow-hidden", ['library', 'favourites', 'service'].includes(activeTab) ? "" : "hidden")}>
                     <div className="flex-1 flex overflow-hidden">
                         {/* List Column (Library, Favourites, or Schedule) */}
                         {activeTab === 'library' || activeTab === 'favourites' ? (
@@ -2213,11 +2278,15 @@ function App() {
 
                                     return (
                                         <>
-                                            <div className="flex-1 overflow-y-auto w-full">
+                                            <div className="flex-1 overflow-y-auto w-full" onScroll={(e) => {
+                                                if (e.target.scrollHeight - e.target.scrollTop - e.target.clientHeight < 100) {
+                                                    setVisibleCount(prev => prev + 50);
+                                                }
+                                            }}>
                                                 <div className="text-[10px] font-bold text-slate-400 px-4 py-2 uppercase tracking-wider bg-slate-50/50 sticky top-0 z-10 backdrop-blur-md italic">
                                                     Showing top results
                                                 </div>
-                                                {displaySongs.map(song => (
+                                                {displaySongs.slice(0, visibleCount).map(song => (
                                                     <div
                                                         key={song.id}
                                                         onClick={() => selectSong(song)}
@@ -2317,8 +2386,7 @@ function App() {
                             }}
                         />
                     </div>
-                )
-                }
+                </div>
                 {
                     showAddModal && (
                         <AddSongModal
@@ -3495,7 +3563,7 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
             const hindiText = hindiVerse?.text || '';
             const cleanedKJV = cleanBibleText(v.text);
             const reference = `${selectedBook.name} ${selectedChapter}:${v.verse}`;
-            return `${cleanedKJV}${hindiText ? '\n\n' + hindiText : ''}\n\n${reference}`;
+            return { text: `${cleanedKJV}${hindiText ? '\n\n' + hindiText : ''}`, reference };
         });
 
         try {
@@ -3897,7 +3965,9 @@ function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurren
                                                     "text-[13px] leading-relaxed whitespace-pre-line my-auto",
                                                     currentSlideIndex === idx ? "text-slate-900 font-bold" : "text-slate-600 font-medium"
                                                 )}>
-                                                    {slide || <span className={clsx(previewFont === 'lyrics' ? "font-lyrics" : "font-sans", "text-slate-300 italic")}>Blank Slide</span>}
+                                                    {typeof slide === 'object' && slide.text ? (
+                                                        <>{slide.text}<span className="block text-xs text-blue-500 font-bold mt-1 uppercase tracking-wider">{slide.reference}</span></>
+                                                    ) : (slide || <span className={clsx(previewFont === 'lyrics' ? "font-lyrics" : "font-sans", "text-slate-300 italic")}>Blank Slide</span>)}
                                                 </p>
                                             </div>
                                         </div>
@@ -3911,7 +3981,12 @@ function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurren
                                         "text-2xl md:text-3xl font-bold text-slate-800 leading-tight mb-8 tracking-tight",
                                         previewFont === 'lyrics' ? "font-lyrics italic" : "font-sans"
                                     )}>
-                                        {slides[currentSlideIndex]}
+                                        {typeof slides[currentSlideIndex] === 'object' && slides[currentSlideIndex]?.text ? (
+                                            <>
+                                                {slides[currentSlideIndex].text}
+                                                <span className="block text-base text-blue-600 font-bold mt-6 uppercase tracking-widest">{slides[currentSlideIndex].reference}</span>
+                                            </>
+                                        ) : slides[currentSlideIndex]}
                                     </h2>
                                 </div>
                             </div>
@@ -4023,6 +4098,13 @@ function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurren
 }
 
 function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh, currentSongId, isAdminLoggedIn, setConfirmPrompt }) {
+    const [draggedIndex, setDraggedIndex] = useState(null);
+    const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+    const [templates, setTemplates] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('service_templates') || '{}'); } catch { return {}; }
+    });
+    const [templateName, setTemplateName] = useState('');
+
     if (schedule.length === 0) {
         return (
             <div className="w-[320px] bg-slate-50 flex flex-col items-center justify-center text-slate-400 section-split-border">
@@ -4034,6 +4116,7 @@ function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh,
             </div>
         )
     }
+
 
     const moveItem = (e, index, direction) => {
         e.stopPropagation();
@@ -4047,6 +4130,38 @@ function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh,
         }
     };
 
+    const saveTemplate = () => {
+        if (!templateName.trim() || schedule.length === 0) return;
+        const updated = { ...templates, [templateName.trim()]: schedule.map(s => ({ songId: s.songId, title: s.title, category: s.category, isBibleReading: s.isBibleReading, slides: s.slides })) };
+        setTemplates(updated);
+        localStorage.setItem('service_templates', JSON.stringify(updated));
+        setTemplateName('');
+        setShowTemplateMenu(false);
+        if (setConfirmPrompt) setConfirmPrompt(null);
+    };
+
+    const loadTemplate = async (name) => {
+        const items = templates[name];
+        if (!items || !window.electron) return;
+        await window.electron.invoke('clear-schedule');
+        for (const item of items) {
+            if (item.isBibleReading) {
+                await window.electron.invoke('bible:add-to-schedule', item.title, item.slides);
+            } else {
+                try { await window.electron.invoke('add-to-schedule', item.songId); } catch(e) { /* song may have been deleted */ }
+            }
+        }
+        if (onRefresh) onRefresh(true);
+        setShowTemplateMenu(false);
+    };
+
+    const deleteTemplate = (name) => {
+        const updated = { ...templates };
+        delete updated[name];
+        setTemplates(updated);
+        localStorage.setItem('service_templates', JSON.stringify(updated));
+    };
+
     return (
         <div className="w-[320px] flex flex-col border-r border-slate-200 bg-white z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
             <div className="p-3 border-b border-slate-100 flex items-center justify-between">
@@ -4055,6 +4170,14 @@ function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh,
                     Sunday Service
                 </h2>
                 <div className="flex items-center gap-2">
+                    <Tooltip text="Service Templates" position="bottom">
+                        <button
+                            onClick={() => setShowTemplateMenu(!showTemplateMenu)}
+                            className={clsx("p-1.5 rounded-lg transition-colors", showTemplateMenu ? "bg-blue-100 text-blue-600" : "hover:bg-slate-100 text-slate-500")}
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                        </button>
+                    </Tooltip>
                     <Tooltip text="Clear Schedule" position="bottom">
                         <button
                             onClick={() => {
@@ -4090,14 +4213,84 @@ function SundayServiceList({ schedule, onRemove, onReorder, onSelect, onRefresh,
                 </div>
             </div>
 
+            {/* Template Panel */}
+            {showTemplateMenu && (
+                <div className="border-b border-slate-100 bg-slate-50/80 p-3 space-y-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Service Templates</p>
+                    {/* Save current */}
+                    {schedule.length > 0 && (
+                        <div className="flex gap-1.5">
+                            <input
+                                type="text"
+                                value={templateName}
+                                onChange={e => setTemplateName(e.target.value)}
+                                placeholder="Template name..."
+                                className="flex-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-blue-500/30 focus:border-blue-400 transition-all italic"
+                                onKeyDown={e => e.key === 'Enter' && saveTemplate()}
+                            />
+                            <button
+                                onClick={saveTemplate}
+                                disabled={!templateName.trim()}
+                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors disabled:opacity-40"
+                            >Save</button>
+                        </div>
+                    )}
+                    {/* Load saved */}
+                    {Object.keys(templates).length > 0 ? (
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                            {Object.entries(templates).map(([name, items]) => (
+                                <div key={name} className="flex items-center gap-1.5 group">
+                                    <button
+                                        onClick={() => loadTemplate(name)}
+                                        className="flex-1 text-left px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-all"
+                                    >
+                                        <span className="font-bold">{name}</span>
+                                        <span className="text-slate-400 ml-1.5 italic">({items.length} items)</span>
+                                    </button>
+                                    <button
+                                        onClick={() => deleteTemplate(name)}
+                                        className="p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-[10px] text-slate-400 italic">No saved templates yet. Add songs to schedule and save as a template.</p>
+                    )}
+                </div>
+            )}
+
             <div className="flex-1 overflow-y-auto">
                 {schedule.map((item, index) => (
                     <div
                         key={item.instanceId}
+                        draggable
+                        onDragStart={(e) => {
+                            setDraggedIndex(index);
+                            e.dataTransfer.effectAllowed = 'move';
+                            // Minimal drag image (optional, default is ghost of element)
+                        }}
+                        onDragOver={(e) => {
+                            e.preventDefault(); // allow drop
+                            e.dataTransfer.dropEffect = 'move';
+                        }}
+                        onDrop={(e) => {
+                            e.preventDefault();
+                            if (draggedIndex === null || draggedIndex === index) return;
+                            const newSchedule = [...schedule];
+                            const draggedItem = newSchedule.splice(draggedIndex, 1)[0];
+                            newSchedule.splice(index, 0, draggedItem);
+                            onReorder(newSchedule);
+                            setDraggedIndex(null);
+                        }}
+                        onDragEnd={() => setDraggedIndex(null)}
                         onClick={() => onSelect(item)}
                         className={clsx(
                             "py-2 px-3 border-b border-slate-50 cursor-pointer transition-all group flex items-center gap-3",
-                            currentSongId === item.id ? "bg-blue-50" : "hover:bg-slate-50"
+                            currentSongId === item.id ? "bg-blue-50" : "hover:bg-slate-50",
+                            draggedIndex === index ? "opacity-50" : ""
                         )}
                     >
                         <div className="w-6 h-6 flex-shrink-0 flex items-center justify-center font-bold text-xs text-slate-300 bg-slate-100 rounded">

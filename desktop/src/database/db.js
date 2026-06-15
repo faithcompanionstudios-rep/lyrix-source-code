@@ -497,6 +497,26 @@ function searchSongs(queryStr, filter = 'All', preferredCategory = null) {
     return performRobustSearch(queryStr, source, preferredCategory);
 }
 
+// ─── Fuzzy Search: Levenshtein Distance ─────────────────────────────────────
+function levenshtein(a, b) {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            const cost = b[i - 1] === a[j - 1] ? 0 : 1;
+            matrix[i][j] = Math.min(
+                matrix[i - 1][j] + 1,
+                matrix[i][j - 1] + 1,
+                matrix[i - 1][j - 1] + cost
+            );
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
 function performRobustSearch(queryStr, source, preferredCategory = null) {
     const qNorm = normalize(queryStr);
     const tokens = qNorm.split(' ').filter(t => t.length > 0);
@@ -570,6 +590,23 @@ function performRobustSearch(queryStr, source, preferredCategory = null) {
         // 7. Category Text Match
         if (tokens.every(t => catNorm.includes(t))) {
             score += 5;
+        }
+
+        // 8. Fuzzy Title Match (typo tolerance for queries 3+ chars)
+        if (score === 0 && qNorm.length >= 3 && !isQueryOnlyDigits) {
+            // Split title into words and check each token against each word
+            const titleWords = titleNorm.split(/\s+/);
+            for (const token of tokens) {
+                if (token.length < 3) continue;
+                for (const word of titleWords) {
+                    const maxDist = token.length <= 4 ? 1 : 2; // Allow 1 typo for short words, 2 for longer
+                    const dist = levenshtein(token, word.substring(0, token.length + 2));
+                    if (dist <= maxDist) {
+                        score += Math.max(1, 15 - dist * 5); // 15 for exact-ish, 10 for 1-off, 5 for 2-off
+                        break;
+                    }
+                }
+            }
         }
 
         return { song, score };

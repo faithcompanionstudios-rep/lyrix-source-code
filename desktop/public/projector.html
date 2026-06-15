@@ -72,12 +72,12 @@
             bottom: 30px;
             left: 50%;
             transform: translateX(-50%);
-            font-size: 3vh;
+            font-size: 4vh;
             text-transform: uppercase;
             letter-spacing: 0.1em;
             color: inherit;
             opacity: 0.8;
-            font-weight: bold;
+            font-weight: 600;
             z-index: 15;
             text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
             text-align: center;
@@ -102,7 +102,7 @@
     </div>
 
     <div id="church-watermark"
-        style="position: absolute; bottom: 15px; right: 20px; font-size: 2.5vh; color: rgba(255,255,255,0.85); font-style: italic; font-weight: bold; letter-spacing: 0.05em; transition: opacity 0.5s ease; opacity: 0; pointer-events: none; z-index: 10; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">
+        style="position: absolute; bottom: 15px; right: 20px; font-size: 2.5vh; color: rgba(255,255,255,0.85); font-style: italic; font-weight: normal; letter-spacing: 0.05em; transition: opacity 0.5s ease; opacity: 0; pointer-events: none; z-index: 10; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">
         &copy; ChurchLyriXApp<span id="church-info"></span>
     </div>
 
@@ -190,23 +190,32 @@
         }
 
         function updateBibleContent(data) {
-
-            currentMode = 'bible';
-            slideText.style.display = 'none';
-            bibleContainer.style.display = 'flex';
-            
-            biblePrimary.innerText = data.primaryText || '';
-            bibleSecondary.innerText = data.secondaryText || '';
-            bibleRef.innerText = data.reference || '';
-            autoScale();
+            // Crossfade transition
+            contentDiv.style.opacity = '0';
+            setTimeout(() => {
+                currentMode = 'bible';
+                slideText.style.display = 'none';
+                bibleContainer.style.display = 'flex';
+                
+                biblePrimary.innerText = data.primaryText || '';
+                bibleSecondary.innerText = data.secondaryText || '';
+                bibleRef.innerText = data.reference || '';
+                autoScale();
+                contentDiv.style.opacity = '1';
+            }, 300);
         }
 
         function updateSlideContent(slide) {
-            currentMode = 'slide';
-            bibleContainer.style.display = 'none';
-            slideText.style.display = 'block';
-            slideText.innerText = slide || '';
-            autoScale();
+            // Crossfade transition
+            contentDiv.style.opacity = '0';
+            setTimeout(() => {
+                currentMode = 'slide';
+                bibleContainer.style.display = 'none';
+                slideText.style.display = 'block';
+                slideText.innerText = slide || '';
+                autoScale();
+                contentDiv.style.opacity = '1';
+            }, 300);
         }
         
         function autoScale() {

@@ -585,90 +585,112 @@ if (!gotTheLock) {
         });
 
         ipcMain.handle('fetch-lyrics-content', async (event, url) => {
-            let fetchWindow = new BrowserWindow({
-                show: false,
-                webPreferences: {
-                    offscreen: true,
-                    nodeIntegration: false,
-                    contextIsolation: true
-                }
-            });
-
+            console.log(`[Fetch] Fast HTTP Fetching: ${url}`);
             try {
-                console.log(`[Fetch] Loading: ${url}`);
-
-                // Optimized loading: Resolve as soon as DOM is ready or after a timeout
-                const loadPromise = new Promise((resolve, reject) => {
-                    const timeout = setTimeout(() => resolve(), 5000); // Max 5s wait for full load
-                    fetchWindow.webContents.once('dom-ready', () => {
-                        clearTimeout(timeout);
-                        resolve();
-                    });
-                    fetchWindow.loadURL(url).catch(reject);
+                const axios = require('axios');
+                const cheerio = require('cheerio');
+                
+                const response = await axios.get(url, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    },
+                    timeout: 8000
                 });
 
-                await loadPromise;
+                const $ = cheerio.load(response.data);
 
-                const content = await fetchWindow.webContents.executeJavaScript(`
-                new Promise(resolve => {
-                    const extract = () => {
-                        const removables = ['script', 'style', 'nav', 'header', 'footer', 'iframe', 'img', 'svg', 'button', 'form', 'aside', 'ads'];
-                        removables.forEach(tag => document.querySelectorAll(tag).forEach(el => el.remove()));
+                // 1. Clean DOM of obvious non-lyric elements
+                const removables = ['script', 'style', 'nav', 'header', 'footer', 'iframe', 'img', 'svg', 'button', 'form', 'aside', '.ads', '[role="navigation"]', 'meta', 'link'];
+                removables.forEach(tag => $(tag).remove());
+
+                let container = null;
+
+                // 2. Try Exact Known Selectors (Genius, AZLyrics, etc)
+                const exactSelectors = [
+                    '[data-lyrics-container="true"]',
+                    '.lyrics',
+                    '.lyricbox',
+                    '.lyrics-body',
+                    '#lyric-body-text',
+                    '.ringtone' // Often precedes lyrics on some sites
+                ];
+
+                for (let selector of exactSelectors) {
+                    if ($(selector).length > 0) {
+                        container = $(selector);
+                        if (selector === '[data-lyrics-container="true"]') {
+                            let combinedHTML = '';
+                            container.each((i, el) => { combinedHTML += $(el).html() + '<br><br>'; });
+                            container = $('<div>').html(combinedHTML);
+                        }
+                        break;
+                    }
+                }
+
+                // 3. Fallback: Smart Heuristic (<br> density)
+                if (!container || container.text().trim().length < 50) {
+                    let bestElement = null;
+                    let maxScore = -1;
+
+                    $('div, p, article, section, td').each((i, el) => {
+                        const $el = $(el);
+                        // Count immediate <br> tags or <br> tags that are not deeply nested inside other major structural elements
+                        const brCount = $el.find('br').length;
                         
-                        let container = document.querySelector('[class*="Lyrics__Container"]');
-                        if (!container) container = document.querySelector('.lyrics'); 
-                        if (!container) container = document.querySelector('.lyricbox'); 
-                        if (!container) container = document.querySelector('.lyrics-body');
-                        
-                        if (!container) {
-                            const divs = Array.from(document.querySelectorAll('div'));
-                            divs.sort((a, b) => b.getElementsByTagName('br').length - a.getElementsByTagName('br').length);
-                            if (divs.length > 0 && divs[0].getElementsByTagName('br').length > 5) {
-                                container = divs[0];
+                        if (brCount > 3) {
+                            // Calculate a score: we want high BR count but LOW character count of <a> links (to avoid menus)
+                            const linkTextLength = $el.find('a').text().length;
+                            const totalTextLength = $el.text().length || 1; // avoid division by zero
+                            const linkRatio = linkTextLength / totalTextLength;
+                            
+                            // If it's mostly links, it's a menu, ignore it
+                            if (linkRatio > 0.4) return;
+
+                            // To avoid picking the massive outer wrapping <div>, we penalize elements that have child divs with high BR counts
+                            let hasChildWithManyBrs = false;
+                            $el.children('div, section, article').each((_, child) => {
+                                if ($(child).find('br').length >= (brCount * 0.8)) {
+                                    hasChildWithManyBrs = true;
+                                }
+                            });
+
+                            if (!hasChildWithManyBrs) {
+                                // Score based on BR count and text density
+                                const score = brCount * (1 - linkRatio);
+                                if (score > maxScore) {
+                                    maxScore = score;
+                                    bestElement = $el;
+                                }
                             }
                         }
-                        
-                        if (!container) container = document.body;
-                        return container;
-                    };
+                    });
 
-                    // Try multiple times if container not found yet
-                    let attempts = 0;
-                    const check = () => {
-                        const container = extract();
-                        if ((container && container.innerText.length > 100) || attempts > 5) {
-                             // Preserve newlines
-                            container.querySelectorAll('br').forEach(br => br.replaceWith('__BR__'));
-                            container.querySelectorAll('p').forEach(p => p.append('__BR____BR__'));
-                            resolve(container.innerText);
-                        } else {
-                            attempts++;
-                            setTimeout(check, 100);
-                        }
-                    };
-                    check();
-                });
-            `);
+                    if (bestElement) {
+                        container = bestElement;
+                        // Strip out remaining links inside the lyrics container just in case
+                        container.find('a').each((i, el) => { $(el).replaceWith($(el).text()); });
+                    }
+                }
 
+                if (!container) {
+                    container = $('body'); // Absolute fallback
+                }
 
-                // Post-processing
-                let text = content.replace(/__BR__/g, '\n');
+                // 4. Extract Text while preserving newlines
+                container.find('br').replaceWith('__BR__');
+                container.find('p').append('__BR____BR__');
+                container.find('div').append('__BR__');
 
-                // Normalize: 
-                // 1. Trim every line
-                // 2. Preserve stanza breaks (single empty line) but collapse multiple
+                let text = container.text().replace(/__BR__/g, '\n');
 
+                // Normalize Text
                 return text
                     .split('\n')
                     .map(l => l.trim())
                     .reduce((acc, line) => {
                         const last = acc[acc.length - 1];
-                        // If current line is empty
                         if (!line || line.length === 0) {
-                            // Only add if the previous line wasn't also empty
-                            if (acc.length > 0 && last !== '') {
-                                acc.push('');
-                            }
+                            if (acc.length > 0 && last !== '') acc.push('');
                         } else {
                             acc.push(line);
                         }
@@ -678,12 +700,8 @@ if (!gotTheLock) {
                     .substring(0, 10000);
 
             } catch (e) {
-                console.error("[Fetch] Browser Error:", e);
-                return "Failed to fetch content.";
-            } finally {
-                if (fetchWindow && !fetchWindow.isDestroyed()) {
-                    fetchWindow.destroy();
-                }
+                console.error("[Fetch] HTTP Error:", e.message);
+                return "Failed to fetch content. Site might be blocking requests.";
             }
         });
 
@@ -824,60 +842,141 @@ if (!gotTheLock) {
             return null;
         });
 
+        // ─── Reusable PPTX/PPT Parsing Engine ──────────────────────────────────
+        async function parsePptxFile(filePath) {
+            let actualPath = filePath;
+            const isLegacy = filePath.toLowerCase().endsWith('.ppt');
+
+            if (isLegacy) {
+                try {
+                    const tempPptxPath = path.join(require('os').tmpdir(), `lyrix_import_${Date.now()}.pptx`);
+                    const script = `
+$ppt = New-Object -ComObject PowerPoint.Application
+$presentation = $ppt.Presentations.Open("${filePath}", [Microsoft.Office.Core.MsoTriState]::msoTrue, [Microsoft.Office.Core.MsoTriState]::msoFalse, [Microsoft.Office.Core.MsoTriState]::msoFalse)
+$presentation.SaveAs("${tempPptxPath}", 24)
+$presentation.Close()
+$ppt.Quit()
+`;
+                    const tempScriptPath = path.join(require('os').tmpdir(), `lyrix_convert_${Date.now()}.ps1`);
+                    fs.writeFileSync(tempScriptPath, script);
+                    
+                    require('child_process').execSync(`powershell.exe -ExecutionPolicy Bypass -File "${tempScriptPath}"`, { windowsHide: true });
+                    
+                    actualPath = tempPptxPath;
+                    try { fs.unlinkSync(tempScriptPath); } catch(e){}
+                } catch (e) {
+                    return { success: false, error: "Legacy .ppt file detected, but Microsoft PowerPoint is not installed or failed to convert it. Please save it as a .pptx file manually and try again." };
+                }
+            }
+
+            const data = fs.readFileSync(actualPath);
+            
+            if (isLegacy) {
+                try { fs.unlinkSync(actualPath); } catch(e){}
+            }
+
+            const JSZip = require('jszip');
+            const cheerio = require('cheerio');
+            const zip = await JSZip.loadAsync(data);
+
+            const slideFiles = Object.keys(zip.files).filter(k => /^ppt\/slides\/slide\d+\.xml$/.test(k));
+            slideFiles.sort((a, b) => {
+                const numA = parseInt(a.match(/\d+/)[0]);
+                const numB = parseInt(b.match(/\d+/)[0]);
+                return numA - numB;
+            });
+
+            const rawSlides = [];
+            for (const filename of slideFiles) {
+                const xml = await zip.file(filename).async("string");
+                const $ = cheerio.load(xml, { xmlMode: true });
+                
+                const textBlocks = [];
+
+                $('p\\:sp, p\\:graphicFrame').each((i, el) => {
+                    const $el = $(el);
+                    
+                    const phType = $el.find('p\\:ph').attr('type');
+                    if (['ftr', 'slidenum', 'dt'].includes(phType)) return;
+                    
+                    const yAttr = $el.find('a\\:off').attr('y');
+                    const y = yAttr ? parseInt(yAttr, 10) : 0;
+                    
+                    let shapeText = [];
+                    $el.find('a\\:p').each((j, pNode) => {
+                        let pText = "";
+                        $(pNode).find('a\\:t').each((k, tNode) => {
+                            pText += $(tNode).text();
+                        });
+                        if (pText.trim()) shapeText.push(pText.trim());
+                    });
+                    
+                    const combinedText = shapeText.join('\n').trim();
+                    if (combinedText) {
+                        textBlocks.push({ text: combinedText, y: y });
+                    }
+                });
+                
+                textBlocks.sort((a, b) => a.y - b.y);
+                
+                const slideLines = textBlocks.map(b => b.text);
+                if (slideLines.length > 0) {
+                    rawSlides.push(slideLines.join('\n'));
+                }
+            }
+
+            // ── Auto-Split: Break slides with >4 lines into balanced halves ──
+            const MAX_LINES = 4;
+            const slides = [];
+            for (const slideText of rawSlides) {
+                const lines = slideText.split('\n');
+                if (lines.length <= MAX_LINES) {
+                    slides.push(slideText);
+                } else {
+                    // Split into balanced chunks of MAX_LINES
+                    for (let i = 0; i < lines.length; i += MAX_LINES) {
+                        const chunk = lines.slice(i, i + MAX_LINES).join('\n');
+                        if (chunk.trim()) slides.push(chunk);
+                    }
+                }
+            }
+
+            if (slides.length === 0) {
+                return { success: false, error: "No lyrics could be extracted. The file might be empty, or the text is embedded in unsupported images/structures." };
+            }
+
+            const originalName = path.basename(filePath, path.extname(filePath));
+            return { success: true, slides, filename: originalName };
+        }
+
+        // ─── Import via File Dialog ──────────────────────────────────────────
         ipcMain.handle('import-pptx', async () => {
             try {
                 const result = await dialog.showOpenDialog({
                     properties: ['openFile'],
-                    filters: [{ name: 'PowerPoint', extensions: ['pptx', 'ppsx', 'pptm'] }]
+                    filters: [{ name: 'PowerPoint', extensions: ['pptx', 'ppsx', 'pptm', 'ppt'] }]
                 });
-
                 if (result.canceled || result.filePaths.length === 0) return { success: false, cancelled: true };
-
-                const filePath = result.filePaths[0];
-                const data = fs.readFileSync(filePath);
-
-                const JSZip = require('jszip');
-                const zip = await JSZip.loadAsync(data);
-
-                // Find all slide XML files and sort them numerically
-                const slideFiles = Object.keys(zip.files).filter(k => /^ppt\/slides\/slide\d+\.xml$/.test(k));
-                slideFiles.sort((a, b) => {
-                    const numA = parseInt(a.match(/\d+/)[0]);
-                    const numB = parseInt(b.match(/\d+/)[0]);
-                    return numA - numB;
-                });
-
-                const slides = [];
-                for (const filename of slideFiles) {
-                    const xml = await zip.file(filename).async("string");
-                    // Extract paragraphs <a:p>
-                    const pRegex = /<a:p[^>]*>.*?<\/a:p>/gs;
-                    let pMatch;
-                    const slideLines = [];
-
-                    while ((pMatch = pRegex.exec(xml)) !== null) {
-                        const pContent = pMatch[0];
-                        // Extract text nodes <a:t>
-                        const tRegex = /<a:t[^>]*>(.*?)<\/a:t>/gs;
-                        let tMatch;
-                        let lineText = "";
-                        while ((tMatch = tRegex.exec(pContent)) !== null) {
-                            let decoded = tMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
-                            lineText += decoded;
-                        }
-                        lineText = lineText.trim();
-                        if (lineText) slideLines.push(lineText);
-                    }
-                    if (slideLines.length > 0) {
-                        // Join lines of this slide into a single card representation
-                        slides.push(slideLines.join('\n'));
-                    }
-                }
-
-                return { success: true, slides: slides, filename: path.basename(filePath, path.extname(filePath)) };
-
+                return await parsePptxFile(result.filePaths[0]);
             } catch (e) {
                 console.error("PPTX Import Error:", e);
+                return { success: false, error: e.message };
+            }
+        });
+
+        // ─── Import via Drag & Drop (receives file path directly) ────────────
+        ipcMain.handle('import-pptx-path', async (event, filePath) => {
+            try {
+                if (!filePath || !fs.existsSync(filePath)) {
+                    return { success: false, error: "File not found." };
+                }
+                const ext = path.extname(filePath).toLowerCase();
+                if (!['.pptx', '.ppsx', '.pptm', '.ppt'].includes(ext)) {
+                    return { success: false, error: "Unsupported file type. Please drop a .pptx or .ppt file." };
+                }
+                return await parsePptxFile(filePath);
+            } catch (e) {
+                console.error("PPTX Drag Import Error:", e);
                 return { success: false, error: e.message };
             }
         });
