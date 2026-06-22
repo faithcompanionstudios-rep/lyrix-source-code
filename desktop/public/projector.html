@@ -85,7 +85,7 @@
         }
 
         .hidden {
-            opacity: 0;
+            opacity: 0 !important;
         }
     </style>
     <script src="http://localhost:3001/socket.io/socket.io.js"></script>
@@ -334,8 +334,13 @@
             }
             if (window.electron.onProjectorSyncBlank) {
                 window.electron.onProjectorSyncBlank((event, isBlack) => {
-                    if (isBlack) contentDiv.classList.add('hidden');
-                    else contentDiv.classList.remove('hidden');
+                    if (isBlack) {
+                        contentDiv.classList.add('hidden');
+                        watermark.classList.add('hidden');
+                    } else {
+                        contentDiv.classList.remove('hidden');
+                        watermark.classList.remove('hidden');
+                    }
                 });
             }
             if (window.electron.onProjectorSyncSettings) {

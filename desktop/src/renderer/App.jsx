@@ -135,6 +135,15 @@ function App() {
     const [customAlert, setCustomAlert] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
 
+    const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+    const [showProjectorPreview, setShowProjectorPreview] = useState(() => localStorage.getItem('setting_showProjectorPreview') === 'true');
+
+    useEffect(() => {
+        localStorage.setItem('setting_showProjectorPreview', showProjectorPreview);
+    }, [showProjectorPreview]);
+
+    // Removed handleGlobalKeyDown to merge with main handleKeyDown
+
     // Auto-dismiss custom alerts after 0.8 seconds (unless it's an error)
     useEffect(() => {
         if (customAlert) {
@@ -361,8 +370,14 @@ function App() {
             });
 
             const handleKeyDown = async (e) => {
-                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
                     return; // Don't trigger shortcuts when typing
+                }
+
+                if (e.key === 'b' || e.key === 'B') {
+                    e.preventDefault();
+                    setIsBlack(prev => !prev);
+                    return;
                 }
 
                 if (e.key === 'Escape') {
@@ -426,6 +441,10 @@ function App() {
             });
 
             const unsubKeyPress = window.electron.onProjectorKeyPress((event, key) => {
+                if (key === 'b' || key === 'B') {
+                    setIsBlack(prev => !prev);
+                    return;
+                }
                 const { slides, index, activeTab } = stateRef.current;
                 // If in Bible mode, dispatch event so BibleSection handles verse navigation
                 if (activeTab === 'bible') {
@@ -592,28 +611,30 @@ function App() {
     // Sync Projector whenever state changes or new devices connect
     // Only sync slides when we're NOT in Bible mode (activeTab !== 'bible')
     useEffect(() => {
-        if (window.electron && activeTab !== 'bible') {
-            const currentSlide = (slides && slides.length > 0) ? slides[currentSlideIndex] : "";
+        if (window.electron) {
+            if (activeTab !== 'bible') {
+                const currentSlide = (slides && slides.length > 0) ? slides[currentSlideIndex] : "";
 
-            // If the current song is a Bible Reading from the schedule,
-            // use the bible-verse projector mode for proper formatting
-            if (currentSong?.isBibleReading && currentSlide) {
-                // Slides can be objects {text, reference} or legacy plain strings
-                const isStructured = typeof currentSlide === 'object' && currentSlide.text;
-                const primaryText = isStructured ? currentSlide.text : currentSlide;
-                const reference = isStructured ? currentSlide.reference : (currentSong.title || '');
+                // If the current song is a Bible Reading from the schedule,
+                // use the bible-verse projector mode for proper formatting
+                if (currentSong?.isBibleReading && currentSlide) {
+                    // Slides can be objects {text, reference} or legacy plain strings
+                    const isStructured = typeof currentSlide === 'object' && currentSlide.text;
+                    const primaryText = isStructured ? currentSlide.text : currentSlide;
+                    const reference = isStructured ? currentSlide.reference : (currentSong.title || '');
 
-                window.electron.invoke('projector-sync', {
-                    type: 'bible-verse',
-                    content: {
-                        reference,
-                        primaryText,
-                        secondaryText: ''
-                    }
-                });
-            } else {
-                const content = typeof currentSlide === 'object' ? (currentSlide.text || '') : (currentSlide || '');
-                window.electron.invoke('projector-sync', { type: 'slide', content });
+                    window.electron.invoke('projector-sync', {
+                        type: 'bible-verse',
+                        content: {
+                            reference,
+                            primaryText,
+                            secondaryText: ''
+                        }
+                    });
+                } else {
+                    const content = typeof currentSlide === 'object' ? (currentSlide.text || '') : (currentSlide || '');
+                    window.electron.invoke('projector-sync', { type: 'slide', content });
+                }
             }
             window.electron.invoke('projector-sync', { type: 'black', isBlack });
         }
@@ -970,6 +991,16 @@ function App() {
                             <NavItem icon={<BibleIcon />} label="Holy Bible" active={activeTab === 'bible'} onClick={() => setActiveTab('bible')} />
                             <div className="pt-2">
                                 <NavItem icon={<SettingsIcon />} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
+                                <div className="mt-2 border-t border-slate-200/50 pt-2">
+                                    <button onClick={() => setShowProjectorPreview(!showProjectorPreview)} className={clsx("w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all font-bold text-[13px] group relative mb-1", showProjectorPreview ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800")}>
+                                        <svg className={clsx("w-5 h-5 transition-colors", showProjectorPreview ? "text-indigo-600" : "text-slate-400 group-hover:text-slate-600")} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                        Live Preview {showProjectorPreview && <span className="absolute right-4 w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)] animate-pulse"></span>}
+                                    </button>
+                                    <button onClick={() => setShowShortcutsModal(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all font-bold text-[13px] text-slate-500 hover:bg-slate-50 hover:text-slate-800 group">
+                                        <svg className="w-5 h-5 text-slate-400 group-hover:text-slate-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        Help & Shortcuts
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -3063,6 +3094,74 @@ function App() {
                         </div>
                     )
                 }
+
+                {/* Keyboard Shortcuts Modal */}
+                {showShortcutsModal && (
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[300] flex items-center justify-center p-4">
+                        <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-md w-full animate-fade-in border border-slate-100 flex flex-col">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-2xl font-black text-slate-800">Keyboard Shortcuts</h3>
+                                <button onClick={() => setShowShortcutsModal(false)} className="p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-slate-200 transition-colors">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                            </div>
+                            <div className="space-y-3 mb-8">
+                                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                                    <span className="font-bold text-slate-700 text-sm">Blank / Unblank Screen</span>
+                                    <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-500 shadow-sm">B</span>
+                                </div>
+                                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                                    <span className="font-bold text-slate-700 text-sm">Next Slide / Verse</span>
+                                    <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-500 shadow-sm">Right / Down Arrow</span>
+                                </div>
+                                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                                    <span className="font-bold text-slate-700 text-sm">Previous Slide / Verse</span>
+                                    <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-500 shadow-sm">Left / Up Arrow</span>
+                                </div>
+                                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                                    <span className="font-bold text-slate-700 text-sm">Play / Pause Video</span>
+                                    <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-500 shadow-sm">Spacebar</span>
+                                </div>
+                                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                                    <span className="font-bold text-slate-700 text-sm">Close Projector Window</span>
+                                    <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-500 shadow-sm">Esc</span>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowShortcutsModal(false)} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-bold shadow-xl shadow-indigo-500/30 transition-all active:scale-95">Got It</button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Projector Preview Widget */}
+                {showProjectorPreview && (
+                    <div className="fixed bottom-6 right-6 w-80 aspect-video bg-black rounded-2xl shadow-2xl border-4 border-slate-800 flex items-center justify-center p-6 z-[200] overflow-hidden group">
+                        <button 
+                            onClick={() => setShowProjectorPreview(false)}
+                            className="absolute top-2 right-2 p-1.5 bg-white/20 hover:bg-white/40 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-50"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                        <div className="absolute top-2 left-2 px-2 py-0.5 bg-white/20 text-white text-[9px] font-black uppercase tracking-widest rounded shadow-sm z-50">
+                            Live Preview
+                        </div>
+                        {isBlack ? (
+                            <div className="text-white/30 text-xs font-bold uppercase tracking-widest">Black Screen</div>
+                        ) : activeTab === 'bible' && selectedBibleVerse ? (
+                            <div className="text-white text-center">
+                                <p className="font-serif italic text-sm mb-1">{bibleVerses.KJV?.find(v => v.verse === selectedBibleVerse)?.text || ''}</p>
+                                <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest">{selectedBibleBook?.name} {selectedBibleChapter}:{selectedBibleVerse}</p>
+                            </div>
+                        ) : activeTab !== 'bible' && activeTab !== 'media' && slides[currentSlideIndex] ? (
+                            <div className="text-white text-center font-bold text-[11px] whitespace-pre-line leading-snug">
+                                {typeof slides[currentSlideIndex] === 'object' ? slides[currentSlideIndex].text : slides[currentSlideIndex]}
+                            </div>
+                        ) : activeTab === 'media' ? (
+                            <div className="text-white/30 text-xs font-bold uppercase tracking-widest">Media Playing</div>
+                        ) : (
+                            <div className="text-white/30 text-xs font-bold uppercase tracking-widest">No Content</div>
+                        )}
+                    </div>
+                )}
             </div >
         </div >
     );
@@ -3482,6 +3581,13 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
     const [testamentFilter, setTestamentFilter] = useState('OT'); // 'OT' or 'NT'
     const [pendingProjectVerse, setPendingProjectVerse] = useState(null);
 
+    // Text Search State
+    const [searchMode, setSearchMode] = useState('jump'); // 'jump' or 'text'
+    const [textSearchQuery, setTextSearchQuery] = useState('');
+    const [textSearchResults, setTextSearchResults] = useState([]);
+    const [textSearching, setTextSearching] = useState(false);
+    const textSearchTimeout = useRef(null);
+
     useEffect(() => {
         if (selectedBook) {
             window.electron.invoke('bible:get-chapters', selectedBook.id).then(count => {
@@ -3613,6 +3719,8 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
             setSelectedChapter(chapter);
             setSelectedVerse(verse);
             setSelectorMode('verse');
+            // Clear any text search results when using Smart Jump
+            setTextSearchResults([]);
             // Delay auto-trigger by 600ms to allow user to finish typing multi-digit verses
             if (match) {
                 if (smartJumpTimeout) clearTimeout(smartJumpTimeout);
@@ -3623,6 +3731,42 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
             }
         }
 
+    };
+
+    // Text Search Handler — search Bible by content
+    const handleTextSearch = (query) => {
+        setTextSearchQuery(query);
+        if (textSearchTimeout.current) clearTimeout(textSearchTimeout.current);
+
+        if (!query.trim() || query.trim().length < 3) {
+            setTextSearchResults([]);
+            setTextSearching(false);
+            return;
+        }
+
+        setTextSearching(true);
+        // Debounce: wait 400ms after user stops typing
+        textSearchTimeout.current = setTimeout(async () => {
+            try {
+                const results = await window.electron.invoke('bible:search', 'KJV', query.trim());
+                setTextSearchResults(results);
+            } catch (e) {
+                console.error('Bible text search error:', e);
+                setTextSearchResults([]);
+            }
+            setTextSearching(false);
+        }, 400);
+    };
+
+    // Navigate to a text search result (preview only, no auto-project)
+    const goToSearchResult = (result) => {
+        const book = bibleBooks.find(b => b.id === result.book_id);
+        if (book) {
+            setSelectedBook(book);
+            setSelectedChapter(result.chapter);
+            setSelectedVerse(result.verse);
+            setSelectorMode('verse');
+        }
     };
 
     // Keyboard Navigation for verses (Arrow keys navigate & project verses)
@@ -3665,12 +3809,12 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
     return (
         <div className="flex-1 flex flex-col bg-slate-50 overflow-hidden">
             <div className="p-8 pb-4 shrink-0">
-                <div className="flex justify-between items-center mb-6">
+                <div className="flex justify-between items-start mb-6">
                     <div>
                         <h2 className="text-3xl font-black text-slate-800 italic">Holy Bible</h2>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Select passage to project</p>
                     </div>
-                    <div className="flex gap-2 items-center">
+                    <div className="flex items-center gap-3">
                         {setupStatus.ready && selectedBook && (
                             <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200/50 rounded-2xl px-3 py-1.5">
                                 <input
@@ -3703,18 +3847,43 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
                                 </Tooltip>
                             </div>
                         )}
-                        <div className="flex flex-col gap-2">
+                        {/* Unified Search Bar with inline mode toggle */}
+                        {setupStatus.ready && (
                             <div className="relative">
-                                <input
-                                    type="text"
-                                    placeholder="Smart Jump (e.g. Joh 3:16)"
-                                    value={searchQuery}
-                                    onChange={(e) => handleSmartJump(e.target.value)}
-                                    className="w-64 px-4 py-2 bg-white border border-slate-200 rounded-2xl text-sm italic font-medium focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all shadow-sm pl-10"
-                                />
-                                <svg className="w-4 h-4 absolute left-3.5 top-2.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                <div className="flex items-center bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-400 transition-all">
+                                    <svg className="w-4 h-4 ml-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                    {searchMode === 'jump' ? (
+                                        <input
+                                            type="text"
+                                            placeholder="Jump to verse (e.g. Joh 3:16)"
+                                            value={searchQuery}
+                                            onChange={(e) => handleSmartJump(e.target.value)}
+                                            className="w-52 px-3 py-2.5 text-sm italic font-medium outline-none bg-transparent"
+                                        />
+                                    ) : (
+                                        <input
+                                            type="text"
+                                            placeholder="Search text (e.g. God loved)"
+                                            value={textSearchQuery}
+                                            onChange={(e) => handleTextSearch(e.target.value)}
+                                            className="w-52 px-3 py-2.5 text-sm italic font-medium outline-none bg-transparent"
+                                        />
+                                    )}
+                                    {textSearching && <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mr-2 shrink-0"></div>}
+                                    {textSearchResults.length > 0 && <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded mr-1 shrink-0">{textSearchResults.length}</span>}
+                                    <div className="flex bg-slate-100 rounded-xl m-1 shrink-0">
+                                        <button
+                                            onClick={() => { setSearchMode('jump'); setTextSearchQuery(''); setTextSearchResults([]); }}
+                                            className={clsx("px-2.5 py-1.5 rounded-lg text-[9px] font-bold transition-all whitespace-nowrap", searchMode === 'jump' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")}
+                                        >REF</button>
+                                        <button
+                                            onClick={() => { setSearchMode('text'); setSearchQuery(''); }}
+                                            className={clsx("px-2.5 py-1.5 rounded-lg text-[9px] font-bold transition-all whitespace-nowrap", searchMode === 'text' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")}
+                                        >TEXT</button>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </div>
 
@@ -3801,10 +3970,38 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
                         <div className="w-1/3 bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 overflow-hidden flex flex-col">
                             <div className="p-6 border-b border-slate-50 shrink-0">
                                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                                    {selectorMode === 'book' ? 'Select Book' : selectorMode === 'chapter' ? `Chapters: ${selectedBook?.name}` : `Verses: ${selectedBook?.name} ${selectedChapter}`}
+                                    {textSearchResults.length > 0 ? `Search Results (${textSearchResults.length})` : selectorMode === 'book' ? 'Select Book' : selectorMode === 'chapter' ? `Chapters: ${selectedBook?.name}` : `Verses: ${selectedBook?.name} ${selectedChapter}`}
                                 </h3>
                             </div>
                             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                                {/* Text Search Results Panel */}
+                                {textSearchResults.length > 0 ? (
+                                    <div className="space-y-1">
+                                        {textSearchResults.map((r, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => goToSearchResult(r)}
+                                                className="w-full text-left px-4 py-3 rounded-xl hover:bg-indigo-50 transition-all group border border-transparent hover:border-indigo-100"
+                                            >
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                                                        {r.book_name} {r.chapter}:{r.verse}
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-slate-500 italic leading-relaxed line-clamp-2">
+                                                    {cleanBibleText(r.text)}
+                                                </p>
+                                            </button>
+                                        ))}
+                                        <button
+                                            onClick={() => { setTextSearchResults([]); setTextSearchQuery(''); }}
+                                            className="w-full mt-2 px-4 py-2 text-[10px] font-bold text-slate-400 hover:text-red-500 uppercase tracking-wider transition-colors"
+                                        >
+                                            Clear Results
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
                                 {selectorMode === 'book' && (
                                     <div>
                                         {/* Old/New Testament Toggle */}
@@ -3872,6 +4069,8 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
                                             </button>
                                         ))}
                                     </div>
+                                )}
+                                    </>
                                 )}
                             </div>
                         </div>

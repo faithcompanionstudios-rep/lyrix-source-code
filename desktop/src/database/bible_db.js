@@ -67,7 +67,17 @@ const bibleDb = {
 
     searchVerses: (translationId, query) => {
         const db = initBibleDb();
-        return db.prepare('SELECT v.*, b.name as book_name FROM verses v JOIN books b ON v.book_id = b.id WHERE v.translation_id = ? AND v.text LIKE ? LIMIT 50').all(translationId, `%${query}%`);
+        // Split query into keywords for AND-based matching
+        const keywords = query.trim().split(/\s+/).filter(k => k.length >= 2);
+        if (keywords.length === 0) return [];
+
+        // Build WHERE clause: each keyword must appear in the text
+        const conditions = keywords.map(() => 'v.text LIKE ?').join(' AND ');
+        const params = [translationId, ...keywords.map(k => `%${k}%`)];
+
+        return db.prepare(
+            `SELECT v.*, b.name as book_name FROM verses v JOIN books b ON v.book_id = b.id WHERE v.translation_id = ? AND ${conditions} ORDER BY v.book_id, v.chapter, v.verse LIMIT 50`
+        ).all(...params);
     },
 
     // Used by the setup utility

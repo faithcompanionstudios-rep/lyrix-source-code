@@ -471,7 +471,7 @@ if (!gotTheLock) {
                 if (input.key === 'Escape' && projectorWindow) {
                     projectorWindow.close();
                     event.preventDefault();
-                } else if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(input.key)) {
+                } else if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'b', 'B'].includes(input.key)) {
                     BrowserWindow.getAllWindows().forEach(win => {
                         if (win !== projectorWindow && !win.isDestroyed()) {
                             win.webContents.send('projector-key-press', input.key);
@@ -545,7 +545,7 @@ if (!gotTheLock) {
                 if (input.key === 'Escape' && projectorWindow) {
                     projectorWindow.close();
                     event.preventDefault();
-                } else if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(input.key)) {
+                } else if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'b', 'B'].includes(input.key)) {
                     // Forward slide navigation keys back to main window
                     BrowserWindow.getAllWindows().forEach(win => {
                         if (win !== projectorWindow && !win.isDestroyed()) {
