@@ -433,69 +433,7 @@ if (!gotTheLock) {
                 // Already open — just return true, do NOT close
                 return true;
             }
-            // Reuse the same creation logic from toggle
-            const displays = screen.getAllDisplays();
-            const externalDisplay = displays.find((display) => {
-                return display.bounds.x !== 0 || display.bounds.y !== 0;
-            });
-
-            let winOptions = {
-                width: 800,
-                height: 600,
-                autoHideMenuBar: true,
-                title: 'LyriX Stage',
-                backgroundColor: '#000000',
-                icon: path.join(__dirname, '../public/icon.ico'),
-                webPreferences: {
-                    preload: path.join(__dirname, 'preload.js'),
-                    contextIsolation: true,
-                    nodeIntegration: false
-                }
-            };
-
-            if (externalDisplay) {
-                winOptions.x = externalDisplay.bounds.x + 50;
-                winOptions.y = externalDisplay.bounds.y + 50;
-                winOptions.fullscreen = true;
-            }
-
-            projectorWindow = new BrowserWindow(winOptions);
-
-            if (externalDisplay) {
-                projectorWindow.setFullScreen(true);
-            }
-
-            projectorWindow.loadFile(path.join(__dirname, '../public/projector.html'));
-
-            projectorWindow.webContents.on('before-input-event', (event, input) => {
-                if (input.key === 'Escape' && projectorWindow) {
-                    projectorWindow.close();
-                    event.preventDefault();
-                } else if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'b', 'B'].includes(input.key)) {
-                    BrowserWindow.getAllWindows().forEach(win => {
-                        if (win !== projectorWindow && !win.isDestroyed()) {
-                            win.webContents.send('projector-key-press', input.key);
-                        }
-                    });
-                    event.preventDefault();
-                }
-            });
-
-            projectorWindow.on('closed', () => {
-                projectorWindow = null;
-                BrowserWindow.getAllWindows().forEach(win => {
-                    if (!win.isDestroyed()) {
-                        win.webContents.send('projector-state-changed', false);
-                    }
-                });
-            });
-
-            projectorWindow.webContents.on('did-finish-load', () => {
-                if (lastBibleVerse) {
-                    projectorWindow.webContents.send('bible-verse-update', lastBibleVerse);
-                }
-            });
-
+            openProjectorWindow();
             return true;
         });
 

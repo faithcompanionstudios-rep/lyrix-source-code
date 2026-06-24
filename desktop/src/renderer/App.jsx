@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { bibleThemes, findTheme } from '../utils/bibleThemes';
 import { clsx } from 'clsx';
 import QRCode from 'react-qr-code';
 
@@ -593,6 +594,7 @@ function App() {
                 if (unsubAppRunning) unsubAppRunning();
                 if (unsubCloseConfirm) unsubCloseConfirm();
                 if (unsubDbStatusUpdate) unsubDbStatusUpdate();
+                if (unsubBibleSetup) unsubBibleSetup();
             };
         }
     }, []);
@@ -609,10 +611,10 @@ function App() {
     }, [activeTab]);
 
     // Sync Projector whenever state changes or new devices connect
-    // Only sync slides when we're NOT in Bible mode (activeTab !== 'bible')
+    // Only sync slides when we're NOT in Bible mode
     useEffect(() => {
         if (window.electron) {
-            if (activeTab !== 'bible') {
+            if (stateRef.current.activeTab !== 'bible') {
                 const currentSlide = (slides && slides.length > 0) ? slides[currentSlideIndex] : "";
 
                 // If the current song is a Bible Reading from the schedule,
@@ -638,7 +640,7 @@ function App() {
             }
             window.electron.invoke('projector-sync', { type: 'black', isBlack });
         }
-    }, [currentSlideIndex, slides, isBlack, connections, currentSong]); // Intentionally omitting activeTab to prevent tab-switching from overwriting live projection
+    }, [currentSlideIndex, slides, isBlack, connections, currentSong]); // Using stateRef for activeTab to avoid tab-switch overwrite
 
     // Sync Settings
     useEffect(() => {
@@ -839,8 +841,8 @@ function App() {
         if (window.electron && window.electron.deleteSong) {
             await window.electron.deleteSong(songToDelete.id);
             // Refresh list
-            handleSearch(searchQuery, activeFilter);
-            if (currentSong?.id === songToDelete.id) {
+            handleSearch(searchQueryRef.current, activeFilterRef.current);
+            if (stateRef.current.currentSong?.id === songToDelete.id) {
                 setCurrentSong(null);
                 setSlides([]);
             }
@@ -853,18 +855,23 @@ function App() {
         setSongToDelete(currentSong);
     };
 
+    const executeDeleteRef = useRef(executeDelete);
+    useEffect(() => {
+        executeDeleteRef.current = executeDelete;
+    });
+
     useEffect(() => {
         const handleEnter = (e) => {
             if (e.key === 'Enter' && songToDelete) {
                 e.preventDefault();
-                executeDelete();
+                executeDeleteRef.current();
             }
         };
         if (songToDelete) {
             window.addEventListener('keydown', handleEnter);
             return () => window.removeEventListener('keydown', handleEnter);
         }
-    }, [songToDelete, executeDelete]);
+    }, [songToDelete]);
 
     return (
         <div
@@ -1031,6 +1038,7 @@ function App() {
                 </div>
                 <div className={clsx("flex-1 flex overflow-hidden", activeTab === 'bible' ? "" : "hidden")}>
                     <BibleSection
+                        activeTab={activeTab}
                         setStatus={setCustomAlert}
                         isProjectorOpen={isProjectorOpen}
                         setIsProjectorOpen={setIsProjectorOpen}
@@ -3207,16 +3215,18 @@ function MediaSection({ setStatus, setAdminVerifyPrompt, setIsBlack }) {
     useEffect(() => {
         refreshList();
 
+        let unsubVolume, unsubPlayback;
+
         // Listen for system volume changes (physical keys)
         if (window.electron.onSystemVolumeChanged) {
-            window.electron.onSystemVolumeChanged((event, newVol) => {
+            unsubVolume = window.electron.onSystemVolumeChanged((event, newVol) => {
                 setVolume(newVol);
             });
         }
 
         // Listen for playback updates from projector
         if (window.electron.onMediaPlaybackUpdate) {
-            window.electron.onMediaPlaybackUpdate((event, payload) => {
+            unsubPlayback = window.electron.onMediaPlaybackUpdate((event, payload) => {
                 if (payload.stopped) {
                     setIsPlaying(false);
                     setCurrentPlaying(null);
@@ -3230,6 +3240,11 @@ function MediaSection({ setStatus, setAdminVerifyPrompt, setIsBlack }) {
                 setIsPaused(payload.paused || false);
             });
         }
+
+        return () => {
+            if (unsubVolume) unsubVolume();
+            if (unsubPlayback) unsubPlayback();
+        };
     }, []);
 
     // Keyboard shortcuts for media playback
@@ -3570,7 +3585,7 @@ function MediaSection({ setStatus, setAdminVerifyPrompt, setIsBlack }) {
     );
 }
 
-function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBooks, selectedBook, setSelectedBook, selectedChapter, setSelectedChapter, selectedVerse, setSelectedVerse, verses, setVerses, chaptersCount, setChaptersCount, setupStatus, setSetupStatus, setupProgress, setBibleBooks, autoProjectBible }) {
+function BibleSection({ activeTab, setStatus, isProjectorOpen, setIsProjectorOpen, bibleBooks, selectedBook, setSelectedBook, selectedChapter, setSelectedChapter, selectedVerse, setSelectedVerse, verses, setVerses, chaptersCount, setChaptersCount, setupStatus, setSetupStatus, setupProgress, setBibleBooks, autoProjectBible }) {
 
     const [searchQuery, setSearchQuery] = useState('');
     const [selectorMode, setSelectorMode] = useState('book'); // book, chapter, verse
@@ -3581,12 +3596,23 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
     const [testamentFilter, setTestamentFilter] = useState('OT'); // 'OT' or 'NT'
     const [pendingProjectVerse, setPendingProjectVerse] = useState(null);
 
-    // Text Search State
+    // Unified Search State
     const [searchMode, setSearchMode] = useState('jump'); // 'jump' or 'text'
-    const [textSearchQuery, setTextSearchQuery] = useState('');
     const [textSearchResults, setTextSearchResults] = useState([]);
     const [textSearching, setTextSearching] = useState(false);
     const textSearchTimeout = useRef(null);
+    const handleSmartSearchRef = useRef(null);
+
+    // Clear search state when switching tabs
+    useEffect(() => {
+        if (activeTab !== 'bible') {
+            setSearchQuery('');
+            setSearchMode('jump');
+            setTextSearchResults([]);
+            if (textSearchTimeout.current) clearTimeout(textSearchTimeout.current);
+            setTextSearching(false);
+        }
+    }, [activeTab]);
 
     useEffect(() => {
         if (selectedBook) {
@@ -3610,10 +3636,15 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
 
     // Auto-scroll to selected verse in preview
     useEffect(() => {
-        if (selectedVerse && verseRefs.current[selectedVerse]) {
-            verseRefs.current[selectedVerse].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (selectedVerse && verses.KJV && verses.KJV.length > 0) {
+            // Delay slightly to ensure DOM has rendered the new verse refs after chapter switch
+            setTimeout(() => {
+                if (verseRefs.current[selectedVerse]) {
+                    verseRefs.current[selectedVerse].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 50);
         }
-    }, [selectedVerse]);
+    }, [selectedVerse, verses]);
 
     const handleProject = (vNum, forceProject = false) => {
         setSelectedVerse(vNum);
@@ -3680,72 +3711,14 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
         }
     };
 
-    const handleSmartJump = (query) => {
-        setSearchQuery(query);
-        if (!query.trim()) return;
-
-        // Enhanced Smart Jump: handles "John 3:16", "1 Sam 2:3", "Gen 1", "Joh 3 16", "gen 1 5", "Gen1:5"
-        const match = query.trim().match(/^(\d?\s*[a-zA-Z][a-zA-Z\s]*?)\s*(\d+)\s*[:\s.,]\s*(\d+)$/);
-        const matchChapterOnly = query.trim().match(/^(\d?\s*[a-zA-Z][a-zA-Z\s]*?)\s*(\d+)$/);
-
-        let bookNamePart, chapter, verse;
-
-        if (match) {
-            bookNamePart = match[1].toLowerCase().trim();
-            chapter = parseInt(match[2]);
-            verse = parseInt(match[3]);
-        } else if (matchChapterOnly) {
-            bookNamePart = matchChapterOnly[1].toLowerCase().trim();
-            chapter = parseInt(matchChapterOnly[2]);
-            verse = 1;
-        } else {
-            return;
-        }
-
-        // Try multiple matching strategies
-        const book = bibleBooks.find(b => {
-            const name = b.name.toLowerCase();
-            const id = String(b.id || '').toLowerCase();
-            return name === bookNamePart ||
-                   name.startsWith(bookNamePart) ||
-                   id === bookNamePart ||
-                   id.startsWith(bookNamePart) ||
-                   // Handle abbreviations without spaces: "gen" matches "Genesis"
-                   name.replace(/\s+/g, '').startsWith(bookNamePart.replace(/\s+/g, ''));
-        });
-
-        if (book) {
-            setSelectedBook(book);
-            setSelectedChapter(chapter);
-            setSelectedVerse(verse);
-            setSelectorMode('verse');
-            // Clear any text search results when using Smart Jump
-            setTextSearchResults([]);
-            // Delay auto-trigger by 600ms to allow user to finish typing multi-digit verses
-            if (match) {
-                if (smartJumpTimeout) clearTimeout(smartJumpTimeout);
-                smartJumpTimeout = setTimeout(() => {
-                    setPendingProjectVerse({ bookId: book.id, chapter, verse });
-                    setSearchQuery('');
-                }, 600);
-            }
-        }
-
-    };
-
-    // Text Search Handler — search Bible by content
-    const handleTextSearch = (query) => {
-        setTextSearchQuery(query);
-        if (textSearchTimeout.current) clearTimeout(textSearchTimeout.current);
-
+    const forceTextSearch = (query) => {
         if (!query.trim() || query.trim().length < 3) {
             setTextSearchResults([]);
             setTextSearching(false);
             return;
         }
-
         setTextSearching(true);
-        // Debounce: wait 400ms after user stops typing
+        if (textSearchTimeout.current) clearTimeout(textSearchTimeout.current);
         textSearchTimeout.current = setTimeout(async () => {
             try {
                 const results = await window.electron.invoke('bible:search', 'KJV', query.trim());
@@ -3757,6 +3730,116 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
             setTextSearching(false);
         }, 400);
     };
+
+    // Thematic search — only triggered by Enter key, not on every keystroke
+    const handleThematicSearch = (query) => {
+        const trimmed = query.trim();
+        if (!trimmed) return false;
+
+        const themeMatch = findTheme(trimmed);
+        if (themeMatch) {
+            const bookMatch = bibleBooks.find(b => b.name === themeMatch.book);
+            if (bookMatch) {
+                setSearchMode('jump');
+                setSelectedBook(bookMatch);
+                setSelectedChapter(themeMatch.chapter);
+                setSelectedVerse(themeMatch.verse || 1);
+                setSelectorMode('verse');
+                setTextSearchResults([]);
+                setSearchQuery('');
+                // Cancel any pending text search timer
+                if (textSearchTimeout.current) clearTimeout(textSearchTimeout.current);
+                setTextSearching(false);
+                return true; // matched
+            }
+        }
+        return false; // no match
+    };
+
+    const handleSmartSearch = (query, forcedMode = null) => {
+        setSearchQuery(query);
+        const trimmed = query.trim();
+        
+        // Always reset the auto-project buffer when the user types
+        if (smartJumpTimeout) clearTimeout(smartJumpTimeout);
+        
+        if (!trimmed) {
+            setSearchMode('jump');
+            setTextSearchResults([]);
+            // Cancel any pending text search
+            if (textSearchTimeout.current) clearTimeout(textSearchTimeout.current);
+            setTextSearching(false);
+            return;
+        }
+
+        // If user explicitly forced a mode (by clicking the toggle buttons)
+        if (forcedMode === 'text') {
+            setSearchMode('text');
+            forceTextSearch(trimmed);
+            return;
+        } else if (forcedMode === 'jump') {
+            setSearchMode('jump');
+            // Cancel any pending text search when switching to jump
+            if (textSearchTimeout.current) clearTimeout(textSearchTimeout.current);
+            setTextSearching(false);
+            setTextSearchResults([]);
+            return;
+        }
+
+        // 1. Reference Check (runs on every keystroke — regex is instant)
+        const match = trimmed.match(/^(\d?\s*[a-zA-Z][a-zA-Z\s]*?)\s*(\d+)\s*[:\s.,]\s*(\d+)$/);
+        const matchChapterOnly = trimmed.match(/^(\d?\s*[a-zA-Z][a-zA-Z\s]*?)\s*(\d+)$/);
+
+        let bookNamePart, chapter, verse;
+        if (match) {
+            bookNamePart = match[1].toLowerCase().trim();
+            chapter = parseInt(match[2]);
+            verse = parseInt(match[3]);
+        } else if (matchChapterOnly) {
+            bookNamePart = matchChapterOnly[1].toLowerCase().trim();
+            chapter = parseInt(matchChapterOnly[2]);
+            verse = 1;
+        }
+
+        if (bookNamePart) {
+            const book = bibleBooks.find(b => {
+                const name = b.name.toLowerCase();
+                const id = String(b.id || '').toLowerCase();
+                return name === bookNamePart ||
+                       name.startsWith(bookNamePart) ||
+                       id === bookNamePart ||
+                       id.startsWith(bookNamePart) ||
+                       name.replace(/\s+/g, '').startsWith(bookNamePart.replace(/\s+/g, ''));
+            });
+
+            if (book) {
+                setSearchMode('jump');
+                setSelectedBook(book);
+                setSelectedChapter(chapter);
+                setSelectedVerse(verse);
+                setSelectorMode('verse');
+                setTextSearchResults([]);
+                // Cancel any pending text search when we matched a reference
+                if (textSearchTimeout.current) clearTimeout(textSearchTimeout.current);
+                setTextSearching(false);
+                
+                if (match) {
+                    smartJumpTimeout = setTimeout(() => {
+                        setPendingProjectVerse({ bookId: book.id, chapter, verse });
+                        setSearchQuery('');
+                    }, 1200);
+                }
+                return; // successfully handled as reference
+            }
+        }
+
+        // 2. Fallback to Text Search (no thematic check here — that's Enter-only)
+        setSearchMode('text');
+        forceTextSearch(trimmed);
+    };
+
+    // Keep a ref to the latest handleSmartSearch for event listeners
+    handleSmartSearchRef.current = handleSmartSearch;
 
     // Navigate to a text search result (preview only, no auto-project)
     const goToSearchResult = (result) => {
@@ -3798,12 +3881,15 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
     useEffect(() => {
         const handleRemoteSmartJump = (e) => {
             if (e.detail) {
-                handleSmartJump(e.detail);
+                // Use the ref to always call the latest version (avoids stale closure)
+                if (handleSmartSearchRef.current) {
+                    handleSmartSearchRef.current(e.detail);
+                }
             }
         };
         window.addEventListener('remote-smart-jump', handleRemoteSmartJump);
         return () => window.removeEventListener('remote-smart-jump', handleRemoteSmartJump);
-    }, [bibleBooks]);
+    }, []); // No deps needed — ref always points to latest
 
 
     return (
@@ -3852,32 +3938,38 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
                             <div className="relative">
                                 <div className="flex items-center bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden focus-within:ring-4 focus-within:ring-indigo-500/10 focus-within:border-indigo-400 transition-all">
                                     <svg className="w-4 h-4 ml-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                                    {searchMode === 'jump' ? (
-                                        <input
-                                            type="text"
-                                            placeholder="Jump to verse (e.g. Joh 3:16)"
-                                            value={searchQuery}
-                                            onChange={(e) => handleSmartJump(e.target.value)}
-                                            className="w-52 px-3 py-2.5 text-sm italic font-medium outline-none bg-transparent"
-                                        />
-                                    ) : (
-                                        <input
-                                            type="text"
-                                            placeholder="Search text (e.g. God loved)"
-                                            value={textSearchQuery}
-                                            onChange={(e) => handleTextSearch(e.target.value)}
-                                            className="w-52 px-3 py-2.5 text-sm italic font-medium outline-none bg-transparent"
-                                        />
-                                    )}
+                                    <input
+                                        type="text"
+                                        placeholder="Search passage or text (e.g. John 3:16, Faith, Mustard seed)"
+                                        value={searchQuery}
+                                        onChange={(e) => handleSmartSearch(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                // Try thematic/fuzzy search first on Enter
+                                                const matched = handleThematicSearch(searchQuery);
+                                                if (!matched) {
+                                                    // No theme match — just clear and reset
+                                                    setSearchQuery('');
+                                                    setTextSearchResults([]);
+                                                    setSearchMode('jump');
+                                                    if (textSearchTimeout.current) clearTimeout(textSearchTimeout.current);
+                                                    setTextSearching(false);
+                                                }
+                                                e.target.blur();
+                                            }
+                                        }}
+                                        className="w-[280px] px-3 py-2.5 text-sm italic font-medium outline-none bg-transparent"
+                                    />
                                     {textSearching && <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mr-2 shrink-0"></div>}
                                     {textSearchResults.length > 0 && <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded mr-1 shrink-0">{textSearchResults.length}</span>}
                                     <div className="flex bg-slate-100 rounded-xl m-1 shrink-0">
                                         <button
-                                            onClick={() => { setSearchMode('jump'); setTextSearchQuery(''); setTextSearchResults([]); }}
+                                            onClick={() => handleSmartSearch(searchQuery, 'jump')}
                                             className={clsx("px-2.5 py-1.5 rounded-lg text-[9px] font-bold transition-all whitespace-nowrap", searchMode === 'jump' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")}
                                         >REF</button>
                                         <button
-                                            onClick={() => { setSearchMode('text'); setSearchQuery(''); }}
+                                            onClick={() => handleSmartSearch(searchQuery, 'text')}
                                             className={clsx("px-2.5 py-1.5 rounded-lg text-[9px] font-bold transition-all whitespace-nowrap", searchMode === 'text' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")}
                                         >TEXT</button>
                                     </div>
@@ -3994,7 +4086,7 @@ function BibleSection({ setStatus, isProjectorOpen, setIsProjectorOpen, bibleBoo
                                             </button>
                                         ))}
                                         <button
-                                            onClick={() => { setTextSearchResults([]); setTextSearchQuery(''); }}
+                                            onClick={() => { setTextSearchResults([]); setSearchQuery(''); }}
                                             className="w-full mt-2 px-4 py-2 text-[10px] font-bold text-slate-400 hover:text-red-500 uppercase tracking-wider transition-colors"
                                         >
                                             Clear Results
