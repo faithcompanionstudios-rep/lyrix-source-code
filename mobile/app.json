@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "LyriX Mobile",
+    "name": "LyriX Remote",
     "slug": "mobile",
-    "version": "1.6.8",
+    "version": "1.7.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -21,8 +21,19 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#111827"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "versionCode": 3
     },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     },
@@ -30,7 +41,7 @@
       "eas": {
         "projectId": "8f79e421-f1e5-4723-b554-0d56a693c33b"
       },
-      "buildNumber": "27"
+      "buildNumber": "28"
     },
     "runtimeVersion": "1.0.0",
     "updates": {

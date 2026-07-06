@@ -5,14 +5,14 @@ const path = require('path');
 
 const KJV_URL = 'https://raw.githubusercontent.com/thiagobodruk/bible/master/json/en_kjv.json';
 const HINDI_URL = 'https://raw.githubusercontent.com/godlytalias/Bible-Database/master/Hindi/bible.json';
+const TELUGU_URL = 'https://raw.githubusercontent.com/godlytalias/Bible-Database/master/Telugu/bible.json';
 
 const standardBooks = JSON.parse(fs.readFileSync(path.join(__dirname, 'book_list.json'), 'utf8'));
 
 async function setupBible(onProgress) {
     try {
-        if (onProgress) onProgress('Downloading KJV Translation...', 10);
-        const kjvRes = await axios.get(KJV_URL);
-        const kjvData = kjvRes.data;
+        if (onProgress) onProgress('Reading KJV Translation from disk...', 10);
+        const kjvData = JSON.parse(fs.readFileSync(path.join(__dirname, 'bibles', 'kjv.json'), 'utf8'));
 
         if (onProgress) onProgress('Normalizing KJV...', 30);
         let normalizedKJV = normalizeKJV(kjvData);
@@ -21,16 +21,25 @@ async function setupBible(onProgress) {
         if (onProgress) onProgress('Importing KJV to Database...', 50);
         bibleDb.importTranslation('KJV', normalizedKJV);
 
-        if (onProgress) onProgress('Downloading Hindi Translation...', 60);
-        const hindiRes = await axios.get(HINDI_URL);
-        const hindiData = hindiRes.data;
+        if (onProgress) onProgress('Reading Hindi Translation from disk...', 60);
+        const hindiData = JSON.parse(fs.readFileSync(path.join(__dirname, 'bibles', 'hindi.json'), 'utf8'));
 
         if (onProgress) onProgress('Normalizing Hindi...', 80);
         let normalizedHindi = normalizeHindi(hindiData);
         normalizedHindi = patchHindi(normalizedHindi);
 
-        if (onProgress) onProgress('Importing Hindi to Database...', 90);
+        if (onProgress) onProgress('Importing Hindi to Database...', 75);
         bibleDb.importTranslation('HINDI', normalizedHindi);
+
+        if (onProgress) onProgress('Reading Telugu Translation from disk...', 85);
+        const teluguData = JSON.parse(fs.readFileSync(path.join(__dirname, 'bibles', 'telugu.json'), 'utf8'));
+
+        if (onProgress) onProgress('Normalizing Telugu...', 95);
+        let normalizedTelugu = normalizeHindi(teluguData); // It's in the same format as Hindi
+        normalizedTelugu = patchTelugu(normalizedTelugu);
+
+        if (onProgress) onProgress('Importing Telugu to Database...', 98);
+        bibleDb.importTranslation('TELUGU', normalizedTelugu);
 
         if (onProgress) onProgress('Bible Setup Complete!', 100);
         return { success: true };
@@ -90,6 +99,18 @@ function patchHindi(data) {
     return data;
 }
 
+function patchTelugu(data) {
+    try {
+        if (data[6] && data[6].chapters[9]) {
+            data[6].chapters[9].verses = data[6].chapters[9].verses.slice(0, 18);
+        }
+        if (data[32] && data[32].chapters[2]) {
+            data[32].chapters[2].verses = data[32].chapters[2].verses.slice(0, 12);
+        }
+    } catch (e) { console.error('Error patching Telugu', e); }
+    return data;
+}
+
 function patchKJV(data) {
     try {
         const reindex = (b, c) => {
@@ -131,4 +152,4 @@ function patchKJV(data) {
     return data;
 }
 
-module.exports = { setupBible };
+module.exports = { setupBible, normalizeKJV, normalizeHindi };

@@ -1,13 +1,13 @@
 {
   "name": "church-lyrics-system",
-  "version": "1.8.7",
+  "version": "1.8.20",
   "description": "Church Lyrics System with Web Remote Control",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "concurrently \"vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron .\"",
-    "build": "vite build && electron-builder --win --x64 -c.directories.output=release_v1_8_7 -p always",
-    "dist": "vite build && electron-builder --win --x64 -c.directories.output=release_v1_8_7 -p always",
+    "build": "vite build && electron-builder --win --x64 -c.directories.output=release_v1_8_20",
+    "dist": "vite build && electron-builder --win --x64 -c.directories.output=release_v1_8_20",
     "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [],
@@ -24,9 +24,8 @@
     "cheerio": "^1.2.0",
     "clsx": "^2.1.1",
     "dotenv": "^17.3.1",
-    "electron-updater": "^6.8.3",
+
     "express": "^5.2.1",
-    "firebase": "^12.8.0",
     "jszip": "^3.10.1",
     "loudness": "^0.4.2",
     "pptx2json": "^0.0.10",
@@ -55,7 +54,7 @@
   },
   "build": {
     "appId": "com.lyrix.desktop",
-    "productName": "LyriX-Church-System",
+    "productName": "LyriX Cast",
     "files": [
       "src/**/*",
       "renderer_dist/**/*",
@@ -66,20 +65,18 @@
       "public/remote/**/*"
     ],
     "directories": {
-      "output": "release_v1_7_9"
+      "output": "release_v1_8_8"
     },
     "win": {
-      "target": "nsis",
-      "icon": "public/icon.ico"
+      "target": ["nsis", "appx"],
+      "icon": "public/icon.png"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "justforaitoolz-ops",
-        "repo": "LyriX-Church-System",
-        "releaseType": "release"
-      }
-    ],
+    "appx": {
+      "identityName": "FaithCompanionStudios.LyriXCast",
+      "publisher": "CN=42A989F3-DB65-45D3-A3CD-31890E8447C8",
+      "publisherDisplayName": "Faith Companion Studios"
+    },
+
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

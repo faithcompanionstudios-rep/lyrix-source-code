@@ -1,19 +1,18 @@
-const { db, auth } = require('../firebaseConfig.js');
-const { collection, getDocs, doc, setDoc, deleteDoc, onSnapshot, getDoc, query, orderBy, writeBatch, getDocFromCache } = require('firebase/firestore');
-const { signInAnonymously } = require('firebase/auth');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const dns = require('dns').promises;
-const net = require('net');
 
-let SONGS_BACKUP_PATH;
+let BUNDLED_SONGS_PATH;   // Read-only, inside app package
+let CUSTOM_SONGS_PATH;    // User-added/edited songs in userData
+let DELETED_BUNDLED_PATH; // IDs of bundled songs user deleted
 let SCHEDULE_BACKUP_PATH;
 let CATEGORIES_BACKUP_PATH;
-let DELETED_SONGS_PATH;
+let DELETED_SONGS_PATH;   // Recycle bin
 let APP_SETTINGS_PATH;
+let OLD_SONGS_BACKUP_PATH; // Legacy path for migration
 
 let forceOfflineMode = false;
+let playstoreLink = 'https://play.google.com/store/apps/details?id=com.faithcompanionstudios.lyrix';
 
 const DEFAULT_CATEGORIES = [
     'English Choruses',
@@ -30,7 +29,10 @@ const DEFAULT_ADMIN = {
     passwordHash: crypto.createHash('sha256').update('admin').digest('hex')
 };
 
-let songsCache = [];
+let songsCache = [];           // Merged view (bundled + custom)
+let customSongsCache = [];     // Only custom/edited songs
+let deletedBundledIds = [];    // IDs of bundled songs user deleted
+let bundledSongIds = new Set(); // Track which IDs come from bundle
 let scheduleCache = [];
 let localScheduleUpdatedAt = 0;
 let categoriesCache = [...DEFAULT_CATEGORIES];
@@ -44,59 +46,15 @@ let isOffline = false;
 function broadcastDbStatus() {
     if (global.broadcastDbStatus) {
         global.broadcastDbStatus({
-            status: isOffline ? (dbStatus === 'offline-mode' ? 'offline-mode' : 'disconnected') : dbStatus,
-            authenticated: !!auth.currentUser,
-            isOffline: isOffline
+            status: 'local-mode',
+            authenticated: true,
+            isOffline: true
         });
     }
 }
 
 async function checkNetwork() {
-    if (forceOfflineMode) return;
-    
-    // Use a raw TCP connection to a known IP to bypass ALL caching (OS, router, DNS)
-    // 8.8.8.8:53 is Google's public DNS - a well-known, reliable endpoint
-    return new Promise((resolve) => {
-        const socket = new net.Socket();
-        const timeout = 2500;
-        let done = false;
-
-        const onOnline = () => {
-            if (done) return;
-            done = true;
-            socket.destroy();
-            if (isOffline) {
-                isOffline = false;
-                console.log('Network Status: Connected');
-                broadcastDbStatus();
-                if (!auth.currentUser) {
-                    ensureAuth().catch(() => { });
-                } else {
-                    // Force a background push on reconnection if we modified anything locally
-                    syncRemoteData();
-                }
-            }
-            resolve(true);
-        };
-
-        const onOffline = () => {
-            if (done) return;
-            done = true;
-            socket.destroy();
-            if (!isOffline) {
-                isOffline = true;
-                console.log('Network Status: Disconnected');
-                broadcastDbStatus();
-            }
-            resolve(false);
-        };
-
-        socket.setTimeout(timeout);
-        socket.once('connect', onOnline);
-        socket.once('timeout', onOffline);
-        socket.once('error', onOffline);
-        socket.connect(53, '8.8.8.8');
-    });
+    return true;
 }
 
 const normalize = (text) => {
@@ -130,69 +88,33 @@ function getCategoryPrefix(category) {
     return category.substring(0, 2).toUpperCase();
 }
 
-// ─── Auth ────────────────────────────────────────────────────────────────────
-
 async function ensureAuth() {
-    if (isOffline) return;
-    if (auth.currentUser) {
-        if (dbStatus !== 'connected') { dbStatus = 'connected'; broadcastDbStatus(); }
-        return;
-    }
-    if (authPromise) return authPromise;
-
-    dbStatus = 'authenticating';
-    broadcastDbStatus();
-
-    authPromise = signInAnonymously(auth)
-        .then(() => {
-            dbStatus = 'connected';
-            broadcastDbStatus();
-            authPromise = null;
-            syncRemoteData(); // Trigger sync once authenticated
-        })
-        .catch(err => {
-            dbStatus = 'auth_error';
-            broadcastDbStatus();
-            authPromise = null;
-            throw err;
-        });
-    return authPromise;
+    return true;
 }
 
-// Manually synchronizes local newer data to cloud upon reconnection
 async function syncRemoteData() {
-    if (isOffline) return;
-    try {
-        console.log('SyncRemoteData: Checking Schedule');
-        const snap = await getDoc(doc(db, 'schedules', 'sunday-service'));
-        const remoteData = snap.exists() ? snap.data() : null;
-        const remoteUpdatedAt = remoteData?.updatedAt || 0;
-        
-        if (localScheduleUpdatedAt > remoteUpdatedAt && localScheduleUpdatedAt > 0) {
-            console.log('SyncRemoteData: Local schedule is newer, pushing to Cloud manually.');
-            await setDoc(doc(db, 'schedules', 'sunday-service'), { items: scheduleCache, updatedAt: localScheduleUpdatedAt });
-        } else if (remoteUpdatedAt > localScheduleUpdatedAt) {
-            console.log('SyncRemoteData: Cloud schedule is newer, pulling.');
-            scheduleCache = remoteData.items || [];
-            localScheduleUpdatedAt = remoteUpdatedAt;
-            const data = { items: scheduleCache, updatedAt: localScheduleUpdatedAt };
-            fs.writeFileSync(SCHEDULE_BACKUP_PATH, JSON.stringify(data, null, 2));
-            if (global.broadcastScheduleUpdate) global.broadcastScheduleUpdate(scheduleCache);
-        }
-    } catch(e) {
-        console.error('SyncRemoteData failed:', e);
-    }
-    
-    // Also trigger full song library sync (honoring Last-Write-Wins)
-    try {
-        console.log('SyncRemoteData: Triggering background song sync...');
-        await syncSongs();
-    } catch (e) {
-        console.error('Background song sync failed:', e);
-    }
+    return true;
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
+
+function rebuildSongsCache(bundledSongs) {
+    // 1. Filter out user-deleted bundled songs
+    let filtered = bundledSongs.filter(s => !deletedBundledIds.includes(s.id));
+
+    // 2. Build custom map for overrides
+    const customMap = new Map(customSongsCache.map(s => [s.id, s]));
+
+    // 3. Overlay edits onto bundled songs
+    const merged = filtered.map(s => customMap.has(s.id) ? customMap.get(s.id) : s);
+
+    // 4. Add purely new custom songs (IDs not in the bundle)
+    const bundledIdSet = new Set(bundledSongs.map(s => s.id));
+    const newCustom = customSongsCache.filter(s => !bundledIdSet.has(s.id));
+
+    songsCache = [...merged, ...newCustom];
+    songsCache.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+}
 
 async function initDb(userDataPath) {
     console.log('Initializing DB with persistent storage...');
@@ -201,7 +123,10 @@ async function initDb(userDataPath) {
     const dataDir = path.join(userDataPath, 'data');
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
-    SONGS_BACKUP_PATH = path.join(dataDir, 'songs.json');
+    BUNDLED_SONGS_PATH = path.join(__dirname, 'songs.json');
+    CUSTOM_SONGS_PATH = path.join(dataDir, 'custom_songs.json');
+    DELETED_BUNDLED_PATH = path.join(dataDir, 'deleted_bundled.json');
+    OLD_SONGS_BACKUP_PATH = path.join(dataDir, 'songs.json');
     SCHEDULE_BACKUP_PATH = path.join(dataDir, 'schedule.json');
     CATEGORIES_BACKUP_PATH = path.join(dataDir, 'categories.json');
     DELETED_SONGS_PATH = path.join(dataDir, 'deleted_songs.json');
@@ -212,21 +137,66 @@ async function initDb(userDataPath) {
         if (fs.existsSync(APP_SETTINGS_PATH)) {
             const settings = JSON.parse(fs.readFileSync(APP_SETTINGS_PATH, 'utf-8'));
             forceOfflineMode = settings.forceOffline || false;
+            if (settings.playstoreLink) playstoreLink = settings.playstoreLink;
             if (settings.adminCredentials) {
                 adminCredentials = settings.adminCredentials;
             }
         }
     } catch (err) { console.error('Failed to load app settings:', err); }
 
-    // Load local backups IMMEDIATELY
+    // ─── Load Bundled Songs (read-only from app package) ─────────────────
+    let bundledSongs = [];
     try {
-        if (fs.existsSync(SONGS_BACKUP_PATH)) {
-            const local = JSON.parse(fs.readFileSync(SONGS_BACKUP_PATH, 'utf-8'));
-            if (Array.isArray(local)) {
-                songsCache = local;
-                if (global.broadcastSongsUpdate) global.broadcastSongsUpdate(songsCache);
-            }
+        bundledSongs = JSON.parse(fs.readFileSync(BUNDLED_SONGS_PATH, 'utf-8'));
+        bundledSongIds = new Set(bundledSongs.map(s => s.id));
+        console.log(`Loaded ${bundledSongs.length} bundled songs from package.`);
+    } catch (err) { console.error('Failed to load bundled songs:', err); }
+
+    // ─── One-time Migration from old single-file system ─────────────────
+    if (fs.existsSync(OLD_SONGS_BACKUP_PATH) && !fs.existsSync(CUSTOM_SONGS_PATH)) {
+        try {
+            console.log('Migrating from legacy single-file songs system...');
+            const oldSongs = JSON.parse(fs.readFileSync(OLD_SONGS_BACKUP_PATH, 'utf-8'));
+            const bundledMap = new Map(bundledSongs.map(s => [s.id, JSON.stringify(s.slides)]));
+
+            // Songs in old data that are NOT in bundle = custom songs
+            // Songs in old data that ARE in bundle but have different slides = user edits
+            customSongsCache = oldSongs.filter(s => {
+                if (!bundledSongIds.has(s.id)) return true; // purely custom
+                const bundledSlides = bundledMap.get(s.id);
+                return bundledSlides && JSON.stringify(s.slides) !== bundledSlides; // edited
+            });
+
+            fs.writeFileSync(CUSTOM_SONGS_PATH, JSON.stringify(customSongsCache, null, 2));
+            // Rename old file so migration doesn't re-run
+            fs.renameSync(OLD_SONGS_BACKUP_PATH, path.join(dataDir, 'songs_legacy_backup.json'));
+            console.log(`Migration complete: ${customSongsCache.length} custom/edited songs extracted.`);
+        } catch (err) { console.error('Migration failed:', err); }
+    }
+
+    // ─── Load Custom Songs ───────────────────────────────────────────────
+    try {
+        if (fs.existsSync(CUSTOM_SONGS_PATH)) {
+            const local = JSON.parse(fs.readFileSync(CUSTOM_SONGS_PATH, 'utf-8'));
+            if (Array.isArray(local)) customSongsCache = local;
         }
+    } catch (err) { console.error('Failed to load custom songs:', err); }
+
+    // ─── Load Deleted Bundled IDs ────────────────────────────────────────
+    try {
+        if (fs.existsSync(DELETED_BUNDLED_PATH)) {
+            const local = JSON.parse(fs.readFileSync(DELETED_BUNDLED_PATH, 'utf-8'));
+            if (Array.isArray(local)) deletedBundledIds = local;
+        }
+    } catch (err) { console.error('Failed to load deleted bundled list:', err); }
+
+    // ─── Merge into final songsCache ─────────────────────────────────────
+    rebuildSongsCache(bundledSongs);
+    console.log(`Songs ready: ${songsCache.length} total (${bundledSongs.length} bundled, ${customSongsCache.length} custom).`);
+    if (global.broadcastSongsUpdate) global.broadcastSongsUpdate(songsCache);
+
+    // ─── Load Schedule & Categories ──────────────────────────────────────
+    try {
         if (fs.existsSync(SCHEDULE_BACKUP_PATH)) {
             const local = JSON.parse(fs.readFileSync(SCHEDULE_BACKUP_PATH, 'utf-8'));
             if (local && typeof local === 'object' && local.items) {
@@ -243,134 +213,30 @@ async function initDb(userDataPath) {
             if (Array.isArray(local)) categoriesCache = local;
         }
     } catch (err) {
-        console.error('Failed to load local backups:', err);
+        console.error('Failed to load schedule/categories:', err);
     }
 
-    // Initial network check
-    await checkNetwork();
-
-    if (forceOfflineMode) {
-        console.log('Init sequence: Pure Offline Mode enabled. Skipping Firebase.');
-        isOffline = true;
-        dbStatus = 'offline-mode';
-        broadcastDbStatus();
-        return; // Halt Firebase setup completely
-    }
-
-    // Start background auth and listeners
-    ensureAuth()
-        .then(() => loadConfig())
-        .then(() => {
-            // Subscribe to Songs
-            const songsQuery = query(collection(db, 'songs'), orderBy('id'));
-            onSnapshot(songsQuery, (snapshot) => {
-                if (snapshot.metadata.fromCache && isOffline) return;
-                
-                const remoteSongs = snapshot.docs.map(d => d.data());
-                
-                // Smart Merge (Last-Write-Wins)
-                let hasChanges = false;
-                const newCache = [...songsCache];
-                
-                remoteSongs.forEach(remoteSong => {
-                    const localIndex = newCache.findIndex(s => s.id === remoteSong.id);
-                    if (localIndex === -1) {
-                        // New song from remote
-                        newCache.push(remoteSong);
-                        hasChanges = true;
-                    } else {
-                        const localSong = newCache[localIndex];
-                        // Only update if remote is strictly newer
-                        if ((remoteSong.updatedAt || 0) > (localSong.updatedAt || 0)) {
-                            newCache[localIndex] = remoteSong;
-                            hasChanges = true;
-                        }
-                    }
-                });
-
-                if (hasChanges) {
-                    songsCache = newCache;
-                    songsCache.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
-                    fs.writeFileSync(SONGS_BACKUP_PATH, JSON.stringify(songsCache, null, 2));
-                    if (global.broadcastSongsUpdate) global.broadcastSongsUpdate(songsCache);
-                }
-            }, (err) => console.error('Songs listener error:', err));
-
-            // Subscribe to Schedule
-            const scheduleRef = doc(db, 'schedules', 'sunday-service');
-            onSnapshot(scheduleRef, (snap) => {
-                if (snap.exists() && (!snap.metadata.fromCache || !isOffline)) {
-                    const remoteSchedule = snap.data().items || [];
-                    
-                    // Simple logic: if local schedule is DIFFERENT from remote, but we are just connecting,
-                    // we should check if we had pending local changes.
-                    // For now, we use a simple 'Remote Wins' but ONLY if the local data isn't newer.
-                    // Since schedule is a single document, we'll check its updatedAt if available.
-                    
-                    const remoteUpdatedAt = snap.data().updatedAt || 0;
-                    
-                    // To prevent the "wipeout" bug: 
-                    if (remoteSchedule.length === 0 && scheduleCache.length > 0 && !snap.data().updatedAt) {
-                        console.log('Sync: Preserving local schedule from wipeout');
-                        return;
-                    }
-
-                    // Smart Merge: Only overwrite if remote is truly newer
-                    if (remoteUpdatedAt > localScheduleUpdatedAt) {
-                        console.log('Sync: Updating local schedule from Cloud');
-                        scheduleCache = remoteSchedule;
-                        localScheduleUpdatedAt = remoteUpdatedAt;
-                        // Persist with metadata
-                        const data = { items: scheduleCache, updatedAt: localScheduleUpdatedAt };
-                        fs.writeFileSync(SCHEDULE_BACKUP_PATH, JSON.stringify(data, null, 2));
-                        if (global.broadcastScheduleUpdate) global.broadcastScheduleUpdate(scheduleCache);
-                    } else if (localScheduleUpdatedAt > remoteUpdatedAt && !isOffline) {
-                        // Local is newer, push to cloud
-                        console.log('Sync: Pushing local schedule to Cloud');
-                        setDoc(scheduleRef, { items: scheduleCache, updatedAt: localScheduleUpdatedAt });
-                    }
-                    // Removed redundant write that was stripping metadata
-                }
-            });
-        })
-        .catch(err => console.log("Init sequence: offline or auth failed, using local cache."));
-
+    console.log('Init sequence: Pure Local Mode active. Skipping Firebase.');
+    isOffline = true;
+    dbStatus = 'local-mode';
+    broadcastDbStatus();
     return true;
 }
 
 async function loadConfig() {
-    try {
-        const configRef = doc(db, 'config', 'app-config');
-        const configSnap = await getDoc(configRef);
-        if (configSnap.exists()) {
-            const data = configSnap.data();
-            if (Array.isArray(data.categories)) {
-                // Merge local and remote categories to prevent wipeout of offline creations
-                const merged = [...new Set([...categoriesCache, ...data.categories])];
-                if (merged.length > data.categories.length && !isOffline) {
-                    setDoc(configRef, { categories: merged }, { merge: true }).catch(console.error);
-                }
-                categoriesCache = merged;
-                fs.writeFileSync(CATEGORIES_BACKUP_PATH, JSON.stringify(categoriesCache, null, 2));
-            }
-        }
-
-        const adminRef = doc(db, 'config', 'admin-credentials');
-        const adminSnap = await getDoc(adminRef);
-        if (adminSnap.exists()) {
-            adminCredentials = adminSnap.data();
-            saveAppSettings();
-        }
-    } catch (err) {
-        console.error('Failed to load config from Firebase:', err);
-    }
+    // Config now only relies on local fallback.
+    return true;
 }
 
 // ─── Optimistic Updates ──────────────────────────────────────────────────────
 
-function saveLocalSongs() {
-    try { fs.writeFileSync(SONGS_BACKUP_PATH, JSON.stringify(songsCache, null, 2)); } catch (e) { }
+function saveCustomSongs() {
+    try { fs.writeFileSync(CUSTOM_SONGS_PATH, JSON.stringify(customSongsCache, null, 2)); } catch (e) { }
     if (global.broadcastSongsUpdate) global.broadcastSongsUpdate(songsCache);
+}
+
+function saveDeletedBundled() {
+    try { fs.writeFileSync(DELETED_BUNDLED_PATH, JSON.stringify(deletedBundledIds, null, 2)); } catch (e) { }
 }
 
 function saveLocalSchedule() {
@@ -404,10 +270,6 @@ async function addCategory(name) {
     categoriesCache = [...categoriesCache, trimmed];
     saveLocalCategories();
 
-    // Background Firebase
-    if (!isOffline) {
-        setDoc(doc(db, 'config', 'app-config'), { categories: categoriesCache }, { merge: true }).catch(e => console.error(e));
-    }
     return categoriesCache;
 }
 
@@ -418,34 +280,13 @@ async function updateCategory(oldName, newName) {
     // Optimistic
     categoriesCache = categoriesCache.map(c => c === oldName ? trimmed : c);
     songsCache = songsCache.map(s => s.category === oldName ? { ...s, category: trimmed, updatedAt: Date.now() } : s);
+    customSongsCache = customSongsCache.map(s => s.category === oldName ? { ...s, category: trimmed, updatedAt: Date.now() } : s);
     scheduleCache = scheduleCache.map(i => i.category === oldName ? { ...i, category: trimmed } : i);
 
     saveLocalCategories();
-    saveLocalSongs();
+    saveCustomSongs();
     saveLocalSchedule();
 
-    // Background Firebase
-    if (!isOffline) {
-        try {
-            await ensureAuth();
-            await setDoc(doc(db, 'config', 'app-config'), { categories: categoriesCache }, { merge: true });
-
-            // Batch update songs in Firebase
-            const affectedSongs = songsCache.filter(s => s.category === trimmed);
-            if (affectedSongs.length > 0) {
-                let batches = [writeBatch(db)];
-                let cur = batches[0];
-                let count = 0;
-                for (const s of affectedSongs) {
-                    if (count >= 490) { cur = writeBatch(db); batches.push(cur); count = 0; }
-                    cur.set(doc(db, 'songs', s.id), s, { merge: true });
-                    count++;
-                }
-                cur.set(doc(db, 'schedules', 'sunday-service'), { items: scheduleCache });
-                await Promise.all(batches.map(b => b.commit()));
-            }
-        } catch (e) { console.error("Firebase sync failed:", e); }
-    }
     return categoriesCache;
 }
 
@@ -454,9 +295,6 @@ async function deleteCategory(name) {
     categoriesCache = categoriesCache.filter(c => c !== name);
     saveLocalCategories();
 
-    if (!isOffline) {
-        setDoc(doc(db, 'config', 'app-config'), { categories: categoriesCache }, { merge: true }).catch(e => console.error(e));
-    }
     return categoriesCache;
 }
 
@@ -475,7 +313,6 @@ async function setAdminCredentials(username, plainPassword) {
     const creds = { username: username.trim(), passwordHash };
     adminCredentials = creds;
     saveAppSettings();
-    if (!isOffline) await setDoc(doc(db, 'config', 'admin-credentials'), creds);
     return true;
 }
 
@@ -630,17 +467,14 @@ async function addSong(songData) {
     const titleNorm = normalize(title);
     if (songsCache.find(s => normalize(s.title) === titleNorm)) throw new Error(`A song titled "${title}" already exists`);
 
-    const finalSong = { ...songData, title, titleNormalized: titleNorm, updatedAt: Date.now() };
+    const finalSong = { ...songData, title, titleNormalized: titleNorm, updatedAt: Date.now(), isCustom: true };
 
-    // Optimistic
+    // Add to both caches
+    customSongsCache.push(finalSong);
     songsCache.push(finalSong);
     songsCache.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
-    saveLocalSongs();
+    saveCustomSongs();
 
-    // Background
-    if (!isOffline) {
-        ensureAuth().then(() => setDoc(doc(db, 'songs', finalSong.id), finalSong)).catch(e => console.error(e));
-    }
     return finalSong;
 }
 
@@ -650,19 +484,22 @@ async function updateSong(songData) {
 
     const finalSong = { ...songData, title, titleNormalized: normalize(title), updatedAt: Date.now() };
 
-    // Optimistic
+    // Update in merged cache
     songsCache = songsCache.map(s => s.id === finalSong.id ? finalSong : s);
     scheduleCache = scheduleCache.map(item => item.songId === finalSong.id ? { ...item, title } : item);
-    saveLocalSongs();
+
+    // If editing a bundled song, store the override in custom; otherwise update custom directly
+    const existingCustomIdx = customSongsCache.findIndex(s => s.id === finalSong.id);
+    if (existingCustomIdx >= 0) {
+        customSongsCache[existingCustomIdx] = { ...finalSong, isCustom: true };
+    } else {
+        // Must be a bundled song being edited for the first time
+        customSongsCache.push({ ...finalSong, isCustom: true });
+    }
+
+    saveCustomSongs();
     saveLocalSchedule();
 
-    // Background
-    if (!isOffline) {
-        ensureAuth().then(() => {
-            setDoc(doc(db, 'songs', finalSong.id), finalSong, { merge: true });
-            setDoc(doc(db, 'schedules', 'sunday-service'), { items: scheduleCache });
-        }).catch(e => console.error(e));
-    }
     return finalSong;
 }
 
@@ -682,60 +519,33 @@ async function recategorizeSong(songId, newCategory) {
     const song = getSong(songId);
     if (!song || song.category === newCategory) return song;
 
-    const oldPrefix = getCategoryPrefix(song.category);
-    const match = songId.match(/^([a-zA-Z]+)(\d+)$/);
-    if (!match) throw new Error('Invalid ID format');
-    const deletedNum = parseInt(match[2]);
-
     const newId = await getNextId(newCategory);
-    const updatedSong = { ...song, id: newId, category: newCategory, updatedAt: Date.now() };
+    const updatedSong = { ...song, id: newId, category: newCategory, updatedAt: Date.now(), isCustom: true };
 
-    // Shift logic (Optimistic)
+    // Remove old from songsCache, add new
     songsCache = songsCache.filter(s => s.id !== songId);
     songsCache.push(updatedSong);
 
-    const toShift = songsCache.filter(s => {
-        const m = s.id.match(/^([a-zA-Z]+)(\d+)$/);
-        return m && m[1] === oldPrefix && parseInt(m[2]) > deletedNum;
-    }).sort((a, b) => parseInt(a.id.match(/\d+/)[0]) - parseInt(b.id.match(/\d+/)[0]));
-
-    for (const s of toShift) {
-        const num = parseInt(s.id.match(/\d+/)[0]);
-        const shiftedId = `${oldPrefix}${num - 1}`;
-        songsCache = songsCache.map(i => i.id === s.id ? { ...i, id: shiftedId } : i);
-        scheduleCache = scheduleCache.map(i => i.songId === s.id ? { ...i, songId: shiftedId } : i);
+    // If it was a bundled song, soft-delete the original and add as custom
+    if (bundledSongIds.has(songId)) {
+        if (!deletedBundledIds.includes(songId)) {
+            deletedBundledIds.push(songId);
+            saveDeletedBundled();
+        }
+        // Remove any existing custom override for old ID
+        customSongsCache = customSongsCache.filter(s => s.id !== songId);
+    } else {
+        // Was a custom song — remove old entry
+        customSongsCache = customSongsCache.filter(s => s.id !== songId);
     }
+    // Add recategorized song as custom
+    customSongsCache.push(updatedSong);
 
     scheduleCache = scheduleCache.map(i => i.songId === songId ? { ...i, songId: newId, category: newCategory } : i);
 
     songsCache.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
-    saveLocalSongs();
+    saveCustomSongs();
     saveLocalSchedule();
-
-    // Background Firebase
-    if (!isOffline) {
-        ensureAuth().then(async () => {
-            const batch = writeBatch(db);
-            batch.delete(doc(db, 'songs', songId));
-            batch.set(doc(db, 'songs', newId), updatedSong);
-            
-            // Shift logic in Firebase (Atomic)
-            for (const s of toShift) {
-                const num = parseInt(s.id.match(/\d+/)[0]);
-                const oldId = s.id;
-                const shiftedId = `${oldPrefix}${num - 1}`;
-                const shiftedSong = { ...s, id: shiftedId, updatedAt: Date.now() };
-                batch.delete(doc(db, 'songs', oldId));
-                batch.set(doc(db, 'songs', shiftedId), shiftedSong);
-            }
-            
-            batch.set(doc(db, 'schedules', 'sunday-service'), { 
-                items: scheduleCache,
-                updatedAt: Date.now()
-            });
-            await batch.commit();
-        }).catch(e => console.error("Firebase recategorize failed:", e));
-    }
 
     return updatedSong;
 }
@@ -750,58 +560,27 @@ async function deleteSong(id) {
         } catch (e) { console.error('Recycle bin save failed:', e); }
     }
 
-    const match = id.match(/^([a-zA-Z]+)(\d+)$/);
-    if (!match) {
-        songsCache = songsCache.filter(s => s.id !== id);
-        saveLocalSongs();
-        if (!isOffline) deleteDoc(doc(db, 'songs', id)).catch(e => console.error(e));
-        return true;
-    }
-
-    const prefix = match[1];
-    const deletedNum = parseInt(match[2]);
-
-    // Optimistic Shift
+    // Remove from merged cache
     songsCache = songsCache.filter(s => s.id !== id);
-    const toShift = songsCache.filter(s => {
-        const m = s.id.match(/^([a-zA-Z]+)(\d+)$/);
-        return m && m[1] === prefix && parseInt(m[2]) > deletedNum;
-    }).sort((a, b) => parseInt(a.id.match(/\d+/)[0]) - parseInt(b.id.match(/\d+/)[0]));
-
-    for (const s of toShift) {
-        const num = parseInt(s.id.match(/\d+/)[0]);
-        const newId = `${prefix}${num - 1}`;
-        songsCache = songsCache.map(i => i.id === s.id ? { ...i, id: newId } : i);
-        scheduleCache = scheduleCache.map(i => i.songId === s.id ? { ...i, songId: newId } : i);
-    }
     scheduleCache = scheduleCache.filter(i => i.songId !== id);
 
-    songsCache.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
-    saveLocalSongs();
+    // Handle bundled vs custom
+    if (bundledSongIds.has(id)) {
+        // Soft-delete bundled song
+        if (!deletedBundledIds.includes(id)) {
+            deletedBundledIds.push(id);
+            saveDeletedBundled();
+        }
+        // Also remove any custom override
+        customSongsCache = customSongsCache.filter(s => s.id !== id);
+    } else {
+        // Hard-delete custom song
+        customSongsCache = customSongsCache.filter(s => s.id !== id);
+    }
+
+    saveCustomSongs();
     saveLocalSchedule();
 
-    if (!isOffline) {
-        ensureAuth().then(async () => {
-            const batch = writeBatch(db);
-            batch.delete(doc(db, 'songs', id));
-            
-            // Shift items in Firebase (Atomic)
-            for (const s of toShift) {
-                const num = parseInt(s.id.match(/\d+/)[0]);
-                const oldId = s.id;
-                const newId = `${prefix}${num - 1}`;
-                const shiftedSong = { ...s, id: newId, updatedAt: Date.now() };
-                batch.delete(doc(db, 'songs', oldId));
-                batch.set(doc(db, 'songs', newId), shiftedSong);
-            }
-            
-            batch.set(doc(db, 'schedules', 'sunday-service'), { 
-                items: scheduleCache,
-                updatedAt: Date.now()
-            });
-            await batch.commit();
-        }).catch(e => console.error("Firebase delete failed:", e));
-    }
     return true;
 }
 
@@ -814,25 +593,23 @@ async function bulkDeleteSongs(ids) {
         }
     } catch (e) { console.error('Recycle bin bulk save failed:', e); }
 
+    // Separate bundled vs custom IDs
+    const bundledToDelete = ids.filter(id => bundledSongIds.has(id));
+    const customToDelete = ids.filter(id => !bundledSongIds.has(id));
+
+    // Soft-delete bundled songs
+    for (const id of bundledToDelete) {
+        if (!deletedBundledIds.includes(id)) deletedBundledIds.push(id);
+    }
+    if (bundledToDelete.length > 0) saveDeletedBundled();
+
+    // Remove from caches
     songsCache = songsCache.filter(s => !ids.includes(s.id));
+    customSongsCache = customSongsCache.filter(s => !ids.includes(s.id));
     scheduleCache = scheduleCache.filter(item => !ids.includes(item.songId));
-    saveLocalSongs();
+    saveCustomSongs();
     saveLocalSchedule();
 
-    if (!isOffline) {
-        ensureAuth().then(async () => {
-            let batches = [writeBatch(db)];
-            let cur = batches[0];
-            let count = 0;
-            for (const id of ids) {
-                if (count >= 490) { cur = writeBatch(db); batches.push(cur); count = 0; }
-                cur.delete(doc(db, 'songs', id));
-                count++;
-            }
-            cur.set(doc(db, 'schedules', 'sunday-service'), { items: scheduleCache });
-            await Promise.all(batches.map(b => b.commit()));
-        });
-    }
     return { deleted: ids.length };
 }
 
@@ -840,6 +617,10 @@ async function bulkDeleteSongs(ids) {
 
 function getSchedule() {
     return scheduleCache;
+}
+
+function getScheduleUpdatedAt() {
+    return localScheduleUpdatedAt;
 }
 
 async function addToSchedule(songId) {
@@ -860,12 +641,6 @@ async function addToSchedule(songId) {
     scheduleCache = [...scheduleCache, newItem];
     saveLocalSchedule();
 
-    if (!isOffline) {
-        ensureAuth().then(() => setDoc(doc(db, 'schedules', 'sunday-service'), { 
-            items: scheduleCache,
-            updatedAt: Date.now()
-        }));
-    }
     return scheduleCache;
 }
 
@@ -882,146 +657,36 @@ async function addBibleToSchedule(title, slides) {
     scheduleCache = [...scheduleCache, newItem];
     saveLocalSchedule();
 
-    if (!isOffline) {
-        ensureAuth().then(() => setDoc(doc(db, 'schedules', 'sunday-service'), {
-            items: scheduleCache,
-            updatedAt: Date.now()
-        }));
-    }
     return scheduleCache;
 }
 
 async function removeFromSchedule(instanceId) {
     scheduleCache = scheduleCache.filter(i => i.instanceId !== instanceId);
     saveLocalSchedule();
-    if (!isOffline) {
-        ensureAuth().then(() => setDoc(doc(db, 'schedules', 'sunday-service'), { 
-            items: scheduleCache,
-            updatedAt: Date.now()
-        }));
-    }
     return scheduleCache;
 }
 
 async function reorderSchedule(newSchedule) {
     scheduleCache = newSchedule;
     saveLocalSchedule();
-    if (!isOffline) {
-        ensureAuth().then(() => setDoc(doc(db, 'schedules', 'sunday-service'), { 
-            items: scheduleCache,
-            updatedAt: Date.now()
-        }));
-    }
     return scheduleCache;
 }
 
 async function clearSchedule() {
     scheduleCache = [];
     saveLocalSchedule();
-    if (!isOffline) {
-        ensureAuth().then(() => setDoc(doc(db, 'schedules', 'sunday-service'), { 
-            items: [],
-            updatedAt: Date.now()
-        }));
-    }
     return [];
 }
 
 // ─── Sync ─────────────────────────────────────────────────────────────────────
 
 async function syncSongs() {
-    if (!await checkNetwork()) throw new Error("Cannot sync: Hardware is offline.");
-
-    console.log('Synchronizing with Cloud...');
-    await ensureAuth();
-
-    // 1. Pull latest from Cloud
-    const snapshot = await getDocs(query(collection(db, 'songs'), orderBy('id')));
-    const remoteSongs = snapshot.docs.map(d => d.data());
-
-    // 2. Bidirectional Merge (Last-Write-Wins)
-    const remoteMap = new Map(remoteSongs.map(s => [s.id, s]));
-    const localMap = new Map(songsCache.map(s => [s.id, s]));
-    
-    let hasLocalChanges = false;
-    let hasRemoteChanges = false;
-    const batch = writeBatch(db);
-    let batchCount = 0;
-
-    // Check remote songs vs local
-    remoteSongs.forEach(remoteSong => {
-        const localSong = localMap.get(remoteSong.id);
-        if (!localSong) {
-            // Check if it was deleted locally (Offline Mode deletion)
-            const deletedLocal = recycleBinCache.find(s => s.id === remoteSong.id);
-            if (deletedLocal && (deletedLocal.deletedAt || 0) > (remoteSong.updatedAt || 0)) {
-                // It was deleted locally AFTER it was last updated in the cloud -> Delete from cloud
-                if (batchCount < 490) {
-                    batch.delete(doc(db, 'songs', remoteSong.id));
-                    batchCount++;
-                    hasRemoteChanges = true;
-                }
-            } else {
-                // Truly a new song from cloud
-                songsCache.push(remoteSong);
-                hasLocalChanges = true;
-            }
-        } else if ((remoteSong.updatedAt || 0) > (localSong.updatedAt || 0)) {
-            // Cloud is newer
-            songsCache = songsCache.map(s => s.id === remoteSong.id ? remoteSong : s);
-            hasLocalChanges = true;
-        } else if ((localSong.updatedAt || 0) > (remoteSong.updatedAt || 0)) {
-            // Local is newer, push to cloud
-            if (batchCount < 490) {
-                batch.set(doc(db, 'songs', localSong.id), localSong);
-                batchCount++;
-                hasRemoteChanges = true;
-            }
-        }
-    });
-
-    // Check local songs that don't exist in remote
-    songsCache.forEach(localSong => {
-        if (!remoteMap.has(localSong.id)) {
-            // Local-only song, push to cloud
-            if (batchCount < 490) {
-                batch.set(doc(db, 'songs', localSong.id), localSong);
-                batchCount++;
-                hasRemoteChanges = true;
-            }
-        }
-    });
-
-    if (hasRemoteChanges) await batch.commit();
-    if (hasLocalChanges) {
-        songsCache.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
-        saveLocalSongs();
-    }
-
-    // Sync Categories & Schedule
-    await loadConfig();
-    saveLocalCategories();
-
-    // Pull final schedule (LWW)
-    const scheduleSnap = await getDoc(doc(db, 'schedules', 'sunday-service'));
-    if (scheduleSnap.exists()) {
-        const remoteSched = scheduleSnap.data();
-        if ((remoteSched.updatedAt || 0) > (localScheduleUpdatedAt || 0)) {
-           scheduleCache = remoteSched.items || [];
-           localScheduleUpdatedAt = remoteSched.updatedAt || 0;
-           saveLocalSchedule();
-        } else if ((localScheduleUpdatedAt || 0) > (remoteSched.updatedAt || 0)) {
-           // Local is newer, push to cloud
-           setDoc(doc(db, 'schedules', 'sunday-service'), { items: scheduleCache, updatedAt: localScheduleUpdatedAt });
-        }
-    }
-
     return { success: true, count: songsCache.length };
 }
 
 function getDbStatus() {
     broadcastDbStatus(); // Refresh status on query
-    return { status: isOffline ? (dbStatus === 'offline-mode' ? 'offline-mode' : 'disconnected') : dbStatus, authenticated: !!auth.currentUser, isOffline };
+    return { status: 'local-mode', authenticated: true, isOffline: true };
 }
 
 // ─── Recycle Bin ──────────────────────────────────────────────────────────────
@@ -1072,17 +737,19 @@ async function restoreSong(deletedSongId) {
 
     // Clean up recycle bin metadata
     const { deletedAt, ...songData } = song;
-    const restoredSong = { ...songData, id: newId, updatedAt: Date.now() };
+    const restoredSong = { ...songData, id: newId, updatedAt: Date.now(), isCustom: true };
 
-    // Add back to cache
+    // If restoring a bundled song, remove it from deleted list so it reappears
+    if (bundledSongIds.has(song.id)) {
+        deletedBundledIds = deletedBundledIds.filter(id => id !== song.id);
+        saveDeletedBundled();
+    }
+
+    // Add to both caches as a custom song
+    customSongsCache.push(restoredSong);
     songsCache.push(restoredSong);
     songsCache.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
-    saveLocalSongs();
-
-    // Sync to Firebase
-    if (!isOffline) {
-        ensureAuth().then(() => setDoc(doc(db, 'songs', restoredSong.id), restoredSong)).catch(e => console.error(e));
-    }
+    saveCustomSongs();
 
     return restoredSong;
 }
@@ -1095,7 +762,7 @@ function clearDeletedSongs() {
 // ─── App Settings ─────────────────────────────────────────────────────────────
 
 function getAppSettings() {
-    return { forceOffline: forceOfflineMode };
+    return { forceOffline: forceOfflineMode, playstoreLink };
 }
 
 function saveAppSettings() {
@@ -1103,6 +770,7 @@ function saveAppSettings() {
         if (APP_SETTINGS_PATH) {
             fs.writeFileSync(APP_SETTINGS_PATH, JSON.stringify({ 
                 forceOffline: forceOfflineMode,
+                playstoreLink,
                 adminCredentials: adminCredentials 
             }, null, 2));
         }
@@ -1111,6 +779,12 @@ function saveAppSettings() {
 
 function setForceOffline(isForceOffline) {
     forceOfflineMode = isForceOffline;
+    saveAppSettings();
+    return { success: true };
+}
+
+function setPlaystoreLink(link) {
+    playstoreLink = link;
     saveAppSettings();
     return { success: true };
 }
@@ -1134,6 +808,7 @@ module.exports = {
     setAdminCredentials,
     verifyAdminCredentials,
     getSchedule,
+    getScheduleUpdatedAt,
     addToSchedule,
     addBibleToSchedule,
     removeFromSchedule,
@@ -1147,5 +822,6 @@ module.exports = {
     restoreSong,
     clearDeletedSongs,
     getAppSettings,
-    setForceOffline
+    setForceOffline,
+    setPlaystoreLink
 };

@@ -36,7 +36,6 @@ contextBridge.exposeInMainWorld('electron', {
     restoreSong: (id) => ipcRenderer.invoke('restore-song', id),
     clearDeletedSongs: () => ipcRenderer.invoke('clear-deleted-songs'),
     getAppSettings: () => ipcRenderer.invoke('get-app-settings'),
-    setForceOffline: (val) => ipcRenderer.invoke('set-force-offline', val),
     appControl: (command) => ipcRenderer.invoke('app-control', command),
     setTitlebarTheme: (theme) => ipcRenderer.invoke('set-titlebar-theme', theme),
     windowMinimize: () => ipcRenderer.invoke('window-minimize'),

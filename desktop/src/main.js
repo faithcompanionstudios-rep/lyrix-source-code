@@ -1,13 +1,14 @@
 const { app, BrowserWindow, ipcMain, dialog, screen, globalShortcut, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { autoUpdater } = require('electron-updater');
+
 const { startServer } = require('./server/index.js');
-const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, addBibleToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork, getDeletedSongs, restoreSong, clearDeletedSongs, getAppSettings, setForceOffline } = require('./database/db.js');
+const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, addBibleToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork, getDeletedSongs, restoreSong, clearDeletedSongs, getAppSettings, setForceOffline, setPlaystoreLink } = require('./database/db.js');
 const axios = require('axios');
 const { spawn } = require('child_process');
 const bibleDb = require('./database/bible_db.js');
 const { setupBible } = require('./database/bible_setup.js');
+const { searchLyrics, fetchLyricsContent } = require('./utils/scraper.js');
 
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -15,6 +16,9 @@ let mainWindow;
 let io; // Declare io in module scope
 let projectorWindow = null;
 let lastBibleVerse = null; // Store last Bible verse for projector sync
+let lastIsBlack = false;
+let lastSlide = null;
+let lastProjectorSettings = null; // Cache projector settings for new connections
 let currentServerStatus = { status: 'Disconnected', ip: 'Unknown', connections: 0 };
 
 if (!gotTheLock) {
@@ -30,21 +34,27 @@ if (!gotTheLock) {
     });
 
     function createWindow() {
+        const { width, height } = screen.getPrimaryDisplay().workAreaSize;
         mainWindow = new BrowserWindow({
-            width: 1200,
-            height: 800,
+            width,
+            height,
             titleBarStyle: 'hidden',
             autoHideMenuBar: true,
             title: 'LyriX Desktop',
+            backgroundColor: '#ffffff',
+            show: false,
             webPreferences: {
                 preload: path.join(__dirname, 'preload.js'),
                 nodeIntegration: false,
                 contextIsolation: true,
             },
-            icon: path.join(__dirname, '../public/icon.ico')
+            icon: path.join(__dirname, '../public/icon.png')
         });
 
-        mainWindow.maximize();
+        mainWindow.once('ready-to-show', () => {
+            mainWindow.maximize();
+            mainWindow.show();
+        });
 
         if (process.env.NODE_ENV === 'development') {
             mainWindow.loadURL('http://localhost:5173');
@@ -75,13 +85,7 @@ if (!gotTheLock) {
             }
         });
 
-        mainWindow.on('close', (e) => {
-            if (!app.isQuitting) {
-                e.preventDefault();
-                mainWindow.webContents.send('confirm-app-close');
-            }
-        });
-
+        // App close confirmation removed for MS Store compatibility
         // Custom window control handlers (replaces native titleBarOverlay)
         ipcMain.handle('window-minimize', () => mainWindow && mainWindow.minimize());
         ipcMain.handle('window-maximize', () => {
@@ -126,7 +130,8 @@ if (!gotTheLock) {
         }
         nativeTheme.themeSource = 'light';
 
-        // Data Migration (src/database -> userData/data)
+        // Data Migration (src/database -> userData/data) — only schedule & categories need legacy migration
+        // Songs are now split: bundled songs read from package, custom songs in userData
         const userDataPath = app.getPath('userData');
         const oldDataDir = path.join(__dirname, 'database');
         const newDataDir = path.join(userDataPath, 'data');
@@ -135,7 +140,7 @@ if (!gotTheLock) {
             fs.mkdirSync(newDataDir, { recursive: true });
         }
 
-        ['songs.json', 'schedule.json', 'categories.json'].forEach(file => {
+        ['schedule.json', 'categories.json'].forEach(file => {
             const oldPath = path.join(oldDataDir, file);
             const newPath = path.join(newDataDir, file);
             if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
@@ -158,77 +163,12 @@ if (!gotTheLock) {
         createWindow();
         console.log("App Ready");
 
-        // Updater Configuration
-        autoUpdater.autoDownload = false; // We want manual control
-        autoUpdater.logger = console;
-
-        // Directly set the feed URL to ensure the updater points to the correct GitHub repo
-        try {
-            autoUpdater.setFeedURL({
-                provider: 'github',
-                owner: 'justforaitoolz-ops',
-                repo: 'LyriX-Church-System'
-            });
-            console.log("Updater feed configured for github:justforaitoolz-ops/LyriX-Church-System");
-            
-            // Automatic Update Check on Startup (5s delay)
-            setTimeout(() => {
-                console.log("Checking for updates automatically...");
-                autoUpdater.checkForUpdates().catch(err => {
-                    console.error("Auto-update check failed:", err);
-                });
-            }, 5000);
-        } catch (e) {
-            console.error("Failed to set manual feed URL:", e);
-        }
-
-        autoUpdater.on('checking-for-update', () => {
-            BrowserWindow.getAllWindows().forEach(win => win.webContents.send('update-status', 'checking'));
-        });
-
-        autoUpdater.on('update-available', (info) => {
-            BrowserWindow.getAllWindows().forEach(win => win.webContents.send('update-status', 'available', info));
-        });
-
-        autoUpdater.on('update-not-available', (info) => {
-            BrowserWindow.getAllWindows().forEach(win => win.webContents.send('update-status', 'not-available'));
-        });
-
-        autoUpdater.on('error', (err) => {
-            BrowserWindow.getAllWindows().forEach(win => win.webContents.send('update-status', 'error', err.message));
-        });
-
-        autoUpdater.on('download-progress', (progressObj) => {
-            BrowserWindow.getAllWindows().forEach(win => win.webContents.send('update-progress', progressObj.percent));
-        });
-
-        autoUpdater.on('update-downloaded', (info) => {
-            BrowserWindow.getAllWindows().forEach(win => win.webContents.send('update-status', 'downloaded'));
-            // Optionally ask user to install now
-        });
-
         ipcMain.handle('check-for-updates', async () => {
-            try {
-                return await autoUpdater.checkForUpdates();
-            } catch (e) {
-                console.error("Update check failed:", e);
-                throw e;
-            }
+            require('electron').shell.openExternal('ms-windows-store://pdp/?ProductId=9N4WPTQ6G7M6');
+            return { isStore: true };
         });
 
-        ipcMain.handle('start-download', async () => {
-            return await autoUpdater.downloadUpdate();
-        });
 
-        ipcMain.handle('install-update', () => {
-            app.isQuitting = true;
-            autoUpdater.quitAndInstall(true, true);
-        });
-
-        ipcMain.handle('exit-app', () => {
-            app.isQuitting = true;
-            app.quit();
-        });
 
         ipcMain.handle('get-app-version', () => {
             return app.getVersion();
@@ -258,7 +198,6 @@ if (!gotTheLock) {
         ipcMain.handle('reorder-schedule', async (event, newOrder) => reorderSchedule(newOrder));
         ipcMain.handle('clear-schedule', async () => clearSchedule());
         ipcMain.handle('get-db-status', async () => getDbStatus());
-        ipcMain.handle('sync-songs', async () => syncSongs());
 
         // Category Handlers
         ipcMain.handle('get-categories', async () => getCategories());
@@ -291,23 +230,75 @@ if (!gotTheLock) {
 
         // Offline Mode Settings Handlers
         ipcMain.handle('get-app-settings', async () => getAppSettings());
-        ipcMain.handle('set-force-offline', async (event, val) => setForceOffline(val));
+        ipcMain.handle('set-playstore-link', async (event, link) => setPlaystoreLink(link));
 
         // Bible Module Handlers
-        ipcMain.handle('bible:get-books', async () => bibleDb.getBooks());
+        ipcMain.handle('bible:get-books', async () => {
+            const books = bibleDb.getBooks();
+            console.log('[Bible Debug] get-books count:', books.length);
+            return books;
+        });
         ipcMain.handle('bible:get-chapters', async (event, bookId) => bibleDb.getChapters(bookId));
-        ipcMain.handle('bible:get-verses', async (event, translationId, bookId, chapter) => bibleDb.getVerses(translationId, bookId, chapter));
+        ipcMain.handle('bible:get-verses', async (event, translationId, bookId, chapter) => {
+            const verses = bibleDb.getVerses(translationId, bookId, chapter);
+            console.log(`[Bible Debug] get-verses(${translationId}, book=${bookId}, ch=${chapter}) => ${verses.length} verses, first text: "${(verses[0]?.text || '').substring(0, 50)}"`);
+            return verses;
+        });
         ipcMain.handle('bible:search', async (event, translationId, query) => bibleDb.searchVerses(translationId, query));
         ipcMain.handle('bible:setup-status', async () => {
             const books = bibleDb.getBooks();
+            console.log('[Bible Debug] setup-status: books =', books.length, ', ready =', books.length > 0);
             return { ready: books.length > 0 };
         });
         ipcMain.handle('bible:reset-db', async () => {
             bibleDb.resetBibleDb();
-            app.isQuitting = true; // Bypass the exit confirmation
-            app.relaunch();
-            app.quit();
+            // Re-initialize the DB (creates fresh tables)
+            bibleDb.initBibleDb ? bibleDb.initBibleDb() : null;
             return { success: true };
+        });
+        
+        ipcMain.handle('system:factory-reset', async () => {
+            try {
+                // Delete data directory containing settings, custom songs, etc.
+                const dataDir = path.join(app.getPath('userData'), 'data');
+                if (fs.existsSync(dataDir)) {
+                    fs.rmSync(dataDir, { recursive: true, force: true });
+                }
+                
+                // Delete bible database
+                const bibleDbPath = path.join(app.getPath('userData'), 'bible.db');
+                if (fs.existsSync(bibleDbPath)) {
+                    fs.unlinkSync(bibleDbPath);
+                }
+                
+                // Relaunch application to apply fresh state
+                app.relaunch();
+                app.exit(0);
+                return true;
+            } catch (e) {
+                console.error("Factory reset error:", e);
+                return false;
+            }
+        });
+
+        ipcMain.handle('bible:reset-and-rebuild', async () => {
+            try {
+                // Step 1: Wipe the database
+                bibleDb.resetBibleDb();
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('bible:setup-progress', { message: 'Database wiped. Re-downloading...', progress: 5 });
+                }
+                // Step 2: Immediately re-run the full setup
+                const result = await setupBible((message, progress) => {
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        mainWindow.webContents.send('bible:setup-progress', { message, progress });
+                    }
+                });
+                return result;
+            } catch (error) {
+                console.error('Bible reset-and-rebuild error:', error);
+                return { success: false, error: error.message };
+            }
         });
 
         ipcMain.handle('app:restart', async () => {
@@ -324,18 +315,51 @@ if (!gotTheLock) {
             });
         });
 
+        ipcMain.handle('dialog:open-file', async () => {
+            const { dialog } = require('electron');
+            const result = await dialog.showOpenDialog(mainWindow, {
+                title: 'Select Bible JSON',
+                filters: [{ name: 'JSON Files', extensions: ['json'] }],
+                properties: ['openFile']
+            });
+            if (result.canceled || result.filePaths.length === 0) return null;
+            return result.filePaths[0];
+        });
+
+        ipcMain.handle('bible:import-custom', async (event, name, filePath) => {
+            try {
+                const fs = require('fs');
+                const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                const { normalizeKJV, normalizeHindi } = require('./database/bible_setup.js');
+                let normalized;
+                if (Array.isArray(data)) {
+                    normalized = normalizeKJV(data);
+                } else if (data.Book) {
+                    normalized = normalizeHindi(data);
+                } else {
+                    return { success: false, error: 'Unrecognized Bible JSON format.' };
+                }
+                const localBibleDb = require('./database/bible_db.js');
+                localBibleDb.importTranslation(name.toUpperCase(), normalized);
+                return { success: true };
+            } catch (error) {
+                console.error('Bible Custom Import Error:', error);
+                return { success: false, error: error.message };
+            }
+        });
+
         ipcMain.handle('refresh-ip', async () => {
             const { getAllLocalIPs } = require('./server/index.js');
             const allIps = getAllLocalIPs();
-            
+
             // Cycle IP: find current index and pick next, or reset to 0
             let currentIndex = allIps.indexOf(currentServerStatus.ip);
             let nextIndex = (currentIndex + 1) % allIps.length;
             const newIp = allIps[nextIndex];
-            
+
             currentServerStatus.ip = newIp;
             const updatedStatus = { ...currentServerStatus, ip: newIp };
-            
+
             BrowserWindow.getAllWindows().forEach(win => {
                 if (!win.isDestroyed()) win.webContents.send('status-update', updatedStatus);
             });
@@ -343,64 +367,7 @@ if (!gotTheLock) {
         });
 
         ipcMain.handle('search-lyrics', async (event, query) => {
-            console.log(`[Search] Searching using Browser: ${query}`);
-            let searchWindow = new BrowserWindow({
-                show: false,
-                width: 800,
-                height: 600,
-                webPreferences: {
-                    offscreen: true,
-                    nodeIntegration: false,
-                    contextIsolation: true
-                }
-            });
-
-            try {
-                const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query + ' lyrics')}`;
-                console.log(`[Search] Loading: ${searchUrl}`);
-                await searchWindow.loadURL(searchUrl);
-
-                console.log("[Search] Page loaded, waiting for results...");
-
-                const results = await searchWindow.webContents.executeJavaScript(`
-                new Promise(resolve => {
-                    setTimeout(() => {
-                        const items = [];
-                        document.querySelectorAll('article').forEach(el => {
-                            const titleEl = el.querySelector('h2 a');
-                            const linkEl = el.querySelector('h2 a');
-                            const snippetEl = el.querySelector('div > div > div');
-                            
-                            if (titleEl && linkEl) {
-                                items.push({
-                                    title: titleEl.innerText,
-                                    url: linkEl.href,
-                                    snippet: snippetEl ? snippetEl.innerText : ''
-                                });
-                            }
-                        });
-                        
-                        if (items.length === 0) {
-                            document.querySelectorAll('#links .result__a').forEach(el => {
-                                items.push({ title: el.innerText, url: el.href, snippet: '' });
-                            });
-                        }
-                        resolve(items);
-                    }, 2000); 
-                });
-            `);
-
-                console.log(`[Search] Found ${results.length} results.`);
-                return results.slice(0, 15);
-
-            } catch (e) {
-                console.error("[Search] Browser Error:", e);
-                return [];
-            } finally {
-                if (searchWindow && !searchWindow.isDestroyed()) {
-                    searchWindow.destroy();
-                }
-            }
+            return await searchLyrics(query);
         });
         ipcMain.handle('set-titlebar-theme', () => {
             // No-op: titleBarOverlay removed in favour of custom React window controls
@@ -431,6 +398,8 @@ if (!gotTheLock) {
         ipcMain.handle('open-projector-window', () => {
             if (projectorWindow) {
                 // Already open — just return true, do NOT close
+                if (projectorWindow.isMinimized()) projectorWindow.restore();
+                projectorWindow.focus();
                 return true;
             }
             openProjectorWindow();
@@ -439,6 +408,8 @@ if (!gotTheLock) {
 
         function openProjectorWindow() {
             if (projectorWindow) return projectorWindow;
+
+            if (io) io.emit('projector-status', true);
 
             const displays = screen.getAllDisplays();
             const externalDisplay = displays.find((display) => {
@@ -451,7 +422,7 @@ if (!gotTheLock) {
                 autoHideMenuBar: true,
                 title: 'LyriX Stage',
                 backgroundColor: '#000000',
-                icon: path.join(__dirname, '../public/icon.ico'),
+                icon: path.join(__dirname, '../public/icon.png'),
                 webPreferences: {
                     preload: path.join(__dirname, 'preload.js'),
                     contextIsolation: true,
@@ -464,12 +435,14 @@ if (!gotTheLock) {
                 winOptions.x = externalDisplay.bounds.x + 50;
                 winOptions.y = externalDisplay.bounds.y + 50;
                 winOptions.fullscreen = true;
+                winOptions.alwaysOnTop = true;
             }
 
             projectorWindow = new BrowserWindow(winOptions);
 
             if (externalDisplay) {
                 projectorWindow.setFullScreen(true);
+                projectorWindow.setAlwaysOnTop(true, 'screen-saver');
             }
 
             if (process.env.NODE_ENV === 'development') {
@@ -496,6 +469,7 @@ if (!gotTheLock) {
 
             projectorWindow.on('closed', () => {
                 projectorWindow = null;
+                if (io) io.emit('projector-status', false);
                 BrowserWindow.getAllWindows().forEach(win => {
                     if (!win.isDestroyed()) {
                         win.webContents.send('projector-state-changed', false);
@@ -505,8 +479,19 @@ if (!gotTheLock) {
 
             // When projector finishes loading, resend the current state
             projectorWindow.webContents.on('did-finish-load', () => {
+                // Send the correct content type — Bible verse OR song slide (mutually exclusive)
                 if (lastBibleVerse) {
                     projectorWindow.webContents.send('bible-verse-update', lastBibleVerse);
+                } else if (lastSlide) {
+                    projectorWindow.webContents.send('current-slide', { slide: lastSlide });
+                }
+                // Also resend black/blank state
+                if (lastIsBlack) {
+                    projectorWindow.webContents.send('blank-screen', lastIsBlack);
+                }
+                // Resend cached settings (font, colors, watermark, etc.)
+                if (lastProjectorSettings) {
+                    projectorWindow.webContents.send('settings-update', lastProjectorSettings);
                 }
             });
 
@@ -523,160 +508,52 @@ if (!gotTheLock) {
         });
 
         ipcMain.handle('fetch-lyrics-content', async (event, url) => {
-            console.log(`[Fetch] Fast HTTP Fetching: ${url}`);
-            try {
-                const axios = require('axios');
-                const cheerio = require('cheerio');
-                
-                const response = await axios.get(url, {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                    },
-                    timeout: 8000
-                });
-
-                const $ = cheerio.load(response.data);
-
-                // 1. Clean DOM of obvious non-lyric elements
-                const removables = ['script', 'style', 'nav', 'header', 'footer', 'iframe', 'img', 'svg', 'button', 'form', 'aside', '.ads', '[role="navigation"]', 'meta', 'link'];
-                removables.forEach(tag => $(tag).remove());
-
-                let container = null;
-
-                // 2. Try Exact Known Selectors (Genius, AZLyrics, etc)
-                const exactSelectors = [
-                    '[data-lyrics-container="true"]',
-                    '.lyrics',
-                    '.lyricbox',
-                    '.lyrics-body',
-                    '#lyric-body-text',
-                    '.ringtone' // Often precedes lyrics on some sites
-                ];
-
-                for (let selector of exactSelectors) {
-                    if ($(selector).length > 0) {
-                        container = $(selector);
-                        if (selector === '[data-lyrics-container="true"]') {
-                            let combinedHTML = '';
-                            container.each((i, el) => { combinedHTML += $(el).html() + '<br><br>'; });
-                            container = $('<div>').html(combinedHTML);
-                        }
-                        break;
-                    }
-                }
-
-                // 3. Fallback: Smart Heuristic (<br> density)
-                if (!container || container.text().trim().length < 50) {
-                    let bestElement = null;
-                    let maxScore = -1;
-
-                    $('div, p, article, section, td').each((i, el) => {
-                        const $el = $(el);
-                        // Count immediate <br> tags or <br> tags that are not deeply nested inside other major structural elements
-                        const brCount = $el.find('br').length;
-                        
-                        if (brCount > 3) {
-                            // Calculate a score: we want high BR count but LOW character count of <a> links (to avoid menus)
-                            const linkTextLength = $el.find('a').text().length;
-                            const totalTextLength = $el.text().length || 1; // avoid division by zero
-                            const linkRatio = linkTextLength / totalTextLength;
-                            
-                            // If it's mostly links, it's a menu, ignore it
-                            if (linkRatio > 0.4) return;
-
-                            // To avoid picking the massive outer wrapping <div>, we penalize elements that have child divs with high BR counts
-                            let hasChildWithManyBrs = false;
-                            $el.children('div, section, article').each((_, child) => {
-                                if ($(child).find('br').length >= (brCount * 0.8)) {
-                                    hasChildWithManyBrs = true;
-                                }
-                            });
-
-                            if (!hasChildWithManyBrs) {
-                                // Score based on BR count and text density
-                                const score = brCount * (1 - linkRatio);
-                                if (score > maxScore) {
-                                    maxScore = score;
-                                    bestElement = $el;
-                                }
-                            }
-                        }
-                    });
-
-                    if (bestElement) {
-                        container = bestElement;
-                        // Strip out remaining links inside the lyrics container just in case
-                        container.find('a').each((i, el) => { $(el).replaceWith($(el).text()); });
-                    }
-                }
-
-                if (!container) {
-                    container = $('body'); // Absolute fallback
-                }
-
-                // 4. Extract Text while preserving newlines
-                container.find('br').replaceWith('__BR__');
-                container.find('p').append('__BR____BR__');
-                container.find('div').append('__BR__');
-
-                let text = container.text().replace(/__BR__/g, '\n');
-
-                // Normalize Text
-                return text
-                    .split('\n')
-                    .map(l => l.trim())
-                    .reduce((acc, line) => {
-                        const last = acc[acc.length - 1];
-                        if (!line || line.length === 0) {
-                            if (acc.length > 0 && last !== '') acc.push('');
-                        } else {
-                            acc.push(line);
-                        }
-                        return acc;
-                    }, [])
-                    .join('\n')
-                    .substring(0, 10000);
-
-            } catch (e) {
-                console.error("[Fetch] HTTP Error:", e.message);
-                return "Failed to fetch content. Site might be blocking requests.";
-            }
+            return await fetchLyricsContent(url);
         });
 
+        // Pass db and scraper to server
+        const dbMethods = { searchSongs, getSchedule, clearSchedule, addToSchedule, addSong };
         io = startServer((data) => {
             console.log("Server Status:", data);
             currentServerStatus = data;
             BrowserWindow.getAllWindows().forEach(win => {
                 win.webContents.send('status-update', data);
             });
-        });
+        }, { db: dbMethods, scraper: { searchLyrics, fetchLyricsContent } });
 
         ipcMain.handle('get-server-status', () => currentServerStatus);
 
-        let globalMaxDevices = 1;
-
         if (io) {
             io.on('connection', (socket) => {
-                if (io.engine.clientsCount > globalMaxDevices) {
-                    console.log("Main Process: Connection rejected (Max devices reached).");
-                    socket.emit('connection-rejected', { reason: 'Device limit reached' });
-                    socket.disconnect(true);
+                const clientType = socket.handshake.query.type || 'remote';
 
-                    // Re-broadcast the status after disconnection to correct the UI count
-                    setTimeout(() => {
-                        const count = io.engine.clientsCount;
-                        const currentStatus = { ...currentServerStatus, connections: count };
-                        BrowserWindow.getAllWindows().forEach(win => {
-                            if (!win.isDestroyed()) win.webContents.send('status-update', currentStatus);
-                        });
-                    }, 500);
-                    return;
+                if (clientType === 'remote') {
+                    let remoteCount = 0;
+                    io.sockets.sockets.forEach(s => {
+                        // Count other remote clients (excluding this one if it's already added)
+                        if (s.id !== socket.id && (s.handshake.query.type === 'remote' || !s.handshake.query.type)) {
+                            remoteCount++;
+                        }
+                    });
+
+                    if (remoteCount >= 1) {
+                        console.log("Main Process: Connection rejected (Max remote devices reached).");
+                        socket.emit('connection-rejected', { reason: 'Another remote is already connected. Please disconnect it first.' });
+                        socket.disconnect(true);
+                        return;
+                    }
                 }
 
-                console.log("Main Process: Client Connected", socket.id);
+                console.log("Main Process: Client Connected", socket.id, "Type:", clientType);
 
-                // Send initial schedule
+                // Send initial schedule and states
                 socket.emit('schedule-updated', getSchedule());
+                socket.emit('projector-status', !!projectorWindow);
+                socket.emit('blank-screen', lastIsBlack);
+                if (lastBibleVerse) socket.emit('bible-verse-update', lastBibleVerse);
+                else if (lastSlide) socket.emit('current-slide', { slide: lastSlide });
+                // Send cached projector settings so new connections get correct font/colors
+                if (lastProjectorSettings) socket.emit('settings-update', lastProjectorSettings);
 
                 socket.on('fetch-schedule', () => {
                     socket.emit('schedule-updated', getSchedule());
@@ -734,6 +611,16 @@ if (!gotTheLock) {
                         BrowserWindow.getAllWindows().forEach(win => {
                             win.webContents.send('remote-command', { action: 'blank-screen' });
                         });
+                    } else if (cmd.action === 'open-projector') {
+                        if (!projectorWindow) {
+                            openProjectorWindow();
+                        } else {
+                            if (projectorWindow.isMinimized()) projectorWindow.restore();
+                            projectorWindow.focus();
+                        }
+                        BrowserWindow.getAllWindows().forEach(win => {
+                            win.webContents.send('remote-command', cmd);
+                        });
                     } else {
                         BrowserWindow.getAllWindows().forEach(win => {
                             win.webContents.send('remote-command', cmd);
@@ -746,12 +633,16 @@ if (!gotTheLock) {
         ipcMain.handle('projector-sync', (event, data) => {
             if (io) {
                 if (data.type === 'slide') {
+                    lastBibleVerse = null; // Clear Bible verse when switching to song slides
+                    lastSlide = data.content;
                     io.emit('current-slide', { slide: data.content });
                     if (projectorWindow && !projectorWindow.isDestroyed()) projectorWindow.webContents.send('current-slide', { slide: data.content });
                 } else if (data.type === 'black') {
+                    lastIsBlack = data.isBlack;
                     io.emit('blank-screen', data.isBlack);
                     if (projectorWindow && !projectorWindow.isDestroyed()) projectorWindow.webContents.send('blank-screen', data.isBlack);
                 } else if (data.type === 'bible-verse') {
+                    lastSlide = null; // Clear song slide when switching to Bible verse
                     lastBibleVerse = data.content; // Store for projector reopens
                     io.emit('bible-verse-update', data.content);
                     if (projectorWindow && !projectorWindow.isDestroyed()) projectorWindow.webContents.send('bible-verse-update', data.content);
@@ -760,6 +651,8 @@ if (!gotTheLock) {
         });
 
         ipcMain.handle('update-projector-settings', (event, settings) => {
+            // Cache settings for future connections
+            lastProjectorSettings = { ...lastProjectorSettings, ...settings };
             if (settings.maxRemoteDevices !== undefined) {
                 globalMaxDevices = settings.maxRemoteDevices;
             }
@@ -797,20 +690,20 @@ $ppt.Quit()
 `;
                     const tempScriptPath = path.join(require('os').tmpdir(), `lyrix_convert_${Date.now()}.ps1`);
                     fs.writeFileSync(tempScriptPath, script);
-                    
+
                     require('child_process').execSync(`powershell.exe -ExecutionPolicy Bypass -File "${tempScriptPath}"`, { windowsHide: true });
-                    
+
                     actualPath = tempPptxPath;
-                    try { fs.unlinkSync(tempScriptPath); } catch(e){}
+                    try { fs.unlinkSync(tempScriptPath); } catch (e) { }
                 } catch (e) {
                     return { success: false, error: "Legacy .ppt file detected, but Microsoft PowerPoint is not installed or failed to convert it. Please save it as a .pptx file manually and try again." };
                 }
             }
 
             const data = fs.readFileSync(actualPath);
-            
+
             if (isLegacy) {
-                try { fs.unlinkSync(actualPath); } catch(e){}
+                try { fs.unlinkSync(actualPath); } catch (e) { }
             }
 
             const JSZip = require('jszip');
@@ -828,18 +721,18 @@ $ppt.Quit()
             for (const filename of slideFiles) {
                 const xml = await zip.file(filename).async("string");
                 const $ = cheerio.load(xml, { xmlMode: true });
-                
+
                 const textBlocks = [];
 
                 $('p\\:sp, p\\:graphicFrame').each((i, el) => {
                     const $el = $(el);
-                    
+
                     const phType = $el.find('p\\:ph').attr('type');
                     if (['ftr', 'slidenum', 'dt'].includes(phType)) return;
-                    
+
                     const yAttr = $el.find('a\\:off').attr('y');
                     const y = yAttr ? parseInt(yAttr, 10) : 0;
-                    
+
                     let shapeText = [];
                     $el.find('a\\:p').each((j, pNode) => {
                         let pText = "";
@@ -848,15 +741,15 @@ $ppt.Quit()
                         });
                         if (pText.trim()) shapeText.push(pText.trim());
                     });
-                    
+
                     const combinedText = shapeText.join('\n').trim();
                     if (combinedText) {
                         textBlocks.push({ text: combinedText, y: y });
                     }
                 });
-                
+
                 textBlocks.sort((a, b) => a.y - b.y);
-                
+
                 const slideLines = textBlocks.map(b => b.text);
                 if (slideLines.length > 0) {
                     rawSlides.push(slideLines.join('\n'));
@@ -919,71 +812,7 @@ $ppt.Quit()
             }
         });
 
-        ipcMain.handle('get-previous-releases', async () => {
-            try {
-                const response = await axios.get('https://api.github.com/repos/justforaitoolz-ops/LyriX-Church-System/releases');
-                const releases = response.data;
-                const currentVersion = app.getVersion();
-                
-                return releases
-                    .filter(r => r.tag_name !== `v${currentVersion}`)
-                    .map(r => ({
-                        tag: r.tag_name,
-                        name: r.name,
-                        published_at: r.published_at,
-                        assets: r.assets.filter(a => a.name.endsWith('.exe')).map(a => ({
-                            name: a.name,
-                            browser_download_url: a.browser_download_url
-                        }))
-                    }))
-                    .filter(r => r.assets.length > 0);
-            } catch (e) {
-                return [];
-            }
-        });
 
-        ipcMain.handle('trigger-rollback', async (event, downloadUrl) => {
-            try {
-                const tempDir = app.getPath('temp');
-                const uniqueId = Math.random().toString(36).substring(2, 8) + '-' + Date.now();
-                const baseName = path.basename(downloadUrl);
-                const fileName = baseName.replace('.exe', `-${uniqueId}.exe`);
-                const filePath = path.join(tempDir, fileName);
-
-                const response = await axios({
-                    url: downloadUrl,
-                    method: 'GET',
-                    responseType: 'stream'
-                });
-
-                const writer = fs.createWriteStream(filePath);
-                response.data.pipe(writer);
-
-                await new Promise((resolve, reject) => {
-                    writer.on('finish', () => {
-                        writer.close(resolve); // Explicitly close the file handle
-                    });
-                    writer.on('error', reject);
-                });
-
-                // Small delay to allow Windows/Antivirus to release file lock after closing
-                await new Promise(r => setTimeout(r, 1000));
-
-                console.log("Launching rollback installer:", filePath);
-                
-                spawn(filePath, ['/S'], {
-                    detached: true,
-                    stdio: 'ignore'
-                }).unref();
-
-                app.isQuitting = true;
-                app.quit();
-                return { success: true };
-            } catch (e) {
-                console.error("Rollback trigger failed:", e);
-                return { success: false, error: e.message };
-            }
-        });
 
         // --- Media Player Handlers ---
         const mediaHistoryPath = path.join(newDataDir, 'media_history.json');
@@ -1050,7 +879,7 @@ $ppt.Quit()
             const videoPath = pathToFileURL(path.join(videosDir, fileName)).href;
             console.log(`[Media] Playing: ${videoPath}`);
             const data = { action: 'media-play', url: videoPath, fileName };
-            
+
             // Auto-open projector if closed
             let win = projectorWindow;
             if (!win || win.isDestroyed()) {
@@ -1146,7 +975,7 @@ $ppt.Quit()
                         }
                     });
                 }
-            } catch (e) {}
+            } catch (e) { }
         }, 1000);
 
         ipcMain.handle('media:set-volume', async (event, volume) => {

@@ -161,7 +161,7 @@ function App() {
         }
     }, [customAlert]);
 
-    const [rollbackPrompt, setRollbackPrompt] = useState(null);
+
     const [songToDelete, setSongToDelete] = useState(null);
     const [overwritePrompt, setOverwritePrompt] = useState(null);
     const [confirmPrompt, setConfirmPrompt] = useState(null);
@@ -173,7 +173,8 @@ function App() {
 
     const [appVersion, setAppVersion] = useState('1.0.0');
     const [dbStatus, setDbStatus] = useState({ status: 'connecting', authenticated: false });
-    const [isOfflineMode, setIsOfflineMode] = useState(false);
+    const PLAYSTORE_LINK = 'https://play.google.com/store/apps/details?id=com.lyrix.mobile&pcampaignid=web_share';
+
     const searchQueryRef = useRef('');
     const activeFilterRef = useRef('All');
 
@@ -209,7 +210,7 @@ function App() {
     const [autoFormat, setAutoFormat] = useState(() => localStorage.getItem('setting_autoFormat') !== 'false');
     const [previewMode, setPreviewMode] = useState(() => localStorage.getItem('setting_previewMode') || 'single'); // 'single' or 'grid'
     const [previewFont, setPreviewFont] = useState(() => localStorage.getItem('setting_previewFont') || 'lyrics'); // 'lyrics' or 'sans'
-    const [maxRemoteDevices, setMaxRemoteDevices] = useState(() => Number(localStorage.getItem('setting_maxRemoteDevices')) || 1);
+    const [maxRemoteDevices, setMaxRemoteDevices] = useState(() => Number(localStorage.getItem('setting_maxRemoteDevices')) || 5);
     const [churchName, setChurchName] = useState(() => localStorage.getItem('setting_churchName') || '');
     const [churchPlace, setChurchPlace] = useState(() => localStorage.getItem('setting_churchPlace') || '');
     const [autoProjectBible, setAutoProjectBible] = useState(() => localStorage.getItem('setting_autoProjectBible') !== 'false');
@@ -219,13 +220,9 @@ function App() {
     const [showAppControls, setShowAppControls] = useState(() => localStorage.getItem('setting_showAppControls') !== 'false');
     const [showDatabaseManagement, setShowDatabaseManagement] = useState(() => localStorage.getItem('setting_showDatabaseManagement') !== 'false');
     const [showMobileDownloadQR, setShowMobileDownloadQR] = useState(false);
-    const [showCloseConfirm, setShowCloseConfirm] = useState(false);
-
-    useEffect(() => {
-        if (window.electron && window.electron.setTitlebarTheme) {
-            window.electron.setTitlebarTheme(showCloseConfirm ? 'dark' : 'light');
-        }
-    }, [showCloseConfirm]);
+    const [showViewerQR, setShowViewerQR] = useState(false);
+    const [showCustomBibleModal, setShowCustomBibleModal] = useState(false);
+    const [customBibleName, setCustomBibleName] = useState('');
 
 
     // Library Categories
@@ -265,17 +262,15 @@ function App() {
     const [deletedSongs, setDeletedSongs] = useState([]);
     const [deletedLoading, setDeletedLoading] = useState(false);
 
-    // Rollback State
-    const [availableRollbacks, setAvailableRollbacks] = useState([]);
-    const [isLoadingRollbacks, setIsLoadingRollbacks] = useState(false);
-
     // Bible Module State
     const [bibleBooks, setBibleBooks] = useState([]);
     const [selectedBibleBook, setSelectedBibleBook] = useState(null);
     const [selectedBibleChapter, setSelectedBibleChapter] = useState(1);
     const [selectedBibleVerse, setSelectedBibleVerse] = useState(1);
     const [bibleChaptersCount, setBibleChaptersCount] = useState(0);
-    const [bibleVerses, setBibleVerses] = useState({ KJV: [], HINDI: [] });
+    const [bibleVerses, setBibleVerses] = useState({ KJV: [], HINDI: [], TELUGU: [] });
+    const [biblePrimaryLang, setBiblePrimaryLang] = useState(() => localStorage.getItem('setting_biblePrimaryLang') || 'KJV');
+    const [bibleSecondaryLang, setBibleSecondaryLang] = useState(() => localStorage.getItem('setting_bibleSecondaryLang') || 'TELUGU');
     const [bibleSearching, setBibleSearching] = useState(false);
     const [bibleSetupStatus, setBibleSetupStatus] = useState({ ready: false, loading: true });
     const [bibleSetupProgress, setBibleSetupProgress] = useState({ message: '', progress: 0 });
@@ -308,7 +303,7 @@ function App() {
         localStorage.setItem('setting_autoProjectBible', autoProjectBible);
 
         // Removed aggressive pruning: we now trust visibleCategories from localStorage or remote.
-    }, [favourites, fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, defaultCategory, autoFormat, previewMode, previewFont, maxRemoteDevices, churchName, churchPlace, watermarkSize, visibleCategories, showAppControls, showDatabaseManagement, allCategories, autoProjectBible]);
+    }, [favourites, fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, defaultCategory, autoFormat, previewMode, previewFont, maxRemoteDevices, churchName, churchPlace, watermarkSize, visibleCategories, showAppControls, showDatabaseManagement, allCategories, autoProjectBible, biblePrimaryLang, bibleSecondaryLang]);
 
     useEffect(() => {
         if (window.electron) {
@@ -338,8 +333,12 @@ function App() {
             window.electron.invoke('get-db-status').then(status => {
                 if (status) {
                     setDbStatus(status);
-                    setIsOfflineMode(status.status === 'offline-mode');
                 }
+            });
+
+            // Fetch app settings
+            window.electron.invoke('get-app-settings').then(settings => {
+                // Settings fetched
             });
 
             // Fetch dynamic categories
@@ -371,6 +370,19 @@ function App() {
             });
 
             const handleKeyDown = async (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                    e.preventDefault();
+                    setActiveTab('library');
+                    setTimeout(() => {
+                        const searchInput = document.getElementById('globalSearchInput');
+                        if (searchInput) {
+                            searchInput.focus();
+                            searchInput.select();
+                        }
+                    }, 50);
+                    return;
+                }
+
                 if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
                     return; // Don't trigger shortcuts when typing
                 }
@@ -382,13 +394,12 @@ function App() {
                 }
 
                 if (e.key === 'Escape') {
-                    // Only close if it's actually open, to prevent Escape from opening it
-                    setIsProjectorOpen(prev => {
-                        if (prev && window.electron) {
-                            window.electron.invoke('toggle-projector-window').then(isOpen => setIsProjectorOpen(isOpen));
-                        }
-                        return prev;
-                    });
+                    // Close projector if open (never toggle/open)
+                    if (window.electron) {
+                        window.electron.invoke('close-projector-window').then(isOpen => {
+                            setIsProjectorOpen(isOpen);
+                        });
+                    }
                 } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
                     // Only handle song slide navigation when NOT in Bible mode
                     if (stateRef.current.activeTab !== 'bible') {
@@ -433,6 +444,11 @@ function App() {
                         }
                     }
                 }
+                else if (cmd.action === 'open-projector') {
+                    window.electron.invoke('open-projector-window').then(isOpen => {
+                        if (isOpen) setIsProjectorOpen(true);
+                    });
+                }
                 else if (cmd.action === 'smart-jump') {
                     setActiveTab('bible');
                     setTimeout(() => {
@@ -461,21 +477,6 @@ function App() {
 
             const unsubSchedule = window.electron.onScheduleUpdate((event, list) => setSchedule(list));
 
-            const unsubUpdateStatus = window.electron.onUpdateStatus((event, status, data) => {
-                setUpdateStatus(status);
-                if (status === 'available') setUpdateInfo(data);
-                if (status === 'error') setUpdateError(data);
-                if (status === 'downloaded') {
-                    setCustomAlert('Update downloaded! The app will restart to apply the update.');
-                    setTimeout(() => window.electron.invoke('install-update'), 3000);
-                }
-            });
-
-            const unsubUpdateProgress = window.electron.onUpdateProgress((event, percent) => {
-                setUpdateStatus('downloading');
-                setUpdateProgress(percent);
-            });
-
             const unsubSongsUpdate = window.electron.onSongsUpdate((event, songs) => {
                 // Ensure the library refreshes when local songs are loaded or remote changes arrive
                 handleSearch(searchQueryRef.current, activeFilterRef.current);
@@ -497,9 +498,6 @@ function App() {
                 setCustomAlert('The application is already running.');
             });
 
-            const unsubCloseConfirm = window.electron.onConfirmAppClose(() => {
-                setShowCloseConfirm(true);
-            });
 
             // Bible Listeners
             window.electron.invoke('bible:setup-status').then(status => {
@@ -587,34 +585,18 @@ function App() {
                 if (unsubRemote) unsubRemote();
                 if (unsubKeyPress) unsubKeyPress();
                 if (unsubSchedule) unsubSchedule();
-                if (unsubUpdateStatus) unsubUpdateStatus();
-                if (unsubUpdateProgress) unsubUpdateProgress();
-                if (unsubSongsUpdate) unsubSongsUpdate();
-                if (unsubCategoriesUpdate) unsubCategoriesUpdate();
                 if (unsubAppRunning) unsubAppRunning();
-                if (unsubCloseConfirm) unsubCloseConfirm();
                 if (unsubDbStatusUpdate) unsubDbStatusUpdate();
                 if (unsubBibleSetup) unsubBibleSetup();
             };
         }
     }, []);
 
-    // Fetch rollback releases when user navigates to settings tab
-    useEffect(() => {
-        if (activeTab === 'settings' && availableRollbacks.length === 0 && !isLoadingRollbacks && window.electron) {
-            setIsLoadingRollbacks(true);
-            window.electron.invoke('get-previous-releases').then(releases => {
-                setAvailableRollbacks(releases);
-                setIsLoadingRollbacks(false);
-            }).catch(() => setIsLoadingRollbacks(false));
-        }
-    }, [activeTab]);
-
     // Sync Projector whenever state changes or new devices connect
     // Only sync slides when we're NOT in Bible mode
     useEffect(() => {
         if (window.electron) {
-            if (stateRef.current.activeTab !== 'bible') {
+            if (activeTab !== 'bible') {
                 const currentSlide = (slides && slides.length > 0) ? slides[currentSlideIndex] : "";
 
                 // If the current song is a Bible Reading from the schedule,
@@ -640,7 +622,7 @@ function App() {
             }
             window.electron.invoke('projector-sync', { type: 'black', isBlack });
         }
-    }, [currentSlideIndex, slides, isBlack, connections, currentSong]); // Using stateRef for activeTab to avoid tab-switch overwrite
+    }, [currentSlideIndex, slides, isBlack, connections, currentSong, activeTab]);
 
     // Sync Settings
     useEffect(() => {
@@ -649,7 +631,7 @@ function App() {
                 fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, maxRemoteDevices, churchName, churchPlace, watermarkSize
             });
         }
-    }, [fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, maxRemoteDevices, churchName, churchPlace, watermarkSize, connections]);
+    }, [fontSize, isBold, color, backgroundColor, backgroundImage, textAlign, fontFamily, maxRemoteDevices, churchName, churchPlace, watermarkSize, connections, isProjectorOpen]);
 
     const fetchSchedule = async (isManual = false) => {
         if (window.electron) {
@@ -918,7 +900,7 @@ function App() {
                 className="h-10 bg-white text-slate-800 flex items-center pl-4 w-full select-none shrink-0 relative z-[1000]"
                 style={{ WebkitAppRegion: 'drag' }}
             >
-                <img src="./icon.ico" className="w-5 h-5 mr-3 drop-shadow" alt="LyriX Logo" />
+                <img src="./icon.png" className="w-6 h-6 mr-3 drop-shadow" alt="LyriX Logo" />
                 <span className="font-bold text-[13px] tracking-widest uppercase text-slate-800">LyriX Desktop</span>
 
                 {/* Custom Window Control Buttons — always white, no OS color interference */}
@@ -955,7 +937,7 @@ function App() {
                 <div className="w-[240px] flex flex-col border-r border-slate-200 bg-slate-50/50 shrink-0">
                     {/* Logo Area */}
                     <div className="h-32 flex flex-col items-center justify-center border-b border-slate-100 p-4 shrink-0">
-                        <img src="./icon.ico" fetchPriority="high" className="w-16 h-16 mb-2 drop-shadow-lg" alt="LyriX Logo" />
+                        <img src="./icon.png" fetchPriority="high" className="w-16 h-16 mb-2 drop-shadow-lg" alt="LyriX Logo" />
                         <div className="text-sm font-bold text-slate-600 tracking-widest uppercase">LyriX Stage</div>
                     </div>
 
@@ -1025,7 +1007,7 @@ function App() {
                         >
                             {isProjectorOpen ? "Close Projector Window" : "Open Projector Window"}
                         </button>
-                        <div className="text-[10px] text-slate-400 font-medium pt-1 italic">version {appVersion} &copy; ChurchLyriXApp</div>
+                        <div className="text-[10px] text-slate-400 font-medium pt-1 italic">Version {appVersion} &copy; Faith Companion Studios</div>
                     </div>
                 </div>
 
@@ -1058,6 +1040,10 @@ function App() {
                         setupProgress={bibleSetupProgress}
                         setBibleBooks={setBibleBooks}
                         autoProjectBible={autoProjectBible}
+                        biblePrimaryLang={biblePrimaryLang}
+                        setBiblePrimaryLang={setBiblePrimaryLang}
+                        bibleSecondaryLang={bibleSecondaryLang}
+                        setBibleSecondaryLang={setBibleSecondaryLang}
                     />
                 </div>
                 <div className={clsx("flex-1 flex overflow-hidden", activeTab === 'web' ? "" : "hidden")}>
@@ -1104,11 +1090,9 @@ function App() {
                                     <div className="flex gap-2 flex-wrap mb-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
                                         {[
                                             { id: 'categories', label: 'Categories' },
-                                            { id: 'uncategorized', label: 'Uncategorized' },
-                                            { id: 'bulk_delete', label: 'Bulk Delete' },
                                             { id: 'restore', label: 'Restore Songs' },
-                                            { id: 'security', label: 'Security' },
-                                            { id: 'system', label: 'System Rollback' }
+                                            { id: 'maintenance', label: 'Maintenance' },
+                                            { id: 'security', label: 'Security' }
                                         ].map(tab => (
                                             <button
                                                 key={tab.id}
@@ -1168,7 +1152,7 @@ function App() {
                                                                         value={editCategoryInput}
                                                                         autoFocus
                                                                         onChange={(e) => setEditCategoryInput(e.target.value)}
-                                                                        className="flex-1 px-3 py-1.5 border border-indigo-200 rounded-lg text-sm italic font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                                                                        className="flex-1 px-3 py-1.5 border border-indigo-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
                                                                         onKeyDown={async (e) => {
                                                                             if (e.key === 'Enter') {
                                                                                 const newName = editCategoryInput.trim();
@@ -1213,7 +1197,7 @@ function App() {
                                                                 </div>
                                                             ) : (
                                                                 <>
-                                                                    <span className="font-bold text-slate-700 text-sm italic">{cat}</span>
+                                                                    <span className="font-bold text-slate-700 text-sm">{cat}</span>
                                                                     <div className="flex gap-1">
                                                                         <button
                                                                             onClick={() => { setEditingCategory(cat); setEditCategoryInput(cat); }}
@@ -1238,104 +1222,7 @@ function App() {
                                                 </div>
                                             </div>
                                         )}
-                                        {adminTab === 'uncategorized' && (
-                                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                                <h3 className="text-lg font-bold text-slate-800 mb-4 font-display">Uncategorized Songs</h3>
-                                                {uncategorizedSongs.length === 0 ? <p className="text-slate-400 italic">No uncategorized songs.</p> : (
-                                                    <div className="space-y-3">
-                                                        {uncategorizedSongs.map(song => (
-                                                            <div key={song.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex justify-between items-center">
-                                                                <div className="font-bold text-sm text-slate-800 italic">{song.title}</div>
-                                                                <select className="px-3 py-1 bg-white border border-slate-300 rounded text-sm italic font-medium cursor-pointer focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" onChange={async (e) => { if (e.target.value) await window.electron.invoke('recategorize-song', song.id, e.target.value); }}>
-                                                                    <option value="">Assign...</option>
-                                                                    {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                                                </select>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                        {adminTab === 'bulk_delete' && (
-                                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                                <h3 className="text-lg font-bold text-slate-800 mb-4 font-display">Bulk Delete Songs</h3>
-                                                <div className="mb-4 flex gap-4 items-end">
-                                                    <div className="flex-1">
-                                                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">Select Category</label>
-                                                        <select
-                                                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold italic focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none cursor-pointer"
-                                                            value={bulkCategory}
-                                                            onChange={(e) => {
-                                                                setBulkCategory(e.target.value);
-                                                                if (e.target.value) {
-                                                                    window.electron.invoke('search-songs', '', e.target.value).then(setBulkSongsList);
-                                                                } else {
-                                                                    setBulkSongsList([]);
-                                                                }
-                                                                setBulkSelectedIds([]);
-                                                            }}
-                                                        >
-                                                            <option value="">Choose category...</option>
-                                                            {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                                                        </select>
-                                                    </div>
-                                                </div>
 
-                                                {bulkSongsList.length > 0 && (
-                                                    <div className="space-y-3">
-                                                        <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                                                            <div className="text-xs font-bold text-slate-500 italic">{bulkSelectedIds.length} of {bulkSongsList.length} selected</div>
-                                                            <div className="flex gap-2">
-                                                                <button onClick={() => setBulkSelectedIds(bulkSongsList.map(s => s.id))} className="text-[10px] font-bold text-indigo-600 hover:underline px-2">Select All</button>
-                                                                <button onClick={() => setBulkSelectedIds([])} className="text-[10px] font-bold text-slate-400 hover:underline px-2">Clear</button>
-                                                            </div>
-                                                        </div>
-                                                        <div className="max-h-64 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                                                            {bulkSongsList.map(song => (
-                                                                <label key={song.id} className="flex items-center gap-3 p-2 hover:bg-indigo-50/50 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-indigo-100">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={bulkSelectedIds.includes(song.id)}
-                                                                        onChange={(e) => {
-                                                                            if (e.target.checked) setBulkSelectedIds([...bulkSelectedIds, song.id]);
-                                                                            else setBulkSelectedIds(bulkSelectedIds.filter(id => id !== song.id));
-                                                                        }}
-                                                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                                                    />
-                                                                    <div className="flex-1 min-w-0">
-                                                                        <div className="text-sm font-bold text-slate-700 truncate">{song.title}</div>
-                                                                        <div className="text-[10px] text-slate-400 italic">ID: {song.id}</div>
-                                                                    </div>
-                                                                </label>
-                                                            ))}
-                                                        </div>
-                                                        <div className="pt-4 mt-4 border-t border-slate-100 flex justify-end">
-                                                            <button
-                                                                disabled={bulkSelectedIds.length === 0}
-                                                                onClick={() => {
-                                                                    setConfirmPrompt({
-                                                                        title: 'Bulk Delete',
-                                                                        message: `Are you sure you want to delete ${bulkSelectedIds.length} selected songs? This cannot be undone!`,
-                                                                        confirmText: `Delete ${bulkSelectedIds.length} Songs`,
-                                                                        confirmStyle: 'red',
-                                                                        onConfirm: async () => {
-                                                                            await window.electron.invoke('bulk-delete-songs', bulkSelectedIds);
-                                                                            setBulkSongsList(prev => prev.filter(s => !bulkSelectedIds.includes(s.id)));
-                                                                            setBulkSelectedIds([]);
-                                                                            setCustomAlert(`Successfully deleted ${bulkSelectedIds.length} songs.`);
-                                                                            handleSearch('', activeFilter); // Refresh library
-                                                                        }
-                                                                    });
-                                                                }}
-                                                                className="px-6 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-200 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/20 transition-all active:scale-95"
-                                                            >
-                                                                Delete Selected
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
                                         {adminTab === 'restore' && (
                                             <div className="animate-fade-in-up">
                                                 <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40">
@@ -1427,130 +1314,10 @@ function App() {
                                                 </div>
                                             </div>
                                         )}
-                                        {adminTab === 'system' && (
-                                            <div className="animate-fade-in-up">
-                                                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 flex flex-col gap-8 relative overflow-hidden group">
-                                                    <div className="absolute right-[-20px] top-[-20px] opacity-[0.03] group-hover:rotate-12 transition-transform duration-700 pointer-events-none">
-                                                        <svg className="w-48 h-48" fill="currentColor" viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
-                                                    </div>
-                                                    <div className="flex items-start justify-between">
-                                                        <div>
-                                                            <div className="flex items-center gap-3 mb-2">
-                                                                <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center shadow-inner">
-                                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                                                </div>
-                                                                <h3 className="text-xl font-bold text-slate-800 tracking-tight">System Version & Rollback</h3>
-                                                            </div>
-                                                            <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">If you encounter bugs in a new release, you can instantly rollback to a previous version. Your song data will remain safe.</p>
-                                                        </div>
-                                                        <div className="px-4 py-1.5 bg-slate-100 text-slate-500 border border-slate-200 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-sm">
-                                                            Active: v{appVersion}
-                                                        </div>
-                                                    </div>
 
-                                                    <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 shadow-inner">
-                                                        {isLoadingRollbacks ? (
-                                                            <div className="flex items-center justify-center py-6 gap-3">
-                                                                <div className="w-5 h-5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></div>
-                                                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest italic">Fetching previous versions...</span>
-                                                            </div>
-                                                        ) : availableRollbacks.length > 0 ? (
-                                                            <div className="space-y-4">
-                                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Available Fallback Versions</label>
-                                                                <div className="grid grid-cols-1 gap-3">
-                                                                    {availableRollbacks.slice(0, 3).map(rollback => (
-                                                                        <div key={rollback.tag} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between group/v transition-all hover:border-amber-200">
-                                                                            <div>
-                                                                                <div className="text-sm font-bold text-slate-700 tracking-tight">{rollback.tag} <span className="text-[10px] text-slate-400 font-normal italic ml-2">{new Date(rollback.published_at).toLocaleDateString()}</span></div>
-                                                                                <div className="text-[10px] text-slate-400 italic mt-0.5">{rollback.name || 'Stable Release'}</div>
-                                                                            </div>
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    setRollbackPrompt({
-                                                                                        tag: rollback.tag,
-                                                                                        url: rollback.assets[0].browser_download_url
-                                                                                    });
-                                                                                }}
-                                                                                className="px-4 py-2 bg-amber-50 hover:bg-amber-600 text-amber-600 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border border-amber-100/50 active:scale-95 shadow-sm"
-                                                                            >
-                                                                                Downgrade to {rollback.tag}
-                                                                            </button>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="text-center py-4">
-                                                                <p className="text-xs text-slate-400 italic font-medium">No previous versions available for rollback.</p>
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-                                                        {/* Offline Mode Toggle */}
-                                                        <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 shadow-inner flex flex-col justify-between">
-                                                            <div>
-                                                                <h4 className="text-sm font-bold text-slate-800 mb-2">Pure Offline Mode</h4>
-                                                                <p className="text-[11px] text-slate-500 italic mb-4 leading-relaxed">
-                                                                    Disable all cloud synchronization (Firebase). The app will run entirely from local storage, and the Android remote app will disconnect.
-                                                                </p>
-                                                            </div>
-                                                            <div className="flex items-center gap-3">
-                                                                <button
-                                                                    onClick={async () => {
-                                                                        const newVal = !isOfflineMode;
-                                                                        await window.electron.invoke('set-force-offline', newVal);
-                                                                        setIsOfflineMode(newVal);
-                                                                        setCustomAlert(newVal ? 'Offline Mode Enabled. Restarting app...' : 'Offline Mode Disabled. Restarting app...');
-                                                                        
-                                                                        // Small delay so the user sees the alert before it violently closes
-                                                                        setTimeout(() => {
-                                                                            window.electron.invoke('app:restart');
-                                                                        }, 1500);
-                                                                    }}
-                                                                    className={clsx(
-                                                                        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2",
-                                                                        isOfflineMode ? "bg-indigo-600" : "bg-slate-200"
-                                                                    )}
-                                                                >
-                                                                    <span className={clsx("pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out", isOfflineMode ? "translate-x-5" : "translate-x-0")}></span>
-                                                                </button>
-                                                                <span className="text-xs font-bold text-slate-600 uppercase tracking-widest">{isOfflineMode ? 'Enabled' : 'Disabled'}</span>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Bible Database Reset */}
-                                                        <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 shadow-inner flex flex-col justify-between">
-                                                            <div>
-                                                                <h4 className="text-sm font-bold text-rose-800 mb-2">Reset Bible Database</h4>
-                                                                <p className="text-[11px] text-rose-500/80 italic mb-4 leading-relaxed">
-                                                                    Delete the downloaded Bible databases. The app will prompt you to redownload them upon restart.
-                                                                </p>
-                                                            </div>
-                                                            <button
-                                                                onClick={() => {
-                                                                    setConfirmPrompt({
-                                                                        title: 'Reset Bible Database?',
-                                                                        message: 'This will delete the local SQLite database. You will need internet access to re-download the Bible texts upon restart.',
-                                                                        confirmText: 'Delete Database',
-                                                                        confirmStyle: 'red',
-                                                                        onConfirm: async () => {
-                                                                            await window.electron.invoke('bible:reset-db');
-                                                                            setCustomAlert('Bible database deleted. Please restart the app.');
-                                                                        }
-                                                                    });
-                                                                }}
-                                                                className="w-full px-4 py-2 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border border-rose-100 active:scale-95 shadow-sm"
-                                                            >
-                                                                Delete Bible Data
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
                                         {adminTab === 'security' && (
-                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
+                                            <div className="space-y-8 animate-fade-in">
+                                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                                 <div className="bg-white rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 p-8">
                                                     <div className="flex items-center justify-between mb-8">
                                                         <h3 className="text-xl font-bold text-slate-800 font-display flex items-center gap-3">
@@ -1626,26 +1393,105 @@ function App() {
                                                     </div>
                                                 </div>
 
-                                                <div className="bg-indigo-600 rounded-[2rem] shadow-xl shadow-indigo-900/20 p-8 flex flex-col items-center justify-center text-center relative overflow-hidden h-full">
-                                                    <div className="absolute top-0 right-0 p-8 opacity-10">
-                                                        <svg className="w-32 h-32 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm1 14h-2v-2h2v2zm0-4h-2V7h2v5z" /></svg>
+                                                <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-8 flex flex-col items-center justify-center text-center relative overflow-hidden h-full">
+                                                    <div className="absolute top-0 right-0 p-8 opacity-5">
+                                                        <svg className="w-32 h-32 text-indigo-900" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm1 14h-2v-2h2v2zm0-4h-2V7h2v5z" /></svg>
                                                     </div>
 
                                                     {/* Security image removed at user request */}
 
-                                                    <h4 className="text-xl font-bold text-white mb-2">Protect Your Workspace</h4>
-                                                    <p className="text-indigo-100 text-sm leading-relaxed max-w-xs italic mb-8">
+                                                    <h4 className="text-xl font-bold text-slate-800 mb-2">Protect Your Workspace</h4>
+                                                    <p className="text-slate-500 text-sm leading-relaxed max-w-xs mb-8">
                                                         Keep your lyrics management safe. We recommend using a unique password and updating it regularly.
                                                     </p>
 
                                                     <div className="grid grid-cols-2 gap-4 w-full">
-                                                        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10">
-                                                            <div className="text-indigo-200 text-[10px] font-bold uppercase tracking-widest mb-1">Status</div>
-                                                            <div className="text-white text-sm font-bold italic">Encrypted</div>
+                                                        <div className="bg-white shadow-sm rounded-2xl p-4 border border-slate-100">
+                                                            <div className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Status</div>
+                                                            <div className="text-indigo-600 text-sm font-bold">Encrypted</div>
                                                         </div>
-                                                        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10">
-                                                            <div className="text-indigo-200 text-[10px] font-bold uppercase tracking-widest mb-1">Access</div>
-                                                            <div className="text-white text-sm font-bold italic">Restricted</div>
+                                                        <div className="bg-white shadow-sm rounded-2xl p-4 border border-slate-100">
+                                                            <div className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Access</div>
+                                                            <div className="text-indigo-600 text-sm font-bold">Restricted</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                </div>
+
+                                            </div>
+                                        )}
+
+                                        {adminTab === 'maintenance' && (
+                                            <div className="space-y-8 animate-fade-in">
+                                                <div className="bg-white rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 p-8">
+                                                    <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="w-12 h-12 bg-red-50 border border-red-100 rounded-2xl flex items-center justify-center shadow-inner">
+                                                                <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
+                                                            </div>
+                                                            <div>
+                                                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">Data Maintenance</h3>
+                                                                <p className="text-[11px] font-semibold text-slate-400 italic mt-1">Force-reset databases or wipe the application.</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-4">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setAdminVerifyPrompt({
+                                                                        title: 'Reset Bible Database',
+                                                                        context: 'This will wipe all local Bible data and re-download the KJV, Hindi, and Telugu texts. It may take a minute.',
+                                                                        username: 'admin',
+                                                                        onVerify: async () => {
+                                                                            setBibleSetupStatus({ ready: false, loading: true });
+                                                                            setActiveTab('bible');
+                                                                            const res = await window.electron.invoke('bible:reset-and-rebuild');
+                                                                            if (res.success) {
+                                                                                const status = await window.electron.invoke('bible:setup-status');
+                                                                                setBibleSetupStatus({ ready: status.ready, loading: false });
+                                                                                if (status.ready) {
+                                                                                    const books = await window.electron.invoke('bible:get-books');
+                                                                                    setBibleBooks(books);
+                                                                                    setCustomAlert('Bible database rebuilt successfully!');
+                                                                                }
+                                                                            } else {
+                                                                                setCustomAlert('Error rebuilding Bible: ' + (res.error || 'Unknown error'));
+                                                                                setBibleSetupStatus({ ready: false, loading: false });
+                                                                            }
+                                                                        }
+                                                                    });
+                                                                }}
+                                                                className="px-8 py-3 rounded-2xl text-[11px] font-bold uppercase tracking-widest transition-all shadow-md active:scale-95 border border-red-200 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white"
+                                                            >
+                                                                Reset Bible Data
+                                                            </button>
+
+                                                            <button
+                                                                onClick={() => {
+                                                                    setCustomBibleName('');
+                                                                    setShowCustomBibleModal(true);
+                                                                }}
+                                                                className="px-8 py-3 rounded-2xl text-[11px] font-bold uppercase tracking-widest transition-all shadow-md active:scale-95 border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white"
+                                                            >
+                                                                Import Custom Translation
+                                                            </button>
+
+                                                            <button
+                                                                onClick={() => {
+                                                                    setAdminVerifyPrompt({
+                                                                        title: 'Factory Wipe App',
+                                                                        context: 'DANGER: This will delete ALL custom songs, settings, downloaded databases, and schedules. It will return LyriX to its original installed state and restart the application. Are you absolutely sure?',
+                                                                        username: 'admin',
+                                                                        onVerify: async () => {
+                                                                            setCustomAlert('Wiping system data and restarting...');
+                                                                            localStorage.clear();
+                                                                            await window.electron.invoke('system:factory-reset');
+                                                                        }
+                                                                    });
+                                                                }}
+                                                                className="px-8 py-3 rounded-2xl text-[11px] font-bold uppercase tracking-widest transition-all shadow-md active:scale-95 border border-rose-600 bg-rose-600 text-white hover:bg-rose-700 shadow-rose-500/30"
+                                                            >
+                                                                Factory Wipe App
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1723,93 +1569,7 @@ function App() {
                                         </div>
                                     </div>
 
-                                    {/* 2. Database & Cloud */}
-                                    {dbStatus.status !== 'offline-mode' && (
-                                    <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden group">
-                                        <div className="absolute right-[-20px] top-[-20px] opacity-[0.03] group-hover:rotate-12 transition-transform duration-700 pointer-events-none">
-                                            <DatabaseIcon className="w-48 h-48" />
-                                        </div>
-                                        <div className="flex items-start justify-between mb-8">
-                                            <div>
-                                                <div className="flex items-center gap-3 mb-2">
-                                                    <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner">
-                                                        <DatabaseIcon className="w-5 h-5" />
-                                                    </div>
-                                                    <h3 className="text-xl font-bold text-slate-800 tracking-tight">Database & Cloud</h3>
-                                                </div>
-                                                <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">Manage your song database and cloud synchronization status.</p>
-                                            </div>
-                                            {dbStatus.status === 'offline-mode' ? (
-                                            <div className="px-3 py-1 bg-slate-100 text-slate-500 border border-slate-200 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 shadow-sm cursor-help" title="Firebase sync disabled. Running locally.">
-                                                <div className="w-2 h-2 rounded-full bg-slate-400"></div>
-                                                Offline Mode
-                                            </div>
-                                        ) : (
-                                            <div className={clsx(
-                                                "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 shadow-sm transition-all",
-                                                dbStatus.status === 'connected' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-red-50 text-red-600 border-red-100"
-                                            )}>
-                                                <div className={clsx("w-2 h-2 rounded-full", dbStatus.status === 'connected' ? "bg-emerald-500 animate-pulse" : "bg-red-500")}></div>
-                                                {dbStatus.status === 'connected' ? "Connected" : "Disconnected"}
-                                            </div>
-                                        )}
-                                        </div>
 
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 shadow-inner group/db">
-                                                <div className="flex items-center justify-between mb-4">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Cloud Sync</span>
-                                                        <span className="text-sm font-bold text-slate-700">Firestore Database</span>
-                                                    </div>
-                                                    {dbStatus.status !== 'offline-mode' && (
-                                            <button
-                                                onClick={async () => {
-                                                    setIsSyncing(true);
-                                                    if (window.electron) {
-                                                        const status = await window.electron.invoke('sync-songs');
-                                                        setDbStatus(status);
-                                                    }
-                                                    setTimeout(() => setIsSyncing(false), 800);
-                                                }}
-                                                disabled={isSyncing}
-                                                className={clsx(
-                                                    "w-10 h-10 flex items-center justify-center rounded-2xl transition-all",
-                                                    isSyncing ? "bg-indigo-50 text-indigo-400 rotate-180" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white shadow-sm hover:shadow-indigo-500/30"
-                                                )}
-                                                title="Force Cloud Sync"
-                                            >
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                            </button>
-                                        )}
-                                                </div>
-                                                <p className="text-[10px] text-slate-400 italic">Push local changes and pull updates from the cloud.</p>
-                                            </div>
-
-                                            <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 shadow-inner group/rec">
-                                                <div className="flex items-center justify-between mb-4">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status Check</span>
-                                                        <span className="text-sm font-bold text-slate-700">Connection Health</span>
-                                                    </div>
-                                                    <Tooltip text="Verify connection to Firebase">
-                                                        <button
-                                                            onClick={async () => {
-                                                                const status = await window.electron.invoke('get-db-status');
-                                                                setDbStatus(status);
-                                                                setCustomAlert(status.status === 'connected' ? "Connection verified!" : "Unable to reach database.");
-                                                            }}
-                                                            className="px-4 py-2 bg-white hover:bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100 shadow-sm transition-all active:scale-95 text-[10px] font-bold uppercase tracking-widest group-hover/rec:shadow-md"
-                                                        >
-                                                            Reconnect
-                                                        </button>
-                                                    </Tooltip>
-                                                </div>
-                                                <p className="text-[10px] text-slate-400 italic">Verify your connection to the Firebase services.</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    )}
 
                                     {/* 3. Mobile & Remote Card */}
                                     <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 flex flex-col gap-8 relative group">
@@ -1821,7 +1581,7 @@ function App() {
                                                     </div>
                                                     <h3 className="text-xl font-bold text-slate-800 tracking-tight">Mobile Remote Control</h3>
                                                 </div>
-                                                <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">Control LyriX Stage seamlessly from your smartphone! Navigate to the address below in your web browser.</p>
+                                                <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic truncate">Control LyriX from your phone. Scan QR to connect.</p>
                                             </div>
                                             <div className={clsx(
                                                 "px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 border shadow-sm transition-all duration-500",
@@ -1837,45 +1597,49 @@ function App() {
                                             </div>
                                         </div>
 
-                                        <div className={clsx(
-                                            "grid grid-cols-1 gap-8 items-center bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100/50 shadow-inner",
-                                            dbStatus.status === 'offline-mode' ? "lg:grid-cols-1" : "lg:grid-cols-2"
-                                        )}>
-                                            <div className={clsx("flex items-center gap-6", dbStatus.status === 'offline-mode' && "justify-center")}>
-                                                <div className="bg-white p-3 rounded-2xl shadow-lg border border-slate-100">
+                                        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-center bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100/50 shadow-inner">
+                                            <div className="flex items-center gap-6 xl:col-span-6">
+                                                <div className="bg-white p-3 rounded-2xl shadow-lg border border-slate-100 shrink-0">
                                                     <QRCode value={`http://${ip}:3001`} size={110} level="M" fgColor="#1e293b" />
                                                 </div>
-                                                <div className={clsx("space-y-4", dbStatus.status !== 'offline-mode' && "flex-1")}>
+                                                <div className="space-y-4 flex-1 min-w-0">
                                                     <div className="space-y-1">
-                                                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Server Address</label>
-                                                        <div className="text-base font-bold text-slate-800 tracking-tight font-mono break-all leading-tight italic opacity-90">http://{ip}:3001</div>
-                                                        <div className="text-[10px] text-slate-400 italic">Scan QR code with your phone's camera</div>
+                                                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Connection Address</label>
+                                                        <div className="text-base font-bold text-slate-800 tracking-tight font-mono break-all leading-tight italic opacity-90 truncate">http://{ip}:3001</div>
+                                                        <div className="text-[10px] text-slate-400 italic">Scan this QR code from inside LyriX Remote</div>
                                                     </div>
                                                     <div className="flex items-center gap-2">
-                                                        <button onClick={async () => { const newStatus = await window.electron.invoke('refresh-ip'); setIp(newStatus.ip); setStatus(newStatus.status); }} className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-[10px] font-bold border border-slate-200 transition-all shadow-sm active:scale-95 flex items-center gap-1.5"><RefreshIcon className="w-3.5 h-3.5" /> Refresh</button>
-                                                        <div className="text-[10px] font-bold text-slate-400 bg-white/80 border border-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm">
+                                                        <button onClick={async () => { const newStatus = await window.electron.invoke('refresh-ip'); setIp(newStatus.ip); setStatus(newStatus.status); }} className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-[10px] font-bold border border-slate-200 transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"><RefreshIcon className="w-3.5 h-3.5" /> Refresh</button>
+                                                        <div className="text-[10px] font-bold text-slate-400 bg-white/80 border border-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm shrink-0">
                                                             <div className={clsx("w-1.5 h-1.5 rounded-full animate-pulse", connections > 0 ? "bg-emerald-500" : "bg-blue-500")}></div>
-                                                            <strong>{connections} / {maxRemoteDevices}</strong> <span className="opacity-50 italic uppercase text-[9px]">Devices</span>
+                                                            <strong>{connections}</strong> <span className="opacity-50 italic uppercase text-[9px]">{connections === 1 ? 'Device' : 'Devices'}</span>
                                                         </div>
                                                     </div>
                                                 </div>
                                             </div>
 
-                                            {dbStatus.status !== 'offline-mode' && (
-                                                <div className="border-t lg:border-t-0 lg:border-l border-slate-200/50 pt-6 lg:pt-0 lg:pl-10 h-full flex flex-col justify-center">
-                                                    <div className="flex items-center gap-4 mb-4">
-                                                        <div className="w-10 h-10 bg-indigo-50 text-indigo-500 rounded-xl flex items-center justify-center shadow-inner">
-                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 0l-2-2m2 2l2-2" /></svg>
-                                                        </div>
-                                                        <h4 className="font-bold text-slate-800 tracking-tight">Mobile App Download</h4>
+                                            <div className="border-t xl:border-t-0 xl:border-l border-slate-200/50 pt-6 xl:pt-0 xl:pl-8 h-full flex flex-col xl:col-span-3">
+                                                <div className="flex items-center gap-4 mb-4">
+                                                    <div className="w-10 h-10 bg-emerald-50 text-emerald-500 rounded-xl flex items-center justify-center shadow-inner shrink-0">
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
                                                     </div>
-                                                    <p className="text-[10px] text-slate-400 italic leading-relaxed mb-4">Download the APK directly to manage your song library from anywhere!</p>
-                                                    <div className="flex gap-2">
-                                                        <button onClick={() => setShowMobileDownloadQR(true)} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-widest">Show QR Code</button>
-                                                        <button onClick={() => window.electron.invoke('open-url', 'https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/latest/download/LyriX-Mobile.apk')} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-bold transition-all active:scale-95 uppercase tracking-widest border border-slate-200">Download APK</button>
-                                                    </div>
+                                                    <h4 className="font-bold text-slate-800 tracking-tight">Stage Viewer</h4>
                                                 </div>
-                                            )}
+                                                <p className="text-[10px] text-slate-400 italic leading-relaxed mb-4 text-left">Live stage lyrics for your musicians.</p>
+                                                <button onClick={() => setShowViewerQR(true)} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-widest shrink-0 mt-auto">Show QR Code</button>
+                                            </div>
+
+                                            <div className="border-t xl:border-t-0 xl:border-l border-slate-200/50 pt-6 xl:pt-0 xl:pl-8 h-full flex flex-col xl:col-span-3">
+                                                <div className="flex items-center gap-4 mb-4">
+                                                    <div className="w-10 h-10 bg-indigo-50 text-indigo-500 rounded-xl flex items-center justify-center shadow-inner shrink-0">
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 0l-2-2m2 2l2-2" /></svg>
+                                                    </div>
+                                                    <h4 className="font-bold text-slate-800 tracking-tight">LyriX Mobile</h4>
+                                                </div>
+                                                <p className="text-[10px] text-slate-400 italic leading-relaxed mb-4 text-left">Scan QR to download LyriX Mobile.</p>
+                                                <button onClick={() => setShowMobileDownloadQR(true)} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-widest shrink-0 mt-auto">Show QR Code</button>
+                                            </div>
+
                                         </div>
                                     </div>
 
@@ -1886,9 +1650,9 @@ function App() {
                                                 <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner">
                                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
                                                 </div>
-                                                <h3 className="text-xl font-bold text-slate-800 tracking-tight">Visible Library Categories</h3>
+                                                <h3 className="text-xl font-bold text-slate-800 tracking-tight">Library Categories</h3>
                                             </div>
-                                            <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">Select which categories appear as tabs in the Song Library.</p>
+                                            <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic truncate">Select which categories appear as tabs in the Library.</p>
                                         </div>
                                         <div className="flex flex-wrap gap-3 pt-2">
                                             {allCategories.map(cat => {
@@ -1924,7 +1688,7 @@ function App() {
                                                 </div>
                                                 <h3 className="text-xl font-bold text-slate-800 tracking-tight">Projector Styling</h3>
                                             </div>
-                                            <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic">Customize how lyrics appear on the big screen! These changes update instantly in the live projector window.</p>
+                                            <p className="text-slate-500 text-sm max-w-xl leading-relaxed italic truncate">Customize lyrics appearance on the big screen.</p>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mt-6">
@@ -2058,7 +1822,7 @@ function App() {
                                                         <span className="w-8 h-px bg-slate-200"></span>
                                                         Preferences
                                                     </h4>
-                                                    <div className="space-y-3">
+                                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                                                         <div className="space-y-2">
                                                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Default Category</label>
                                                             <CustomSelect
@@ -2080,6 +1844,33 @@ function App() {
                                                                 className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 focus:bg-white focus:border-indigo-500 transition-all shadow-inner italic"
                                                             />
                                                         </div>
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Primary Bible Language</label>
+                                                            <CustomSelect
+                                                                value={biblePrimaryLang}
+                                                                onChange={(e) => setBiblePrimaryLang(e.target.value)}
+                                                                options={[
+                                                                    { value: "KJV", label: "English (KJV)" },
+                                                                    { value: "HINDI", label: "Hindi (BSI)" },
+                                                                    { value: "TELUGU", label: "Telugu (Community)" }
+                                                                ]}
+                                                                className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 focus:bg-white focus:border-indigo-500 transition-all shadow-inner italic"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Secondary Bible Language</label>
+                                                            <CustomSelect
+                                                                value={bibleSecondaryLang}
+                                                                onChange={(e) => setBibleSecondaryLang(e.target.value)}
+                                                                options={[
+                                                                    { value: "NONE", label: "None (Single Language)" },
+                                                                    { value: "KJV", label: "English (KJV)" },
+                                                                    { value: "HINDI", label: "Hindi (BSI)" },
+                                                                    { value: "TELUGU", label: "Telugu (Community)" }
+                                                                ]}
+                                                                className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold text-slate-600 focus:bg-white focus:border-indigo-500 transition-all shadow-inner italic"
+                                                            />
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -2089,40 +1880,30 @@ function App() {
                                                         <span className="w-8 h-px bg-slate-200"></span>
                                                         System Toggles
                                                     </h4>
-                                                    <div className="grid grid-cols-1 gap-3">
-                                                        <label className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl cursor-pointer hover:bg-white hover:border-indigo-100 transition-all shadow-inner group/tog">
-                                                            <div className="flex flex-col">
-                                                                <span className="font-bold text-slate-700 text-sm group-hover/tog:text-indigo-600 transition-colors">Auto-Format Lyrics</span>
-                                                                <span className="text-[10px] text-slate-400 italic">Format pasted text into stanzas.</span>
-                                                            </div>
-                                                            <div className="relative w-10 h-5 shrink-0">
-                                                                <input type="checkbox" checked={autoFormat} onChange={(e) => setAutoFormat(e.target.checked)} className="peer sr-only" id="tog-auto" />
-                                                                <label htmlFor="tog-auto" className="block w-10 h-5 bg-slate-200 rounded-full cursor-pointer transition-colors peer-checked:bg-indigo-600"></label>
-                                                                <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-5 shadow-sm"></div>
-                                                            </div>
-                                                        </label>
-                                                        <label className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl cursor-pointer hover:bg-white hover:border-indigo-100 transition-all shadow-inner group/tog">
-                                                            <div className="flex flex-col">
-                                                                <span className="font-bold text-slate-700 text-sm group-hover/tog:text-indigo-600 transition-colors">Auto-Project Bible</span>
-                                                                <span className="text-[10px] text-slate-400 italic">Project verse immediately on click.</span>
-                                                            </div>
-                                                            <div className="relative w-10 h-5 shrink-0">
-                                                                <input type="checkbox" checked={autoProjectBible} onChange={(e) => setAutoProjectBible(e.target.checked)} className="peer sr-only" id="tog-bible" />
-                                                                <label htmlFor="tog-bible" className="block w-10 h-5 bg-slate-200 rounded-full cursor-pointer transition-colors peer-checked:bg-indigo-600"></label>
-                                                                <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-5 shadow-sm"></div>
-                                                            </div>
-                                                        </label>
-                                                        <label className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl cursor-pointer hover:bg-white hover:border-indigo-100 transition-all shadow-inner group/tog">
-                                                            <div className="flex flex-col">
-                                                                <span className="font-bold text-slate-700 text-sm group-hover/tog:text-indigo-600 transition-colors">Application Controls</span>
-                                                                <span className="text-[10px] text-slate-400 italic">Show developer & system tools.</span>
-                                                            </div>
-                                                            <div className="relative w-10 h-5 shrink-0">
-                                                                <input type="checkbox" checked={showAppControls} onChange={(e) => setShowAppControls(e.target.checked)} className="peer sr-only" id="tog-controls" />
-                                                                <label htmlFor="tog-controls" className="block w-10 h-5 bg-slate-200 rounded-full cursor-pointer transition-colors peer-checked:bg-indigo-600"></label>
-                                                                <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-5 shadow-sm"></div>
-                                                            </div>
-                                                        </label>
+                                                    <div className="grid grid-cols-1 gap-4">
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Auto-Format Lyrics</label>
+                                                            <label className="w-full px-4 py-[13px] bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between shadow-inner cursor-pointer hover:bg-white hover:border-indigo-100 transition-all group/tog">
+                                                                <span className="text-[11px] font-bold text-slate-600 italic transition-colors">Format pasted text into stanzas.</span>
+                                                                <div className="relative w-10 h-5 shrink-0">
+                                                                    <input type="checkbox" checked={autoFormat} onChange={(e) => setAutoFormat(e.target.checked)} className="peer sr-only" id="tog-auto" />
+                                                                    <label htmlFor="tog-auto" className="block w-10 h-5 bg-slate-200 rounded-full cursor-pointer transition-colors peer-checked:bg-indigo-600"></label>
+                                                                    <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-5 shadow-sm"></div>
+                                                                </div>
+                                                            </label>
+                                                        </div>
+
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Application Controls</label>
+                                                            <label className="w-full px-4 py-[13px] bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between shadow-inner cursor-pointer hover:bg-white hover:border-indigo-100 transition-all group/tog">
+                                                                <span className="text-[11px] font-bold text-slate-600 italic transition-colors">Show developer & system tools.</span>
+                                                                <div className="relative w-10 h-5 shrink-0">
+                                                                    <input type="checkbox" checked={showAppControls} onChange={(e) => setShowAppControls(e.target.checked)} className="peer sr-only" id="tog-controls" />
+                                                                    <label htmlFor="tog-controls" className="block w-10 h-5 bg-slate-200 rounded-full cursor-pointer transition-colors peer-checked:bg-indigo-600"></label>
+                                                                    <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-5 shadow-sm"></div>
+                                                                </div>
+                                                            </label>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -2186,99 +1967,32 @@ function App() {
                                             </div>
                                         </div>
                                     )}
+
                                     {/* 7. Version & Updates Card */}
                                     <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 relative group mb-8">
                                         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-12 h-12 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-center shadow-inner">
+                                                <div className="w-12 h-12 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-center shadow-inner shrink-0">
                                                     <svg className="w-6 h-6 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
                                                 </div>
-                                                <div>
-                                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">LyriX Desktop v{appVersion}</h3>
-                                                    <div className="flex items-center gap-2 h-4">
-                                                        {updateStatus === 'checking' && <span className="text-[11px] font-semibold text-slate-400 animate-pulse italic">Checking for updates...</span>}
-                                                        {updateStatus === 'available' && <span className="text-[11px] font-semibold text-indigo-600 italic">Update Available! Version {updateInfo?.version} is ready.</span>}
-                                                        {(updateStatus === 'not-available' || !updateStatus) && <span className="text-[11px] font-semibold text-slate-400 italic">Your app is up to date.</span>}
-                                                        {updateStatus === 'error' && <span className="text-[11px] font-semibold text-red-500 italic">Error: {updateError || 'Could not check for updates.'}</span>}
-                                                    </div>
+                                                <div className="relative flex items-center">
+                                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 leading-none m-0 pt-0.5">LyriX Desktop v{appVersion}</h3>
                                                 </div>
                                             </div>
                                             <button
                                                 onClick={async () => {
-                                                    setUpdateStatus('checking');
-                                                    try {
-                                                        const res = await window.electron.invoke('check-for-updates');
-                                                        if (!res || !res.updateInfo) setUpdateStatus('not-available');
-                                                    } catch (e) {
-                                                        setUpdateStatus('error');
-                                                        setUpdateError(e.message || 'Check failed');
-                                                    }
+                                                    setCustomAlert('Opening the Microsoft Store. You can check for and install updates directly from the Store page.');
+                                                    await window.electron.invoke('check-for-updates');
                                                 }}
-                                                className={clsx(
-                                                    "px-8 py-3 rounded-2xl text-[11px] font-bold uppercase tracking-widest transition-all shadow-md active:scale-95 border",
-                                                    updateStatus === 'checking' ? "bg-slate-50 text-slate-400 border-slate-200" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
-                                                )}
+                                                className="px-6 py-2.5 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 border border-slate-200"
                                             >
-                                                Check for Updates
+                                                Check Store for Updates
                                             </button>
                                         </div>
-                                        {updateStatus === 'available' && (
-                                            <div className="mt-6 p-4 bg-indigo-50 border border-indigo-100 rounded-2xl flex justify-between items-center animate-fade-in shadow-inner">
-                                                <div className="text-xs font-semibold text-indigo-800 italic">Version {updateInfo?.version} is ready to download!</div>
-                                                <button onClick={() => window.electron.invoke('start-download')} className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-bold shadow-md hover:bg-indigo-700 transition-all uppercase tracking-wider">Download Now</button>
-                                            </div>
-                                        )}
-                                        {updateStatus === 'downloading' && (
-                                            <div className="mt-6 space-y-2.5">
-                                                <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">
-                                                    <span>Downloading Content...</span>
-                                                    <span>{Math.round(updateProgress)}%</span>
-                                                </div>
-                                                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner border border-slate-200/50">
-                                                    <div className="h-full bg-indigo-600 transition-all duration-300" style={{ width: `${updateProgress}%` }}></div>
-                                                </div>
-                                            </div>
-                                        )}
-                                        {updateStatus === 'downloaded' && (
-                                            <div className="mt-6 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex justify-between items-center animate-fade-in shadow-inner">
-                                                <div className="text-xs font-semibold text-emerald-800 italic">Update successfully downloaded. Restart to apply.</div>
-                                                <button onClick={() => window.electron.invoke('install-update')} className="px-5 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-bold shadow-md hover:bg-emerald-700 transition-all uppercase tracking-wider">Restart & Install</button>
-                                            </div>
-                                        )}
+
                                     </div>
 
-                                    {/* 8. Database Management Card */}
-                                    {dbStatus.status !== 'offline-mode' && (
-                                    <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40 relative group mb-8">
-                                        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-12 h-12 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center justify-center shadow-inner">
-                                                    <svg className="w-6 h-6 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
-                                                </div>
-                                                <div>
-                                                    <h3 className="text-lg font-bold text-slate-800 tracking-tight">Database Maintenance</h3>
-                                                    <p className="text-[11px] font-semibold text-slate-400 italic">Safely synchronize your library with the cloud using Last-Write-Wins.</p>
-                                                </div>
-                                            </div>
-                                            <button
-                                                onClick={async () => {
-                                                    setCustomAlert('Starting Deep Sync... Please wait.');
-                                                    try {
-                                                        const res = await window.electron.invoke('sync-songs');
-                                                        setCustomAlert(`Sync Complete! Verified ${res.count} items.`);
-                                                        handleSearch('', activeFilter); // Refresh UI
-                                                    } catch (e) {
-                                                        setCustomAlert('Sync failed. Please check your internet connection.');
-                                                    }
-                                                }}
-                                                className="px-8 py-3 bg-white text-slate-600 border border-slate-200 hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 rounded-2xl text-[11px] font-bold uppercase tracking-widest transition-all shadow-md active:scale-95 flex items-center gap-2"
-                                            >
-                                                <RefreshIcon className="w-3.5 h-3.5" />
-                                                Deep Library Sync
-                                            </button>
-                                        </div>
-                                    </div>
-                                    )}
+
                                 </div>
                             )}
                         </div>
@@ -2293,6 +2007,7 @@ function App() {
                                 <div className="p-4 border-b border-slate-100 space-y-3">
                                     <div className="relative">
                                         <input
+                                            id="globalSearchInput"
                                             type="text"
                                             placeholder="Search..."
                                             className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all italic"
@@ -2379,9 +2094,6 @@ function App() {
                                 onRefresh={() => { fetchSchedule(); setCustomAlert("Schedule synced successfully."); }}
                                 onSelect={(song) => {
                                     selectSong(song);
-                                    if (!isProjectorOpen) {
-                                        handleToggleProjector();
-                                    }
                                 }}
                                 currentSongId={currentSong?.id}
                                 isAdminLoggedIn={isAdminLoggedIn}
@@ -2400,6 +2112,13 @@ function App() {
                             previewMode={previewMode}
                             previewFont={previewFont}
                             onDelete={handleDelete}
+                            isProjectorOpen={isProjectorOpen}
+                            onOpenProjector={async () => {
+                                if (!isProjectorOpen && window.electron) {
+                                    const isOpen = await window.electron.invoke('open-projector-window');
+                                    if (isOpen) setIsProjectorOpen(true);
+                                }
+                            }}
                             isFavourite={currentSong && favourites.includes(currentSong.id)}
                             onToggleFavourite={() => {
                                 if (!currentSong) return;
@@ -2515,11 +2234,11 @@ function App() {
                                                 if (e.key === 'Enter') {
                                                     const valid = await window.electron.invoke('verify-admin', adminVerifyPrompt.username, adminVerifyPassword);
                                                     if (valid) {
-                                                        await adminVerifyPrompt.onVerify();
+                                                        const onVerifyFn = adminVerifyPrompt.onVerify;
                                                         setAdminVerifyPrompt(null);
                                                         setAdminVerifyPassword('');
                                                         setAdminVerifyError('');
-                                                        setCustomAlert('Action authorized.');
+                                                        await onVerifyFn();
                                                     } else {
                                                         setAdminVerifyError('Incorrect password. Please try again.');
                                                     }
@@ -2546,11 +2265,11 @@ function App() {
                                         onClick={async () => {
                                             const valid = await window.electron.invoke('verify-admin', adminVerifyPrompt.username, adminVerifyPassword);
                                             if (valid) {
-                                                await adminVerifyPrompt.onVerify();
+                                                const onVerifyFn = adminVerifyPrompt.onVerify;
                                                 setAdminVerifyPrompt(null);
                                                 setAdminVerifyPassword('');
                                                 setAdminVerifyError('');
-                                                setCustomAlert('Action authorized.');
+                                                await onVerifyFn();
                                             } else {
                                                 setAdminVerifyError('Incorrect password. Please try again.');
                                             }
@@ -2565,48 +2284,6 @@ function App() {
                     )
                 }
 
-                {/* Rollback Prompt Modal */}
-                {
-                    rollbackPrompt && (
-                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-[2rem] shadow-2xl p-8 max-w-md w-full animate-in fade-in zoom-in duration-200 border border-slate-100">
-                                <div className="flex flex-col items-center text-center">
-                                    <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-6 shadow-inner relative overflow-hidden">
-                                        <div className="absolute inset-0 bg-red-100 animate-pulse"></div>
-                                        <svg className="w-8 h-8 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                                    </div>
-                                    <h3 className="text-xl font-bold text-slate-800 mb-2">Confirm System Rollback</h3>
-                                    <p className="text-sm text-slate-500 leading-relaxed italic mb-8">
-                                        Are you absolutely sure you want to downgrade the application to <strong className="text-slate-800 font-black">{rollbackPrompt.tag}</strong>? 
-                                        This will immediately download the older version and forcefully restart LyriX. Your library data will remain safe.
-                                    </p>
-                                    
-                                    <div className="grid grid-cols-2 gap-3 w-full">
-                                        <button
-                                            onClick={() => setRollbackPrompt(null)}
-                                            className="py-3 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-sm font-bold transition-all"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            onClick={async () => {
-                                                const url = rollbackPrompt.url;
-                                                const tag = rollbackPrompt.tag;
-                                                setRollbackPrompt(null);
-                                                setCustomAlert(`Starting Rollback to ${tag}... Downloading...`);
-                                                const res = await window.electron.invoke('trigger-rollback', url);
-                                                if (res && !res.success) setCustomAlert("Rollback failed: " + res.error);
-                                            }}
-                                            className="py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/30 transition-all active:scale-[0.98]"
-                                        >
-                                            Downgrade App
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )
-                }
 
                 {/* Custom Alert Modal */}
                 {
@@ -2710,11 +2387,17 @@ function App() {
                     showAdminLoginModal && (
                         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-[150] flex items-center justify-center p-4">
                             <div className="bg-white rounded-[2rem] shadow-2xl p-6 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col">
-                                <div className="flex items-center gap-3 mb-6">
-                                    <div className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-inner">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="w-10 h-10 shrink-0 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-inner">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                                     </div>
                                     <h3 className="text-xl font-black text-slate-800 italic">Admin Login</h3>
+                                </div>
+                                <div className="mb-6">
+                                    <p className="text-[11px] text-amber-700 bg-amber-50 px-4 py-2.5 rounded-xl font-medium shadow-inner border border-amber-100/50 leading-relaxed">
+                                        <strong className="text-amber-800 uppercase tracking-widest text-[9px] mr-1">Hint:</strong> 
+                                        Default username <code className="font-bold bg-amber-100/50 px-1 py-0.5 rounded">admin</code> and password <code className="font-bold bg-amber-100/50 px-1 py-0.5 rounded">admin</code>
+                                    </p>
                                 </div>
 
                                 <div className="space-y-4">
@@ -2789,34 +2472,6 @@ function App() {
                     )
                 }
 
-                {
-                    showCloseConfirm && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center text-center">
-                                <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-3xl flex items-center justify-center shadow-inner mb-6 animate-bounce-subtle">
-                                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                                </div>
-                                <h3 className="text-2xl font-black text-slate-800 mb-2">Wait a moment!</h3>
-                                <p className="text-slate-500 leading-relaxed mb-8 italic">Are you sure you want to close the application?</p>
-
-                                <div className="flex flex-col w-full gap-3">
-                                    <button
-                                        onClick={() => setShowCloseConfirm(false)}
-                                        className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl text-sm font-bold transition-all active:scale-95"
-                                    >
-                                        Stay Here
-                                    </button>
-                                    <button
-                                        onClick={() => window.electron.invoke('exit-app')}
-                                        className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-sm font-bold shadow-xl shadow-rose-500/30 transition-all active:scale-95"
-                                    >
-                                        Exit Now
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )
-                }
 
                 {/* First Launch Welcome Modal (Multi-step) */}
                 {
@@ -2828,7 +2483,7 @@ function App() {
 
                                     {welcomeStep === 1 && (
                                         <div className="animate-fade-in">
-                                            <img src="./icon.ico" className="w-16 h-16 mx-auto mb-4 drop-shadow-md relative z-10" alt="LyriX Logo" />
+                                            <img src="./icon.png" className="w-16 h-16 mx-auto mb-4 drop-shadow-md relative z-10" alt="LyriX Logo" />
                                             <h2 className="text-2xl font-bold text-slate-800 relative z-10">Welcome to LyriX Stage!</h2>
                                             <p className="text-sm text-slate-500 mt-2 relative z-10">Let's set up your profile to get started.</p>
                                         </div>
@@ -2958,14 +2613,14 @@ function App() {
                                     {welcomeStep === 4 && (
                                         <div className="animate-fade-in h-full flex flex-col">
                                             <div className="space-y-3 text-slate-600 text-sm flex-1">
-                                                <p>You can control the live lyrics right from your smartphone!</p>
+                                                <p>You can control the live lyrics right from your smartphone using our official Android app!</p>
                                                 <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
                                                     <div className="mt-0.5 text-purple-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></div>
-                                                    <div><strong className="text-slate-800">Finding the Link:</strong> Go to the <strong>Settings</strong> tab and scroll down to the "Mobile Remote Control" section.</div>
+                                                    <div><strong className="text-slate-800">Download the App:</strong> Search for <strong>"LyriX Remote"</strong> on the Google Play Store, or scan the QR code located in the <strong>Settings</strong> tab.</div>
                                                 </div>
                                                 <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
                                                     <div className="mt-0.5 text-purple-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg></div>
-                                                    <div><strong className="text-slate-800">Scan & Go:</strong> Scan the QR code with your phone camera! Make sure your PC and phone are on the same Wi-Fi network.</div>
+                                                    <div><strong className="text-slate-800">Scan to Connect:</strong> Open LyriX Remote on your phone and tap the QR scanner to scan the connection code in the <strong>Settings</strong> tab! Ensure both devices are on the same Wi-Fi network.</div>
                                                 </div>
                                             </div>
                                             <div className="flex gap-3 mt-auto pt-4">
@@ -2978,14 +2633,14 @@ function App() {
                                     {welcomeStep === 5 && (
                                         <div className="animate-fade-in h-full flex flex-col">
                                             <div className="space-y-3 text-slate-600 text-sm flex-1">
-                                                <p>Our most powerful feature: The entire Sunday Service schedule syncs in real-time with the Mobile Web Remote!</p>
+                                                <p>Our most powerful feature: The entire Sunday Service schedule syncs in real-time with the official Android App!</p>
                                                 <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
                                                     <div className="mt-0.5 text-emerald-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg></div>
-                                                    <div><strong className="text-slate-800">Add from anywhere:</strong> The worship leader can open the Remote App on their phone, search the library, and add songs directly to the main computer's schedule without touching the PC!</div>
+                                                    <div><strong className="text-slate-800">Add from anywhere:</strong> The worship leader can open the LyriX Remote app on their phone, search the library, and add songs directly to the main computer's schedule instantly!</div>
                                                 </div>
                                                 <div className="flex gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
                                                     <div className="mt-0.5 text-emerald-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></div>
-                                                    <div><strong className="text-slate-800">Instant Sync:</strong> As soon as a song is scheduled from the phone, the tech strictly needs to click <kbd className="bg-white border border-slate-200 rounded px-1.5 py-0.5 shadow-sm text-xs">&rarr;</kbd> to go live.</div>
+                                                    <div><strong className="text-slate-800">Seamless Sync:</strong> When a song is scheduled from the phone, the tech at the computer strictly needs to tap <kbd className="bg-white border border-slate-200 rounded px-1.5 py-0.5 shadow-sm text-xs">&rarr;</kbd> to start projecting the lyrics live.</div>
                                                 </div>
                                             </div>
                                             <div className="flex gap-3 mt-auto pt-4">
@@ -3009,16 +2664,74 @@ function App() {
                     )
                 }
 
+                {/* Custom Bible Import Modal */}
+                {
+                    showCustomBibleModal && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center">
+                                <h3 className="text-xl font-bold text-slate-800 mb-2">Import Custom Bible</h3>
+                                <p className="text-sm text-slate-500 text-center mb-6 italic px-2">Provide a name for this translation and select a JSON database file.</p>
+
+                                <div className="w-full flex flex-col gap-4 mb-8">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-1 block">Translation Name</label>
+                                        <input
+                                            type="text"
+                                            value={customBibleName}
+                                            onChange={(e) => setCustomBibleName(e.target.value.toUpperCase())}
+                                            placeholder="e.g. MALAYALAM, TAMIL"
+                                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 uppercase focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={async () => {
+                                            if (!customBibleName.trim()) {
+                                                setCustomAlert("Please enter a translation name first.");
+                                                return;
+                                            }
+                                            const filePath = await window.electron.invoke('dialog:open-file');
+                                            if (filePath) {
+                                                setCustomAlert('Importing Custom Translation...');
+                                                const res = await window.electron.invoke('bible:import-custom', customBibleName, filePath);
+                                                if (res.success) {
+                                                    setCustomAlert(`Successfully imported ${customBibleName}!`);
+                                                    const books = await window.electron.invoke('bible:get-books');
+                                                    setBibleBooks(books);
+                                                    setShowCustomBibleModal(false);
+                                                } else {
+                                                    setCustomAlert('Import failed: ' + res.error);
+                                                }
+                                            }
+                                        }}
+                                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[11px] font-bold uppercase tracking-widest shadow-md transition-all active:scale-95"
+                                    >
+                                        Select JSON File
+                                    </button>
+                                </div>
+
+                                <div className="flex flex-col w-full gap-3">
+                                    <button
+                                        onClick={() => setShowCustomBibleModal(false)}
+                                        className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-bold transition-all"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                }
+
                 {/* Mobile App Download QR Modal */}
                 {
                     showMobileDownloadQR && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex items-center justify-center p-4">
                             <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center">
-                                <h3 className="text-2xl font-black text-slate-800 mb-2">Download Mobile App</h3>
-                                <p className="text-sm text-slate-500 text-center mb-8 italic px-4">Scan this QR code with your phone to jump straight to the direct APK download.</p>
+                                <h3 className="text-xl font-bold text-slate-800 mb-2">Get LyriX Mobile</h3>
+                                <p className="text-sm text-slate-500 text-center mb-8 italic px-4">Scan this QR code with your phone to download the official mobile app from the Play Store.</p>
 
-                                <div className="bg-white p-6 border-4 border-slate-50 rounded-[2rem] shadow-inner mb-8">
-                                    <QRCode value={`https://github.com/justforaitoolz-ops/LyriX-Church-System/releases/download/v${appVersion}/LyriX-Mobile.apk`} size={200} level="M" />
+                                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/50 flex justify-center mb-8">
+                                    <QRCode value={PLAYSTORE_LINK} size={200} level="M" />
                                 </div>
 
                                 <div className="flex flex-col w-full gap-3">
@@ -3034,24 +2747,52 @@ function App() {
                     )
                 }
 
-                {/* Confirmation Prompt */}
+                {/* Stage Viewer QR Modal */}
                 {
-                    confirmPrompt && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[250] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center text-center">
-                                <div className={clsx(
-                                    "w-20 h-20 rounded-3xl flex items-center justify-center shadow-inner mb-6",
-                                    confirmPrompt.confirmStyle === 'red' ? "bg-red-50 text-red-500" : "bg-blue-50 text-blue-500"
-                                )}>
-                                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    showViewerQR && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center">
+                                <h3 className="text-xl font-bold text-slate-800 mb-2">Stage Viewer</h3>
+                                <p className="text-sm text-slate-500 text-center mb-8 italic px-4">Scan this QR code to view live stage lyrics on your browser.</p>
+
+                                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/50 flex justify-center mb-4">
+                                    <QRCode value={`http://${ip}:3001/viewer/`} size={200} level="M" fgColor="#000000" />
                                 </div>
-                                <h3 className="text-2xl font-black text-slate-800 mb-2">{confirmPrompt.title}</h3>
-                                <p className="text-slate-500 leading-relaxed mb-8 italic">{confirmPrompt.message}</p>
+                                <div className="text-sm font-mono text-slate-600 bg-slate-100 px-4 py-2 rounded-xl mb-8 border border-slate-200">
+                                    http://{ip}:3001/viewer/
+                                </div>
 
                                 <div className="flex flex-col w-full gap-3">
                                     <button
+                                        onClick={() => setShowViewerQR(false)}
+                                        className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-bold transition-all"
+                                    >
+                                        Dismiss
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                }
+
+                {/* Confirmation Prompt */}
+                {
+                    confirmPrompt && (
+                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl shadow-xl p-6 max-w-sm w-full animate-fade-in border border-slate-100 flex flex-col items-center text-center">
+                                <div className={clsx(
+                                    "w-16 h-16 rounded-2xl flex items-center justify-center shadow-sm border mb-5",
+                                    confirmPrompt.confirmStyle === 'red' ? "bg-red-50 text-red-500 border-red-100" : "bg-slate-50 text-indigo-500 border-slate-100"
+                                )}>
+                                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                </div>
+                                <h3 className="text-xl font-bold text-slate-800 mb-2">{confirmPrompt.title}</h3>
+                                <p className="text-slate-500 text-sm mb-6">{confirmPrompt.message}</p>
+
+                                <div className="flex w-full gap-3">
+                                    <button
                                         onClick={() => setConfirmPrompt(null)}
-                                        className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                                        className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition-all"
                                     >
                                         Cancel
                                     </button>
@@ -3061,8 +2802,8 @@ function App() {
                                             setConfirmPrompt(null);
                                         }}
                                         className={clsx(
-                                            "w-full py-4 text-white rounded-2xl text-sm font-bold shadow-xl transition-all active:scale-95",
-                                            confirmPrompt.confirmStyle === 'red' ? "bg-red-600 hover:bg-red-700 shadow-red-500/30" : "bg-blue-600 hover:bg-blue-700 shadow-blue-500/30"
+                                            "flex-1 py-3 px-4 text-white rounded-xl text-sm font-bold shadow-md transition-all",
+                                            confirmPrompt.confirmStyle === 'red' ? "bg-red-600 hover:bg-red-700 shadow-red-500/20" : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20"
                                         )}
                                     >
                                         {confirmPrompt.confirmText || 'Confirm'}
@@ -3106,14 +2847,18 @@ function App() {
                 {/* Keyboard Shortcuts Modal */}
                 {showShortcutsModal && (
                     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[300] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 max-w-md w-full animate-fade-in border border-slate-100 flex flex-col">
-                            <div className="flex justify-between items-center mb-6">
+                        <div className="bg-white rounded-[2.5rem] shadow-2xl p-6 md:p-8 max-w-3xl w-full max-h-[90vh] animate-fade-in border border-slate-100 flex flex-col">
+                            <div className="flex justify-between items-center mb-6 shrink-0">
                                 <h3 className="text-2xl font-black text-slate-800">Keyboard Shortcuts</h3>
                                 <button onClick={() => setShowShortcutsModal(false)} className="p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-slate-200 transition-colors">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
                                 </button>
                             </div>
-                            <div className="space-y-3 mb-8">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 overflow-y-auto pr-2 custom-scrollbar">
+                                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                                    <span className="font-bold text-slate-700 text-sm">Universal Search</span>
+                                    <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-500 shadow-sm">Ctrl + K</span>
+                                </div>
                                 <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
                                     <span className="font-bold text-slate-700 text-sm">Blank / Unblank Screen</span>
                                     <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-500 shadow-sm">B</span>
@@ -3131,11 +2876,17 @@ function App() {
                                     <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-500 shadow-sm">Spacebar</span>
                                 </div>
                                 <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                                    <span className="font-bold text-slate-700 text-sm">Delete Selected Song</span>
+                                    <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-500 shadow-sm">Delete</span>
+                                </div>
+                                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
                                     <span className="font-bold text-slate-700 text-sm">Close Projector Window</span>
                                     <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-500 shadow-sm">Esc</span>
                                 </div>
                             </div>
-                            <button onClick={() => setShowShortcutsModal(false)} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-bold shadow-xl shadow-indigo-500/30 transition-all active:scale-95">Got It</button>
+                            <div className="shrink-0 mt-auto">
+                                <button onClick={() => setShowShortcutsModal(false)} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-bold shadow-xl shadow-indigo-500/30 transition-all active:scale-95">Got It</button>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -3257,13 +3008,9 @@ function MediaSection({ setStatus, setAdminVerifyPrompt, setIsBlack }) {
             if (e.code === 'Space') {
                 e.preventDefault();
                 handlePauseResume();
-            } else if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                handleSkip(-10);
-            } else if (e.key === 'ArrowRight') {
-                e.preventDefault();
-                handleSkip(10);
             }
+            // Only handle arrow keys for media skip when on the Media tab
+            // to prevent conflict with Song slide nav and Bible verse nav
         };
         window.addEventListener('keydown', handleMediaKeyDown);
         return () => window.removeEventListener('keydown', handleMediaKeyDown);
@@ -3585,7 +3332,7 @@ function MediaSection({ setStatus, setAdminVerifyPrompt, setIsBlack }) {
     );
 }
 
-function BibleSection({ activeTab, setStatus, isProjectorOpen, setIsProjectorOpen, bibleBooks, selectedBook, setSelectedBook, selectedChapter, setSelectedChapter, selectedVerse, setSelectedVerse, verses, setVerses, chaptersCount, setChaptersCount, setupStatus, setSetupStatus, setupProgress, setBibleBooks, autoProjectBible }) {
+function BibleSection({ activeTab, setStatus, isProjectorOpen, setIsProjectorOpen, bibleBooks, selectedBook, setSelectedBook, selectedChapter, setSelectedChapter, selectedVerse, setSelectedVerse, verses, setVerses, chaptersCount, setChaptersCount, setupStatus, setSetupStatus, setupProgress, setBibleBooks, autoProjectBible, biblePrimaryLang, setBiblePrimaryLang, bibleSecondaryLang, setBibleSecondaryLang }) {
 
     const [searchQuery, setSearchQuery] = useState('');
     const [selectorMode, setSelectorMode] = useState('book'); // book, chapter, verse
@@ -3595,6 +3342,7 @@ function BibleSection({ activeTab, setStatus, isProjectorOpen, setIsProjectorOpe
     const [rangeEnd, setRangeEnd] = useState('');
     const [testamentFilter, setTestamentFilter] = useState('OT'); // 'OT' or 'NT'
     const [pendingProjectVerse, setPendingProjectVerse] = useState(null);
+    const [projectedReference, setProjectedReference] = useState(null);
 
     // Unified Search State
     const [searchMode, setSearchMode] = useState('jump'); // 'jump' or 'text'
@@ -3628,7 +3376,8 @@ function BibleSection({ activeTab, setStatus, isProjectorOpen, setIsProjectorOpe
             const fetchVerses = async () => {
                 const kjv = await window.electron.invoke('bible:get-verses', 'KJV', selectedBook.id, selectedChapter);
                 const hindi = await window.electron.invoke('bible:get-verses', 'HINDI', selectedBook.id, selectedChapter);
-                setVerses({ KJV: kjv, HINDI: hindi });
+                const telugu = await window.electron.invoke('bible:get-verses', 'TELUGU', selectedBook.id, selectedChapter);
+                setVerses({ KJV: kjv, HINDI: hindi, TELUGU: telugu });
             };
             fetchVerses();
         }
@@ -3646,27 +3395,41 @@ function BibleSection({ activeTab, setStatus, isProjectorOpen, setIsProjectorOpe
         }
     }, [selectedVerse, verses]);
 
-    const handleProject = (vNum, forceProject = false) => {
+    const handleProject = async (vNum) => {
         setSelectedVerse(vNum);
-        if (!forceProject && !autoProjectBible) return;
+        setProjectedReference(`${selectedBook.id}-${selectedChapter}-${vNum}`);
 
-        const rawKjv = verses.KJV.find(v => v.verse === vNum)?.text || '';
+        const rawKjv = verses.KJV?.find(v => v.verse === vNum)?.text || '';
         const kjvVerse = cleanBibleText(rawKjv);
-        const hindiVerse = verses.HINDI.find(v => v.verse === vNum)?.text || '';
+        const hindiVerse = verses.HINDI?.find(v => v.verse === vNum)?.text || '';
+        const teluguVerse = verses.TELUGU?.find(v => v.verse === vNum)?.text || '';
 
-        window.electron.invoke('projector-sync', {
+        const getLangText = (lang) => {
+            if (lang === 'KJV') return kjvVerse;
+            if (lang === 'HINDI') return hindiVerse;
+            if (lang === 'TELUGU') return teluguVerse;
+            return '';
+        };
+
+        const primaryText = getLangText(biblePrimaryLang);
+        const secondaryText = getLangText(bibleSecondaryLang);
+
+        // MUST await sync before opening projector — ensures lastSlide is cleared
+        // and lastBibleVerse is stored BEFORE the projector socket connects
+        await window.electron.invoke('projector-sync', {
             type: 'bible-verse',
             content: {
                 reference: `${selectedBook.name} ${selectedChapter}:${vNum}`,
-                primaryText: kjvVerse,
-                secondaryText: hindiVerse
+                primaryText: primaryText,
+                secondaryText: secondaryText,
+                primaryLang: biblePrimaryLang,
+                secondaryLang: bibleSecondaryLang
             }
         });
 
-        // Ensure projector is open (use open-only, never toggle/close)
-        window.electron.invoke('open-projector-window').then(isOpen => {
-            if (isOpen) setIsProjectorOpen(true);
-        });
+        // Now open projector — it will get Bible verse from both did-finish-load and socket
+        const isOpen = await window.electron.invoke('open-projector-window');
+        if (isOpen) setIsProjectorOpen(true);
     };
 
     // Auto-project pending verse when chapters load for Smart Jump
@@ -3676,7 +3439,7 @@ function BibleSection({ activeTab, setStatus, isProjectorOpen, setIsProjectorOpe
                 // Ensure verse actually exists in this chapter before trying to project
                 const verseExists = verses.KJV.some(v => v.verse === pendingProjectVerse.verse);
                 if (verseExists) {
-                    handleProject(pendingProjectVerse.verse, true);
+                    handleProject(pendingProjectVerse.verse);
                 }
                 setPendingProjectVerse(null);
             }
@@ -3863,12 +3626,12 @@ function BibleSection({ activeTab, setStatus, isProjectorOpen, setIsProjectorOpe
             if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
                 e.preventDefault();
                 if (selectedVerse < verses.KJV.length) {
-                    handleProject(selectedVerse + 1, true); // Force project on keyboard nav
+                    handleProject(selectedVerse + 1);
                 }
             } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
                 e.preventDefault();
                 if (selectedVerse > 1) {
-                    handleProject(selectedVerse - 1, true); // Force project on keyboard nav
+                    handleProject(selectedVerse - 1);
                 }
             }
         };
@@ -3991,7 +3754,7 @@ function BibleSection({ activeTab, setStatus, isProjectorOpen, setIsProjectorOpe
                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mr-1 shadow-sm">Navigate Verse</span>
                             <Tooltip text="Prev Verse (Arrow Left/Up)" position="top">
                                 <button
-                                    onClick={() => { if (selectedVerse > 1) handleProject(selectedVerse - 1, true); }}
+                                    onClick={() => { if (selectedVerse > 1) handleProject(selectedVerse - 1); }}
                                     className="p-1.5 bg-white border border-slate-100 rounded-lg hover:bg-slate-50 hover:border-slate-300 text-indigo-500 hover:text-indigo-700 transition-all active:scale-95 shadow-sm"
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
@@ -3999,7 +3762,7 @@ function BibleSection({ activeTab, setStatus, isProjectorOpen, setIsProjectorOpe
                             </Tooltip>
                             <Tooltip text="Next Verse (Arrow Right/Down)" position="top">
                                 <button
-                                    onClick={() => { if (selectedVerse < verses.KJV.length) handleProject(selectedVerse + 1, true); }}
+                                    onClick={() => { if (selectedVerse < verses.KJV.length) handleProject(selectedVerse + 1); }}
                                     className="p-1.5 bg-white border border-slate-100 rounded-lg hover:bg-slate-50 hover:border-slate-300 text-indigo-500 hover:text-indigo-700 transition-all active:scale-95 shadow-sm"
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
@@ -4182,30 +3945,37 @@ function BibleSection({ activeTab, setStatus, isProjectorOpen, setIsProjectorOpe
                                         </div>
 
                                         <div className="space-y-8">
-                                            {verses.KJV.map((v, idx) => (
+                                            {verses.KJV.map((v, idx) => {
+                                                const isProjected = projectedReference === `${selectedBook.id}-${selectedChapter}-${v.verse}`;
+                                                return (
                                                 <div
                                                     key={v.verse}
                                                     ref={el => verseRefs.current[v.verse] = el}
                                                     onClick={() => handleProject(v.verse)}
                                                     className={clsx(
                                                         "group/v p-6 rounded-[2rem] border transition-all cursor-pointer relative",
-                                                        selectedVerse === v.verse ? "bg-indigo-50/50 border-indigo-200 shadow-lg shadow-indigo-100/50 ring-2 ring-indigo-200/50" : "border-transparent hover:bg-slate-50/30"
+                                                        selectedVerse === v.verse ? "bg-indigo-50/50 border-indigo-200 shadow-lg shadow-indigo-100/50 ring-2 ring-indigo-200/50" : "border-transparent hover:bg-slate-50/30",
+                                                        isProjected && "ring-4 ring-indigo-500/30"
                                                     )}
                                                 >
                                                     <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white border border-slate-100 rounded-xl shadow-sm flex items-center justify-center text-[10px] font-black text-slate-400 group-hover/v:text-indigo-600 transition-colors z-10">
                                                         {v.verse}
                                                     </div>
-                                                    <div className="space-y-4 pl-4">
-                                                        <p className="text-slate-600 text-base leading-relaxed font-lyrics italic">{cleanBibleText(v.text)}</p>
-                                                        <p className="text-slate-400 text-sm leading-relaxed font-sans font-medium">{verses.HINDI[idx]?.text}</p>
+                                                    <div className="space-y-4 pl-4 pr-6">
+                                                        {biblePrimaryLang && biblePrimaryLang !== 'NONE' && (
+                                                            <p className="text-slate-600 text-base leading-relaxed font-lyrics italic">{cleanBibleText(verses[biblePrimaryLang]?.find(vx => vx.verse === v.verse)?.text || '')}</p>
+                                                        )}
+                                                        {bibleSecondaryLang && bibleSecondaryLang !== 'NONE' && (
+                                                            <p className="text-slate-400 text-sm leading-relaxed font-sans font-medium">{verses[bibleSecondaryLang]?.find(vx => vx.verse === v.verse)?.text || ''}</p>
+                                                        )}
                                                     </div>
-                                                    {selectedVerse === v.verse && (
+                                                    {isProjected && (
                                                         <div className="absolute top-4 right-6 flex items-center gap-1.5 text-indigo-600 font-black text-[10px] uppercase tracking-widest">
                                                             <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse"></div> Live on Stage
                                                         </div>
                                                     )}
                                                 </div>
-                                            ))}
+                                            )})}
                                         </div>
                                     </div>
                                 )}
@@ -4220,7 +3990,7 @@ function BibleSection({ activeTab, setStatus, isProjectorOpen, setIsProjectorOpe
 
 
 
-function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurrentSlideIndex, isBlack, setIsBlack, previewMode, previewFont, onEdit, onDelete, isFavourite, onToggleFavourite }) {
+function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurrentSlideIndex, isBlack, setIsBlack, previewMode, previewFont, onEdit, onDelete, isFavourite, onToggleFavourite, isProjectorOpen, onOpenProjector }) {
     return (
         <div className="flex-1 flex flex-col bg-slate-50/30 relative min-h-0">
 
@@ -4234,7 +4004,7 @@ function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurren
                                     {slides.map((slide, idx) => (
                                         <div
                                             key={idx}
-                                            onClick={() => setCurrentSlideIndex(idx)}
+                                            onClick={() => { setCurrentSlideIndex(idx); if (onOpenProjector) onOpenProjector(); }}
                                             className={clsx(
                                                 "min-h-[160px] bg-white rounded-xl p-5 border-2 cursor-pointer transition-all flex flex-col group relative overflow-hidden",
                                                 currentSlideIndex === idx
@@ -4339,18 +4109,20 @@ function SongPreviewControls({ currentSong, slides, currentSlideIndex, setCurren
                             Delete
                         </button>
                     </Tooltip>
-                    <Tooltip text={isBlack ? "Turn Projector ON" : "Black out Projector"}>
+                    <Tooltip text={!isProjectorOpen ? "Projector Window is Closed" : isBlack ? "Turn Projector ON" : "Black out Projector"}>
                         <button
                             onClick={() => setIsBlack(!isBlack)}
                             className={clsx(
                                 "flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold transition-all border",
+                                !isProjectorOpen ? "bg-slate-100 text-slate-400 border-slate-200" :
                                 isBlack
-                                    ? "bg-red-100 text-red-600 border-red-200"
-                                    : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                                    ? "bg-red-100 text-red-600 border-red-200 hover:bg-red-200"
+                                    : "bg-indigo-100 text-indigo-600 border-indigo-200 hover:bg-indigo-200"
                             )}
+                            disabled={!isProjectorOpen}
                         >
-                            <div className={clsx("w-2 h-2 rounded-full", isBlack ? "bg-red-500" : "bg-slate-400")}></div>
-                            {isBlack ? 'OFF AIR' : 'LIVE'}
+                            <div className={clsx("w-2 h-2 rounded-full", !isProjectorOpen ? "bg-slate-300" : isBlack ? "bg-red-500" : "bg-indigo-500 animate-pulse")}></div>
+                            {!isProjectorOpen ? 'OFFLINE' : (isBlack ? 'OFF AIR' : 'LIVE')}
                         </button>
                     </Tooltip>
                     <span className="text-xs text-slate-400 italic">

@@ -34,6 +34,15 @@
             touch-action: manipulation;
         }
 
+        /* Hide scrollbars */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+        * {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
         .top-bar {
             width: 100%;
             max-width: 480px;
@@ -101,10 +110,10 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 16px;
-            margin-bottom: 24px;
+            gap: 12px;
+            margin-bottom: 16px;
             background: var(--surface-color);
-            padding: 12px 16px;
+            padding: 8px 16px;
             border-radius: 20px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
             border: 1px solid var(--border-color);
@@ -112,8 +121,8 @@
         }
 
         .logo-container {
-            width: 48px;
-            height: 48px;
+            width: 40px;
+            height: 40px;
             background: linear-gradient(135deg, var(--primary-color), #818cf8);
             border-radius: 50%;
             display: flex;
@@ -126,12 +135,12 @@
         .logo-text {
             color: white;
             font-weight: 800;
-            font-size: 14px;
+            font-size: 12px;
             letter-spacing: -0.5px;
         }
 
         .title {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 800;
             margin: 0;
             color: var(--text-primary);
@@ -148,13 +157,13 @@
             /* dynamics border color based on state, initially offline red */
             border-radius: 20px;
             padding: 16px;
-            margin-bottom: 24px;
+            margin-bottom: 16px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 350px;
+            height: 400px;
             /* fixed height */
             box-sizing: border-box;
             position: relative;
@@ -224,7 +233,7 @@
             gap: 16px;
             width: 100%;
             max-width: 480px;
-            flex: 1;
+            flex-shrink: 0;
             padding-bottom: 20px;
         }
 
@@ -239,7 +248,7 @@
             border: 1px solid var(--border-color);
             border-radius: 20px;
             color: var(--text-primary);
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 700;
             display: flex;
             flex-direction: column;
@@ -250,19 +259,19 @@
             -webkit-tap-highlight-color: transparent;
             user-select: none;
             flex: 1;
-            padding: 20px 12px;
+            padding: 12px 10px;
         }
 
         .btn-icon {
-            font-size: 24px;
-            margin-bottom: 12px;
+            font-size: 20px;
+            margin-bottom: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
             background: rgba(0, 0, 0, 0.03);
             border-radius: 50%;
-            width: 54px;
-            height: 54px;
+            width: 44px;
+            height: 44px;
             transition: all 0.15s ease;
         }
 
@@ -558,6 +567,19 @@
                 Next Slide
             </button>
         </div>
+        
+        <div class="nav-row" style="margin-top: 4px;">
+            <button class="btn" onclick="sendCommand('open-projector')" style="width: 100%; border-color: #6366f1;">
+                <span class="btn-icon" style="color: #6366f1;">
+                    <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                        <line x1="8" y1="21" x2="16" y2="21"/>
+                        <line x1="12" y1="17" x2="12" y2="21"/>
+                    </svg>
+                </span>
+                Wake Screen (Open Projector)
+            </button>
+        </div>
     </div>
 
     <!-- Sidebar for Schedule -->
@@ -583,7 +605,25 @@
     </div>
 
     <script>
-        const socket = io();
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('theme') === 'dark') {
+            document.documentElement.style.setProperty('--bg-color', '#111827');
+            document.documentElement.style.setProperty('--surface-color', '#1f2937');
+            document.documentElement.style.setProperty('--text-primary', '#f8fafc');
+            document.documentElement.style.setProperty('--text-secondary', '#9ca3af');
+            document.documentElement.style.setProperty('--border-color', '#374151');
+            
+            // Fix input colors
+            document.documentElement.style.setProperty('color-scheme', 'dark');
+        }
+        if (urlParams.get('mobile_app') === 'true') {
+            const header = document.querySelector('.header');
+            if(header) header.style.display = 'none';
+        }
+
+        // Connect to the WebSocket server running on the main app
+        const socket = io({ query: { type: 'remote' } });
+
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
 
@@ -635,9 +675,16 @@
             socket.disconnect();
         });
 
-        // Listen for true state changes from the Desktop App
-        socket.on('blank-screen', (serverIsBlack) => {
-            if (serverIsBlack) {
+        let isProjectorOpen = false;
+        let isScreenBlack = false;
+
+        function updateLiveBadge() {
+            if (!isProjectorOpen) {
+                previewContainer.classList.remove('is-live');
+                blankBtn.classList.remove('active-blank');
+                blankIcon.textContent = '⚪';
+                blankText.textContent = 'OFFLINE';
+            } else if (isScreenBlack) {
                 previewContainer.classList.remove('is-live');
                 blankBtn.classList.add('active-blank');
                 blankIcon.textContent = '🔴';
@@ -648,6 +695,17 @@
                 blankIcon.textContent = '🟢';
                 blankText.textContent = 'LIVE';
             }
+        }
+
+        socket.on('projector-status', (isOpen) => {
+            isProjectorOpen = isOpen;
+            updateLiveBadge();
+        });
+
+        // Listen for true state changes from the Desktop App
+        socket.on('blank-screen', (serverIsBlack) => {
+            isScreenBlack = serverIsBlack;
+            updateLiveBadge();
         });
 
         socket.on('current-slide', (data) => {

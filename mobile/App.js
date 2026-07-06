@@ -1,16 +1,16 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Alert, SafeAreaView, FlatList, KeyboardAvoidingView, Platform, Image, Keyboard, Animated, BackHandler } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Alert, FlatList, KeyboardAvoidingView, Platform, Image, Keyboard, Animated, BackHandler, ActivityIndicator } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { db, auth } from './firebaseConfig';
-import { collection, query, where, getDocs, doc, setDoc, onSnapshot, getDoc, updateDoc } from 'firebase/firestore';
-import { signInAnonymously } from 'firebase/auth';
-
-import io from 'socket.io-client';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { WebView } from 'react-native-webview';
 import * as Updates from 'expo-updates';
 import Constants from 'expo-constants';
 
-export default function App() {
+function AppContent() {
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState('schedule');
   const [allSongs, setAllSongs] = useState([]);
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
@@ -22,85 +22,44 @@ export default function App() {
   const [currentGreeting, setCurrentGreeting] = useState('Praise the Lord!');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [customAlert, setCustomAlert] = useState(null);
-  
-  // Auto-dismiss custom alerts after 0.5 seconds
-  useEffect(() => {
-    if (customAlert) {
-      const timer = setTimeout(() => setCustomAlert(null), 500);
-      return () => clearTimeout(timer);
-    }
-  }, [customAlert]);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [appVersion, setAppVersion] = useState('1.0.1');
+  const [appVersion, setAppVersion] = useState('1.7.0'); 
 
-  // Multi-purpose Animated value for sidebar glow pulse
-  const glowPulse = useRef(new Animated.Value(1)).current;
+  // Connectivity State
+  const [desktopIp, setDesktopIp] = useState(null);
+  const [isWebRemoteActive, setIsWebRemoteActive] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
+  const [hasScanned, setHasScanned] = useState(false);
 
-  useEffect(() => {
-    if (isSidebarOpen) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(glowPulse, { toValue: 1.3, duration: 1500, useNativeDriver: true }),
-          Animated.timing(glowPulse, { toValue: 1, duration: 1500, useNativeDriver: true }),
-        ])
-      ).start();
-    } else {
-      glowPulse.setValue(1);
-    }
-  }, [isSidebarOpen]);
+  // Web Search State
+  const [isWebSearchOpen, setIsWebSearchOpen] = useState(false);
+  const [webSearchQuery, setWebSearchQuery] = useState('');
+  const [webSearchResults, setWebSearchResults] = useState([]);
+  const [isScraping, setIsScraping] = useState(false);
+  
+  // Scraper State
+  const [scraperUrl, setScraperUrl] = useState(null);
+  const [scraperMode, setScraperMode] = useState(null);
+  const [scraperScript, setScraperScript] = useState('');
+  const [showCategorySelect, setShowCategorySelect] = useState(false);
+  const [selectedWebSong, setSelectedWebSong] = useState(null);
 
-  const handleManualSync = async () => {
-    if (isSidebarOpen) toggleSidebar(); // Proper close animation
-    setIsSyncing(true);
-    try {
-      // Logic to trigger re-fetch of schedule and songs
-      const scheduleRef = doc(db, "schedules", "sunday-service");
-      const docSnap = await getDoc(scheduleRef);
-      if (docSnap.exists()) setSchedule(docSnap.data().items || []);
-
-      const q = query(collection(db, "songs"));
-      const querySnapshot = await getDocs(q);
-      const songs = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        // Recalculate previews if needed
-        songs.push({ ...data, displayTitle: data.title || (data.slides ? data.slides[0].split('\n')[0].replace(/^\d+[\.\s]*/, '').trim() : 'Unknown') });
-      });
-      setAllSongs(songs);
-
-      setCustomAlert("Sync Successful! Data is up to date.");
-    } catch (e) {
-      setCustomAlert("Sync failed. Check your connection.");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Sidebar animation
+  // Animations
+  const logoRotate = useRef(new Animated.Value(0)).current;
   const sidebarAnim = useRef(new Animated.Value(-300)).current;
-
-
-  // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const welcomeFadeAnim = useRef(new Animated.Value(0)).current;
   const welcomeScaleAnim = useRef(new Animated.Value(0.9)).current;
   const greetingFadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Add Song State
-  const [newTitle, setNewTitle] = useState('');
-  const [newId, setNewId] = useState('');
-  const [newCategory, setNewCategory] = useState('English Choruses');
-  const [newLyrics, setNewLyrics] = useState('');
-  const [isEditing, setIsEditing] = useState(false);
-
   // Data
   const [schedule, setSchedule] = useState([]);
+  const [scheduleUpdatedAt, setScheduleUpdatedAt] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
 
-  // Christian Greetings List
   const greetings = [
     "Praise the Lord! Welcome Home.",
     "Grace and Peace to you in His Name.",
@@ -139,7 +98,6 @@ export default function App() {
     "Stay encouraged! He is working for you."
   ];
 
-  // Random Bible Verses for Worship
   const bibleVerses = [
     { text: "Enter his gates with thanksgiving and his courts with praise; give thanks to him and praise his name.", ref: "Psalm 100:4" },
     { text: "Great is the Lord and most worthy of praise; his greatness no one can fathom.", ref: "Psalm 145:3" },
@@ -245,93 +203,87 @@ export default function App() {
 
   const [currentVerse, setCurrentVerse] = useState(bibleVerses[0]);
 
-  // Startup Logic: Splash & Loading Name
+  useEffect(() => {
+    if (customAlert) {
+      const timer = setTimeout(() => setCustomAlert(null), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [customAlert]);
+
+  useEffect(() => {
+    if (isSidebarOpen) {
+      Animated.loop(
+        Animated.timing(logoRotate, { toValue: 1, duration: 4000, useNativeDriver: true })
+      ).start();
+    } else {
+      logoRotate.setValue(0);
+    }
+  }, [isSidebarOpen]);
+
   useEffect(() => {
     const initApp = async () => {
       try {
-        // Authenticate anonymously for Firestore access
-        await signInAnonymously(auth);
-        console.log("Authenticated anonymously");
-        setIsAuthenticated(true);
-
         const savedName = await AsyncStorage.getItem('user_name');
         if (savedName) {
           setUserName(savedName);
-          const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
-          setCurrentGreeting(randomGreeting);
-          const randomVerse = bibleVerses[Math.floor(Math.random() * bibleVerses.length)];
-          setCurrentVerse(randomVerse);
+          setCurrentGreeting(greetings[Math.floor(Math.random() * greetings.length)]);
+          setCurrentVerse(bibleVerses[Math.floor(Math.random() * bibleVerses.length)]);
         } else {
           setShowOnboarding(true);
         }
 
-        // 1. Splash Animation Sequence
-        // Phase 1: Logo Fade In & Scale Up
+        const localSongs = await AsyncStorage.getItem('local_songs');
+        if (localSongs) setAllSongs(JSON.parse(localSongs));
+
+        const localSchedule = await AsyncStorage.getItem('local_schedule');
+        if (localSchedule) setSchedule(JSON.parse(localSchedule));
+
+        const savedIp = await AsyncStorage.getItem('desktop_ip');
+        if (savedIp) setDesktopIp(savedIp);
+
+        setIsAuthenticated(true);
+
         Animated.parallel([
-          Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.spring(scaleAnim, {
-            toValue: 1,
-            friction: 4,
-            useNativeDriver: true,
-          })
+          Animated.timing(fadeAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+          Animated.spring(scaleAnim, { toValue: 1, friction: 4, useNativeDriver: true })
         ]).start(() => {
           setTimeout(() => {
-            // Phase 2: Logo Fade Out
-            Animated.timing(fadeAnim, {
-              toValue: 0,
-              duration: 800,
-              useNativeDriver: true,
-            }).start(() => {
-              // Phase 3: Welcome Message Fade In & Out
+            Animated.timing(fadeAnim, { toValue: 0, duration: 800, useNativeDriver: true }).start(() => {
               Animated.parallel([
-                Animated.timing(welcomeFadeAnim, {
-                  toValue: 1,
-                  duration: 800,
-                  useNativeDriver: true,
-                }),
-                Animated.spring(welcomeScaleAnim, {
-                  toValue: 1,
-                  friction: 4,
-                  useNativeDriver: true,
-                })
+                Animated.timing(welcomeFadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+                Animated.spring(welcomeScaleAnim, { toValue: 1, friction: 4, useNativeDriver: true })
               ]).start(() => {
                 setTimeout(() => {
-                  Animated.timing(welcomeFadeAnim, {
-                    toValue: 0,
-                    duration: 800,
-                    useNativeDriver: true,
-                  }).start(() => {
+                  Animated.timing(welcomeFadeAnim, { toValue: 0, duration: 800, useNativeDriver: true }).start(() => {
                     setIsAppLoading(false);
-                    // Phase 4: Main Content View
-                    Animated.timing(greetingFadeAnim, {
-                      toValue: 1,
-                      duration: 800,
-                      delay: 200,
-                      useNativeDriver: true,
-                    }).start();
+                    Animated.timing(greetingFadeAnim, { toValue: 1, duration: 800, delay: 200, useNativeDriver: true }).start();
                   });
-                }, 2000); // Show Welcome for 2 seconds
+                }, 1500);
               });
             });
-          }, 1500); // Show Logo for 1.5 seconds
+          }, 1000);
         });
-
       } catch (e) {
-        console.error("Initialization error:", e);
         setIsAppLoading(false);
       }
     };
-
     initApp();
   }, []);
 
-  // Android Back Handler for Exit Confirmation
   useEffect(() => {
     const backAction = () => {
+      if (showCategorySelect) {
+        setShowCategorySelect(false);
+        return true;
+      }
+      if (isWebSearchOpen) {
+        setIsWebSearchOpen(false);
+        return true;
+      }
+      if (isWebRemoteActive) {
+        setIsWebRemoteActive(false);
+        return true;
+      }
       if (isSidebarOpen) {
         toggleSidebar();
         return true;
@@ -339,675 +291,522 @@ export default function App() {
       BackHandler.exitApp();
       return true;
     };
-
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      backAction
-    );
-
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
     return () => backHandler.remove();
-  }, [isSidebarOpen]);
+  }, [isSidebarOpen, isWebRemoteActive, isWebSearchOpen, showCategorySelect]);
 
-  // Sidebar Toggle logic
   const toggleSidebar = () => {
     Keyboard.dismiss();
     const toValue = isSidebarOpen ? -310 : 0;
-    Animated.timing(sidebarAnim, {
-      toValue,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
+    Animated.timing(sidebarAnim, { toValue, duration: 300, useNativeDriver: true }).start();
     setIsSidebarOpen(!isSidebarOpen);
   };
 
-  const handleUpdateNameInSidebar = async (newName) => {
-    setUserName(newName);
-    try {
-      await AsyncStorage.setItem('user_name', newName.trim());
-    } catch (e) {
-      console.log("Error saving name:", e);
-    }
-  };
-
-
-  const buildNumber = Constants.expoConfig.extra.buildNumber || '0';
-
   const renderFooter = () => (
     <View style={styles.footer}>
-      <Text style={styles.footerText}>
-        © ChurchLyriXApp | v{appVersion} (Build {buildNumber})
-      </Text>
+      <Text style={styles.footerText}>© Faith Companion Studios | v{appVersion}</Text>
     </View>
   );
 
-  // OTA Updates Logic: Check for updates on startup
-  useEffect(() => {
-    async function onFetchUpdateAsync() {
-      // Don't check in dev mode or if updates are disabled
-      if (__DEV__ || !Updates.isEnabled) return;
-
-      try {
-        const update = await Updates.checkForUpdateAsync();
-
-        if (update.isAvailable) {
-          await Updates.fetchUpdateAsync();
-          Alert.alert(
-            "Update Available",
-            "A new version of the app is available. Restart now to apply?",
-            [
-              { text: "Later", style: "cancel" },
-              {
-                text: "Restart Now",
-                onPress: async () => {
-                  try {
-                    await Updates.reloadAsync();
-                  } catch (e) {
-                    // Silently fail or log to telemetry, don't block user
-                    console.log("Reload error:", e);
-                  }
-                }
-              }
-            ]
-          );
-        }
-      } catch (error) {
-        // Silently log the error instead of Alerting to avoid blocking the user
-        console.log(`Update check failed: ${error.message}`);
+  const pushPendingSync = async (ip) => {
+      const pending = JSON.parse(await AsyncStorage.getItem('pending_sync_songs') || '[]');
+      for (const song of pending) {
+          try {
+              await fetch(`${ip}/api/add-song`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ songData: song })
+              });
+          } catch(e) {}
       }
-    }
+      await AsyncStorage.setItem('pending_sync_songs', '[]');
+  };
 
-    onFetchUpdateAsync();
-  }, []);
-
-  const handleOnboardingSubmit = async () => {
-    if (!tempName.trim()) {
-      setCustomAlert("Please enter your name to continue");
-      return;
-    }
+  const pushScheduleToDesktop = async (currentSchedule, timestamp) => {
+    if (!desktopIp) return;
     try {
-      await AsyncStorage.setItem('user_name', tempName.trim());
-      setUserName(tempName.trim());
-      setShowOnboarding(false);
-      const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
-      setCurrentGreeting(randomGreeting);
-      const randomVerse = bibleVerses[Math.floor(Math.random() * bibleVerses.length)];
-      setCurrentVerse(randomVerse);
-
-      // Start the greeting float-in animation
-      Animated.timing(greetingFadeAnim, {
-        toValue: 1,
-        duration: 1000,
-        delay: 200,
-        useNativeDriver: true,
-      }).start();
-    } catch (e) {
-      setCustomAlert("Could not save your name");
-    }
-  };
-
-  // Firestore Sync
-  useEffect(() => {
-    if (!isAuthenticated) return;
-
-    // Subscribe to Sunday Service Schedule
-    const scheduleRef = doc(db, "schedules", "sunday-service");
-    const unsubscribe = onSnapshot(scheduleRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setSchedule(docSnap.data().items || []);
-      }
-    });
-    return () => unsubscribe();
-  }, [isAuthenticated]);
-
-  // Tab Handlers
-  // Fetch is auto via listener
-
-  // Fetch All Songs for Client-Side Search (Real-time)
-  useEffect(() => {
-    if (!isAuthenticated) return;
-
-    const q = query(collection(db, "songs"));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const songs = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        let rawPreview = data.slides ? data.slides[0].split('\n')[0] : '';
-        let cleanedPreview = rawPreview.trim();
-
-        if (data.title && cleanedPreview.toLowerCase().startsWith(data.title.toLowerCase())) {
-          cleanedPreview = cleanedPreview.substring(data.title.length).replace(/^[\s,.-]+/, '').trim();
-        }
-
-        if (cleanedPreview.length > 80) {
-          cleanedPreview = cleanedPreview.substring(0, 77) + '...';
-        }
-
-        songs.push({
-          ...data,
-          displayTitle: data.title || cleanedPreview,
-          displayPreview: cleanedPreview
-        });
+      const res = await fetch(`${desktopIp}/api/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schedule: currentSchedule, updatedAt: timestamp || scheduleUpdatedAt })
       });
-      setAllSongs(songs);
-      console.log(`Updated Songs Cache: ${songs.length} songs`);
-    }, (error) => {
-      console.error("Error watching songs:", error);
-    });
-
-    return () => unsubscribe();
-  }, [isAuthenticated]);
-
-  const handleSearch = () => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      return;
-    }
-
-    const normalizeSearchText = (text) => {
-      if (!text) return "";
-      return text.toString()
-        .toLowerCase()
-        .replace(/[^\w\s]/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    };
-
-    const qNormalized = normalizeSearchText(searchQuery);
-    const queryTokens = qNormalized.split(' ').filter(t => t.length > 0);
-    const isNumeric = /^\d+$/.test(qNormalized);
-    Keyboard.dismiss();
-
-    if (queryTokens.length === 0) {
-      setSearchResults([]);
-      return;
-    }
-
-    // Step 1: Filter and Score
-    const scoredResults = allSongs.map(song => {
-      const titleNormalized = normalizeSearchText(song.title || "");
-      const idNormalized = normalizeSearchText(song.id || "");
-
-      const isExactTitle = titleNormalized === qNormalized;
-      const startsWithTitle = titleNormalized.startsWith(qNormalized);
-      const exactPhraseInTitle = titleNormalized.includes(qNormalized);
-      const isExactId = idNormalized === qNormalized;
-
-      let score = 0;
-
-      if (isExactId) score += 200;
-      else if (isExactTitle) score += 100;
-      else if (startsWithTitle) score += 80;
-      else if (exactPhraseInTitle) score += 60;
-
-      if (isNumeric) {
-        const idDigits = idNormalized.replace(/\D/g, '');
-        if (idDigits === qNormalized) score += 150;
-        else if (idDigits.startsWith(qNormalized)) score += 70;
+      const json = await res.json();
+      if (json.success && json.winner === 'desktop') {
+         setSchedule(json.schedule);
+         setScheduleUpdatedAt(json.updatedAt);
+         AsyncStorage.setItem('local_schedule', JSON.stringify(json.schedule));
+         AsyncStorage.setItem('local_schedule_updatedAt', json.updatedAt.toString());
+      } else if (json.success && json.winner === 'mobile') {
+         setScheduleUpdatedAt(json.updatedAt);
+         AsyncStorage.setItem('local_schedule_updatedAt', json.updatedAt.toString());
       }
-
-      if (score === 0) {
-        const matchTitleTokens = queryTokens.every(token => titleNormalized.includes(token));
-        if (matchTitleTokens) score += 40;
-      }
-
-      const lyricsContent = (song.slides || []).join(' ');
-      const lyricsNormalized = normalizeSearchText(lyricsContent);
-      const categoryNormalized = normalizeSearchText(song.category || "");
-
-      const exactPhraseInLyrics = lyricsNormalized.includes(qNormalized);
-      if (exactPhraseInLyrics) score += 20;
-
-      const matchCategoryTokens = queryTokens.every(token => categoryNormalized.includes(token));
-      if (matchCategoryTokens) score += 10;
-
-      if (score === 0) {
-        const matchLyricsTokens = queryTokens.every(token => lyricsNormalized.includes(token));
-        if (matchLyricsTokens) score += 5;
-      }
-
-      return { song, score };
-    });
-
-    // Step 2: Filter and Sort
-    const results = scoredResults
-      .filter(res => res.score > 0)
-      .sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
-        // Tie-breaker: Alphabetical sorting by title, then ID
-        const titleCompare = (a.song.title || '').localeCompare(b.song.title || '');
-        if (titleCompare !== 0) return titleCompare;
-        return (a.song.id || '').toString().localeCompare((b.song.id || '').toString(), undefined, { numeric: true, sensitivity: 'base' });
-      })
-      .map(res => res.song);
-
-    setSearchResults(results.slice(0, 50));
+    } catch(e) {}
   };
 
-  const handleEdit = (song) => {
-    setNewId(song.id || '');
-    setNewTitle(song.title || song.displayTitle || '');
-    setNewCategory(song.category || 'English Choruses');
-    setNewLyrics(song.slides ? song.slides.join('\n\n') : '');
-    setIsEditing(true);
-    setActiveTab('add');
+  const handleManualSync = async () => {
+    if (!desktopIp) {
+      setCustomAlert("Connect to desktop to sync.");
+      return;
+    }
+    if (isSidebarOpen) toggleSidebar();
+    setIsSyncing(true);
+    try {
+      await pushPendingSync(desktopIp);
+      const res = await fetch(`${desktopIp}/api/songs`);
+      const json = await res.json();
+      if (json.success) {
+         setAllSongs(json.songs);
+         await AsyncStorage.setItem('local_songs', JSON.stringify(json.songs));
+         await pushScheduleToDesktop(schedule);
+         setCustomAlert("Sync Successful! Library updated.");
+      }
+    } catch (e) {
+      setCustomAlert("Sync failed. Check connection.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const syncSchedule = async () => {
+    if (!desktopIp) {
+      setCustomAlert("Connect to desktop to sync schedule.");
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      const res = await fetch(`${desktopIp}/api/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schedule, updatedAt: scheduleUpdatedAt })
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSchedule(json.schedule);
+        setScheduleUpdatedAt(json.updatedAt);
+        await AsyncStorage.setItem('local_schedule', JSON.stringify(json.schedule));
+        await AsyncStorage.setItem('local_schedule_updatedAt', json.updatedAt.toString());
+        setCustomAlert(json.winner === 'mobile' ? "Desktop updated from Mobile!" : "Mobile updated from Desktop!");
+      }
+    } catch (e) {
+      setCustomAlert("Sync failed.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const syncLibrary = async () => {
+    if (!desktopIp) {
+      setCustomAlert("Connect to desktop to sync database.");
+      return;
+    }
+    if (isSidebarOpen) toggleSidebar();
+    try {
+      await pushPendingSync(desktopIp);
+      const res = await fetch(`${desktopIp}/api/songs`);
+      const json = await res.json();
+      if (json.success) {
+         setAllSongs(json.songs);
+         await AsyncStorage.setItem('local_songs', JSON.stringify(json.songs));
+         setCustomAlert("Database Sync Successful!");
+      }
+    } catch (e) {
+      setCustomAlert("Database Sync failed.");
+    }
   };
 
   const addToSchedule = async (songId) => {
-    try {
-      // Prevent duplicates
-      if (schedule.some(item => item.songId === songId)) {
-        setCustomAlert("This song is already in the schedule.");
-        return;
-      }
-
-      // Optimization: Find song in local cache instead of fetching
-      const song = allSongs.find(s => s.id === songId);
-
-      if (!song) {
-        setCustomAlert("Song not found in cache");
-        return;
-      }
-
-      // Ensure we only store the TITLE (first line), not full lyrics
-      const rawTitle = song.displayTitle || song.title || "Unknown";
-      // Optional: Strip leading numbers if present (Disabled to persist titles)
-      const cleanTitle = rawTitle.trim();
-
-      const newItem = {
-        instanceId: Date.now().toString(),
-        songId: song.id,
-        title: cleanTitle,
-        category: song.category || "General"
-      };
-
-      const newSchedule = [...schedule, newItem];
-
-      // Navigate immediately for "fast" feel, sync happens in background
-      setActiveTab('schedule');
-
-      await setDoc(doc(db, "schedules", "sunday-service"), { 
-        items: newSchedule,
-        updatedAt: Date.now() 
-      });
-      // Removed blocking Alert for speed
-    } catch (e) {
-      setCustomAlert("Could not add to schedule: " + e.message);
+    if (schedule.some(item => item.songId === songId)) {
+      setCustomAlert("Already in schedule.");
+      return;
     }
-  }
+    const song = allSongs.find(s => s.id === songId);
+    if (!song) return;
+
+    const newItem = {
+      instanceId: Date.now().toString(),
+      songId: song.id,
+      title: song.title || "Unknown",
+      category: song.category || "General"
+    };
+
+    const newSchedule = [...schedule, newItem];
+    const newTimestamp = Date.now();
+    setSchedule(newSchedule);
+    setScheduleUpdatedAt(newTimestamp);
+    await AsyncStorage.setItem('local_schedule', JSON.stringify(newSchedule));
+    await AsyncStorage.setItem('local_schedule_updatedAt', newTimestamp.toString());
+    setActiveTab('schedule');
+    pushScheduleToDesktop(newSchedule, newTimestamp);
+  };
 
   const removeFromSchedule = async (instanceId) => {
     const newSchedule = schedule.filter(i => i.instanceId !== instanceId);
-    await setDoc(doc(db, "schedules", "sunday-service"), { 
-        items: newSchedule,
-        updatedAt: Date.now() 
-    });
-  }
+    const newTimestamp = Date.now();
+    setSchedule(newSchedule);
+    setScheduleUpdatedAt(newTimestamp);
+    await AsyncStorage.setItem('local_schedule', JSON.stringify(newSchedule));
+    await AsyncStorage.setItem('local_schedule_updatedAt', newTimestamp.toString());
+    pushScheduleToDesktop(newSchedule, newTimestamp);
+  };
 
-  // Auto-ID Logic
-  useEffect(() => {
-    if (activeTab === 'add' && !isEditing) {
-      const specialSongs = allSongs.filter(s =>
-        (s.category && s.category === 'Special Songs') ||
-        (s.id && s.id.toString().startsWith('S'))
-      );
-
-      if (specialSongs.length > 0) {
-        // Find max ID number
-        const maxId = specialSongs.reduce((max, s) => {
-          if (!s.id) return max;
-          const num = parseInt(s.id.toString().replace(/\D/g, '')) || 0;
-          return num > max ? num : max;
-        }, 0);
-        setNewId(`S${maxId + 1}`);
-        setNewCategory('Special Songs');
-      } else {
-        setNewId('S1');
-        setNewCategory('Special Songs');
-      }
-    }
-  }, [activeTab, allSongs]);
-
-  // Keyboard Listeners to hide bottom bar
-  useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener(
-      'keyboardDidShow',
-      () => setKeyboardVisible(true)
-    );
-    const keyboardDidHideListener = Keyboard.addListener(
-      'keyboardDidHide',
-      () => setKeyboardVisible(false)
-    );
-
-    return () => {
-      keyboardDidHideListener.remove();
-      keyboardDidShowListener.remove();
-    };
-  }, []);
-
-  const renderAddSong = () => {
-    const generateId = () => {
-      const specialSongs = allSongs.filter(s =>
-        (s.category && s.category === 'Special Songs') ||
-        (s.id && s.id.toString().startsWith('S'))
-      );
-
-      let nextId = 'S1';
-      if (specialSongs.length > 0) {
-        const maxId = specialSongs.reduce((max, s) => {
-          if (!s.id) return max;
-          const num = parseInt(s.id.toString().replace(/\D/g, '')) || 0;
-          return num > max ? num : max;
-        }, 0);
-        nextId = `S${maxId + 1}`;
-      }
-      setNewId(nextId);
-      setNewCategory('Special Songs');
-      setCustomAlert(`Next sequence ID is ${nextId}`);
-    };
-
-    const saveSong = async () => {
-      setIsSyncing(true);
-      if (!newTitle || !newId || !newLyrics) {
-        setCustomAlert("Please fill Title, ID, and Lyrics");
-        setIsSyncing(false);
-        return;
-      }
+  const handleBarcodeScanned = async ({ data }) => {
+    if (hasScanned) return;
+    if (data.includes('http://') && data.includes(':3001')) {
+      setHasScanned(true);
+      setCustomAlert("Connecting to Desktop...");
       try {
-        const docRef = doc(db, "songs", newId.trim());
-
-        if (!isEditing) {
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            setCustomAlert("Song ID already exists!");
-            setIsSyncing(false);
-            return;
+        await pushPendingSync(data);
+        const res = await fetch(`${data}/api/songs`);
+        const json = await res.json();
+        if (json.success) {
+          setAllSongs(json.songs);
+          await AsyncStorage.setItem('local_songs', JSON.stringify(json.songs));
+          setDesktopIp(data);
+          await AsyncStorage.setItem('desktop_ip', data);
+          
+          const schedRes = await fetch(`${data}/api/schedule`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ schedule, updatedAt: scheduleUpdatedAt })
+          });
+          const schedJson = await schedRes.json();
+          if (schedJson.success) {
+             setSchedule(schedJson.schedule);
+             setScheduleUpdatedAt(schedJson.updatedAt);
+             await AsyncStorage.setItem('local_schedule', JSON.stringify(schedJson.schedule));
+             await AsyncStorage.setItem('local_schedule_updatedAt', schedJson.updatedAt.toString());
           }
+          
+          setIsWebRemoteActive(true);
         }
-
-        const slides = newLyrics.split('\n\n').map(s => s.trim()).filter(Boolean);
-
-        await setDoc(docRef, {
-          id: newId.trim(),
-          title: newTitle.trim(),
-          category: newCategory,
-          slides: slides,
-          searchKey: newTitle.toLowerCase()
-        });
-
-        // Optimization: Update local state instead of full re-fetch
-        setAllSongs(prev => {
-          const updated = isEditing
-            ? prev.map(s => s.id === newId.trim() ? { id: newId.trim(), title: newTitle.trim(), category: newCategory, slides: slides } : s)
-            : [...prev, { id: newId.trim(), title: newTitle.trim(), category: newCategory, slides: slides }];
-          return updated.map(s => ({ ...s, displayTitle: s.title || (s.slides ? s.slides[0].split('\n')[0].trim() : 'Unknown') }));
-        });
-
-        setNewTitle(''); setNewId(''); setNewLyrics('');
-        setIsEditing(false);
-        setCustomAlert(isEditing ? "Song Updated!" : "Song Saved!");
       } catch (e) {
-        setCustomAlert("Error: " + e.message);
+        setCustomAlert("Connection failed. Check Wi-Fi.");
       } finally {
-        setIsSyncing(false);
+        setTimeout(() => setHasScanned(false), 3000);
       }
+    } else {
+      setHasScanned(true);
+      setCustomAlert("Invalid LyriX QR Code");
+      setTimeout(() => setHasScanned(false), 3000);
+    }
+  };
+
+  // NATIVE WEB SCRAPER LOGIC
+  const handleWebSearch = () => {
+    if (!webSearchQuery.trim()) return;
+    Keyboard.dismiss();
+    setIsScraping(true);
+    setWebSearchResults([]);
+    setScraperMode('search');
+    setScraperUrl(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(webSearchQuery + ' lyrics')}`);
+    setScraperScript(`
+      setTimeout(() => {
+          const items = [];
+          document.querySelectorAll('.result').forEach(el => {
+            const titleEl = el.querySelector('.result__title a, .result__a');
+            const snippetEl = el.querySelector('.result__snippet');
+            if (titleEl && titleEl.href.includes('http')) {
+              items.push({
+                title: (titleEl.textContent || '').trim(),
+                url: titleEl.href,
+                snippet: snippetEl ? (snippetEl.textContent || '').trim() : ''
+              });
+            }
+          });
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'search', data: items.slice(0, 15) }));
+      }, 1000);
+      true;
+    `);
+  };
+
+  const saveWebSong = (url, title) => {
+    setSelectedWebSong({ url, title });
+    setShowCategorySelect(true);
+  };
+
+  const executeSaveWebSong = (category) => {
+    setShowCategorySelect(false);
+    setCustomAlert("Extracting Lyrics...");
+    setIsScraping(true);
+    setScraperMode('extract');
+    setScraperUrl(selectedWebSong.url);
+    setSelectedWebSong({ ...selectedWebSong, category });
+    setScraperScript(`
+      setTimeout(() => {
+          try {
+              ['script', 'style', 'nav', 'header', 'footer', 'iframe', 'img', 'svg', 'button', 'form', 'aside', '.ads', '[role="navigation"]', 'meta', 'link'].forEach(tag => {
+                  document.querySelectorAll(tag).forEach(el => el.remove());
+              });
+              
+              let container = null;
+              const exactSelectors = ['[data-lyrics-container="true"]', '.lyrics', '.lyricbox', '.lyrics-body', '#lyric-body-text', '.ringtone'];
+              for (let selector of exactSelectors) {
+                  const el = document.querySelector(selector);
+                  if (el) { container = el; break; }
+              }
+              
+              if (!container || container.innerText.length < 50) {
+                  let maxScore = -1;
+                  let bestEl = null;
+                  document.querySelectorAll('div, p, article, section').forEach(el => {
+                      const brCount = el.querySelectorAll('br').length;
+                      if (brCount > 3) {
+                          const linkLen = Array.from(el.querySelectorAll('a')).reduce((acc, a) => acc + (a.innerText || '').length, 0);
+                          const totalLen = el.innerText.length || 1;
+                          const linkRatio = linkLen / totalLen;
+                          if (linkRatio < 0.4) {
+                              const score = brCount * (1 - linkRatio);
+                              if (score > maxScore) { maxScore = score; bestEl = el; }
+                          }
+                      }
+                  });
+                  if (bestEl) container = bestEl;
+              }
+              if (!container) container = document.body;
+              
+              container.querySelectorAll('br').forEach(br => br.replaceWith('__BR__'));
+              container.querySelectorAll('p, div').forEach(p => p.append('__BR__'));
+              let text = container.innerText.replace(/__BR__/g, '\\n');
+              
+              const slides = text.split('\\n').map(l => l.trim()).reduce((acc, line) => {
+                  const last = acc[acc.length - 1];
+                  if (!line) { if (acc.length > 0 && last !== '') acc.push(''); }
+                  else { acc.push(line); }
+                  return acc;
+              }, []).join('\\n').substring(0, 10000);
+              
+              window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'extract', data: slides }));
+          } catch(e) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', data: e.message }));
+          }
+      }, 2500);
+      true;
+    `);
+  };
+
+  const getNextId = (category) => {
+      const prefixMap = { 'English': 'E', 'Telugu': 'T', 'Hindi': 'H', 'Sunday School': 'S', 'Worship': 'W', 'Special': 'X' };
+      const prefix = prefixMap[category] || category.charAt(0).toUpperCase();
+      let maxNum = 0;
+      allSongs.forEach(s => {
+          if (s.id && s.id.startsWith(prefix)) {
+              const numPart = s.id.substring(prefix.length);
+              if (/^\d+$/.test(numPart)) {
+                  maxNum = Math.max(maxNum, parseInt(numPart, 10));
+              }
+          }
+      });
+      return prefix + (maxNum + 1);
+  };
+
+  const handleScraperMessage = async (event) => {
+      try {
+          const result = JSON.parse(event.nativeEvent.data);
+          if (result.type === 'search') {
+              setWebSearchResults(result.data);
+              setIsScraping(false);
+              setScraperMode(null);
+          } else if (result.type === 'extract') {
+              const slidesStr = result.data || '';
+              const slides = slidesStr.split('\n\n').map(s => s.trim()).filter(Boolean);
+              if (slides.length === 0) {
+                  setCustomAlert("Failed to extract lyrics.");
+                  setIsScraping(false);
+                  setScraperMode(null);
+                  return;
+              }
+
+              const newId = getNextId(selectedWebSong.category);
+              const newSong = {
+                  id: newId,
+                  title: selectedWebSong.title,
+                  category: selectedWebSong.category,
+                  slides: slides,
+                  searchKey: selectedWebSong.title.toLowerCase()
+              };
+
+              const newAllSongs = [...allSongs, newSong];
+              setAllSongs(newAllSongs);
+              await AsyncStorage.setItem('local_songs', JSON.stringify(newAllSongs));
+
+              const pending = JSON.parse(await AsyncStorage.getItem('pending_sync_songs') || '[]');
+              pending.push(newSong);
+              await AsyncStorage.setItem('pending_sync_songs', JSON.stringify(pending));
+
+              if (desktopIp) pushPendingSync(desktopIp); // Sync immediately if connected
+
+              setCustomAlert("Song Added to Local Library!");
+              setIsScraping(false);
+              setScraperMode(null);
+              setIsWebSearchOpen(false); 
+          } else if (result.type === 'error') {
+              setCustomAlert("Scraping error: " + result.data);
+              setIsScraping(false);
+              setScraperMode(null);
+          }
+      } catch(e) {
+          setIsScraping(false);
+          setScraperMode(null);
+      }
+  };
+
+  const renderSearch = () => {
+    const handleLocalSearch = () => {
+      const q = searchQuery.toLowerCase().trim();
+      if (!q) { setSearchResults([]); return; }
+      const res = allSongs.filter(s => 
+         (s.title || '').toLowerCase().includes(q) || 
+         (s.id || '').toString().toLowerCase().includes(q) ||
+         (s.slides || []).join(' ').toLowerCase().includes(q)
+      ).slice(0, 50);
+      setSearchResults(res);
     };
 
     return (
-      <View style={{ flex: 1 }}>
-        <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 150 }} keyboardShouldPersistTaps="handled">
-          <View style={styles.logoContainer}>
-            <Image
-              source={require('./assets/branding_logo.png')}
-              style={styles.logo}
-            />
-          </View>
-
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
-            <Text style={styles.label}>Song ID</Text>
-            <TouchableOpacity onPress={() => { setIsEditing(false); setNewTitle(''); setNewId(''); setNewLyrics(''); setActiveTab('schedule'); }}>
-              <Text style={{ color: '#6366f1', fontWeight: 'bold', fontSize: 16 }}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-            <TextInput style={[styles.input, { flex: 1, marginBottom: 0 }]} value={newId} onChangeText={setNewId} placeholder="e.g. S100" placeholderTextColor="#666" />
-            <TouchableOpacity style={styles.secondaryButton} onPress={generateId}>
-              <Text style={styles.secondaryButtonText}>🔄 Auto-ID</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.label}>Title</Text>
-          <TextInput style={styles.input} value={newTitle} onChangeText={setNewTitle} placeholder="Song Title" placeholderTextColor="#666" />
-
-          <Text style={styles.label}>Lyrics (Double spacing = New Slide)</Text>
+      <View style={styles.content}>
+        <View style={styles.logoContainer}>
+          <Image source={require('./assets/branding_logo.png')} style={styles.logo} />
+        </View>
+        <Text style={styles.heading}>Search Local Database ({allSongs.length})</Text>
+        <View style={styles.searchRow}>
           <TextInput
-            style={[styles.input, { height: 150, textAlignVertical: 'top' }]}
-            value={newLyrics}
-            onChangeText={setNewLyrics}
-            multiline={true}
-            placeholder="Verse 1...&#10;&#10;Chorus..."
+            style={styles.searchInput}
+            placeholder="Search songs..."
             placeholderTextColor="#666"
+            value={searchQuery}
+            onChangeText={(t) => { setSearchQuery(t); handleLocalSearch(); }}
           />
-
-          <Text style={styles.debugText}>Database: {allSongs.length} songs loaded</Text>
-          <TouchableOpacity style={styles.primaryButton} onPress={saveSong} disabled={isSyncing}>
-            <Text style={styles.primaryButtonText}>{isEditing ? "Update Song" : "Store Song"}</Text>
-          </TouchableOpacity>
-        </ScrollView>
+        </View>
+        <FlatList
+          data={searchResults}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <View style={styles.listItem}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.itemTitle} numberOfLines={1}>{item.title || item.displayTitle}</Text>
+                <Text style={styles.itemSubtitle}>{item.category} • {item.id}</Text>
+              </View>
+              <TouchableOpacity style={styles.addButton} onPress={() => addToSchedule(item.id)}>
+                <Text style={styles.addButtonText}>Add +</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          ListEmptyComponent={<Text style={styles.emptyText}>No results.</Text>}
+          contentContainerStyle={{ paddingBottom: 20 }}
+        />
       </View>
     );
   };
 
-  // useMemo to prevent re-rendering/blinking
-  const BottomTabs = React.useMemo(() => (
-    <View style={styles.tabContainer}>
+  const renderConnect = () => (
+    <ScrollView style={styles.content} contentContainerStyle={{ flexGrow: 1, paddingBottom: 20 }}>
+      <View style={styles.logoContainer}>
+          <Image source={require('./assets/branding_logo.png')} style={styles.logo} />
+      </View>
+      <Text style={styles.heading}>Connect to Desktop</Text>
+      <Text style={styles.label}>Scan the QR Code on the LyriX Projector window to sync and control.</Text>
+      
+      <View style={{ width: 280, height: 280, alignSelf: 'center', borderRadius: 24, overflow: 'hidden', marginTop: 20, marginBottom: 40, backgroundColor: 'black', borderWidth: 1, borderColor: '#374151' }}>
+         {!permission?.granted ? (
+             <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+                 <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
+                     <Text style={styles.primaryButtonText}>Enable Camera</Text>
+                 </TouchableOpacity>
+             </View>
+         ) : (
+             <CameraView 
+                style={{ flex: 1 }} 
+                facing="back"
+                onBarcodeScanned={handleBarcodeScanned}
+                barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+             />
+         )}
+      </View>
+
+      {desktopIp && (
+        <View style={{marginBottom: 40, width: 250, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, alignSelf: 'center'}}>
+           <TouchableOpacity style={[styles.primaryButton, { backgroundColor: '#10b981', flex: 1, height: 48, paddingVertical: 0, justifyContent: 'center', marginTop: 0, marginBottom: 0 }]} onPress={() => setIsWebRemoteActive(true)}>
+               <Text style={[styles.primaryButtonText, { fontSize: 12 }]}>LAUNCH REMOTE</Text>
+               <Text style={{color:'white', fontSize: 9}}>{desktopIp}</Text>
+           </TouchableOpacity>
+           <TouchableOpacity onPress={() => { setIsWebRemoteActive(false); setDesktopIp(null); AsyncStorage.removeItem('desktop_ip'); }} style={{width: 48, height: 48, backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)', alignItems: 'center', justifyContent: 'center'}}>
+               <Ionicons name="power" size={24} color="#ef4444" />
+           </TouchableOpacity>
+        </View>
+      )}
+      
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+      </View>
+    </ScrollView>
+  );
+
+  const BottomTabs = useMemo(() => (
+    <View style={[styles.tabContainer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
       <View style={styles.tabBar}>
-        <TouchableOpacity style={[styles.tab, activeTab === 'schedule' && styles.activeTab]} onPress={() => setActiveTab('schedule')}>
+        <TouchableOpacity style={[styles.tab]} onPress={() => setActiveTab('schedule')}>
           <Ionicons name={activeTab === 'schedule' ? "list" : "list-outline"} size={28} color={activeTab === 'schedule' ? "#6366f1" : "#9ca3af"} />
           <Text style={[styles.tabText, activeTab === 'schedule' && styles.activeTabText]}>Schedule</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.tab, activeTab === 'add' && styles.activeTab]} onPress={() => setActiveTab('add')}>
+        <TouchableOpacity style={[styles.tab]} onPress={() => setActiveTab('connect')}>
           <View style={styles.addIconContainer}>
-            <Ionicons name="add" size={32} color="white" />
+            <Ionicons name="qr-code" size={26} color="white" />
           </View>
         </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.tab, activeTab === 'search' && styles.activeTab]} onPress={() => { setActiveTab('search'); setIsEditing(false); }}>
+        <TouchableOpacity style={[styles.tab]} onPress={() => setActiveTab('search')}>
           <Ionicons name={activeTab === 'search' ? "search" : "search-outline"} size={28} color={activeTab === 'search' ? "#6366f1" : "#9ca3af"} />
           <Text style={[styles.tabText, activeTab === 'search' && styles.activeTabText]}>Search</Text>
         </TouchableOpacity>
       </View>
     </View>
-  ), [activeTab]);
-
-  const renderLogo = () => (
-    <View style={styles.logoContainer}>
-      <Image
-        source={require('./assets/branding_logo.png')}
-        style={styles.logo}
-      />
-    </View>
-  );
+  ), [activeTab, insets.bottom]);
 
   const renderSidebar = () => (
     <>
-      {isSidebarOpen && (
-        <TouchableOpacity
-          style={styles.sidebarOverlay}
-          activeOpacity={1}
-          onPress={toggleSidebar}
-        />
-      )}
+      {isSidebarOpen && <TouchableOpacity style={styles.sidebarOverlay} activeOpacity={1} onPress={toggleSidebar} />}
       <Animated.View style={[styles.sidebar, { transform: [{ translateX: sidebarAnim }] }]}>
         <View style={styles.sidebarHeader}>
           <View style={styles.sidebarLogoGlowContainer}>
-            <Animated.View style={[styles.logoGlow, { transform: [{ scale: glowPulse }] }]} />
+            <Animated.View style={[styles.logoGlow, { transform: [{ rotate: logoRotate.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]} />
             <Image source={require('./assets/branding_logo.png')} style={styles.sidebarLogo} />
           </View>
-          <Text style={styles.sidebarTitleItalic}>LyriX Mobile</Text>
+          <Text style={styles.sidebarTitleItalic}>LyriX Remote</Text>
         </View>
-
         <View style={styles.sidebarContent}>
           <Text style={styles.sidebarLabel}>Your Name</Text>
-          <TextInput
-            style={[styles.sidebarInput, { fontStyle: 'italic' }]}
-            value={userName}
-            onChangeText={handleUpdateNameInSidebar}
-            placeholder="Friend"
-            placeholderTextColor="#666"
-          />
-
-          <View style={styles.sidebarStatusContainer}>
-            <Text style={styles.sidebarLabel}>Sync Status</Text>
-            <View style={styles.statusRow}>
-              <View style={[styles.statusIndicator, { backgroundColor: isAuthenticated ? (isSyncing ? '#f59e0b' : '#10b981') : '#ef4444' }]} />
-              <Text style={[styles.statusText, { fontStyle: 'italic' }]}>
-                {isAuthenticated ? (isSyncing ? "Syncing..." : "Connected & Live") : "Offline"}
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.sidebarSyncBtn} onPress={handleManualSync} disabled={isSyncing}>
-              <Ionicons name="refresh-circle" size={20} color="#818cf8" />
-              <Text style={styles.sidebarSyncText}>Manual Sync</Text>
-            </TouchableOpacity>
+          <TextInput style={[styles.sidebarInput, { marginBottom: 20 }]} value={userName} onChangeText={(t) => { setUserName(t); AsyncStorage.setItem('user_name', t); }} placeholder="Friend" placeholderTextColor="#666" />
+          
+          <View style={{flexDirection: 'row', gap: 12, marginTop: 24}}>
+              <TouchableOpacity style={{flex: 1, backgroundColor: 'rgba(99, 102, 241, 0.1)', borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)', paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center'}} onPress={() => { toggleSidebar(); setIsWebSearchOpen(true); }}>
+                  <Ionicons name="globe" size={28} color="#818cf8" style={{marginBottom: 8}} />
+                  <Text style={{color: '#818cf8', fontWeight: 'bold', fontSize: 13}}>Web Search</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={{flex: 1, backgroundColor: 'rgba(16, 185, 129, 0.1)', borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.3)', paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center'}} onPress={syncLibrary}>
+                  <Ionicons name="sync" size={28} color="#34d399" style={{marginBottom: 8}} />
+                  <Text style={{color: '#34d399', fontWeight: 'bold', fontSize: 13}}>Sync</Text>
+              </TouchableOpacity>
           </View>
-        </View>
 
+        </View>
         <View style={styles.sidebarFooter}>
-          <Text style={styles.sidebarFooterText}>© ChurchLyriXApp | v{appVersion}</Text>
-          <Text style={styles.sidebarFooterText}>Build {buildNumber}</Text>
+            <Text style={{color: '#4b5563', fontSize: 12, fontStyle: 'italic', marginBottom: 16, textAlign: 'center'}}>Songs: {allSongs.length} in library</Text>
+
+            
+            <Text style={{color: '#4b5563', fontSize: 10, textAlign: 'center', fontWeight: 'bold'}}>© Faith Companion Studios</Text>
         </View>
       </Animated.View>
     </>
   );
 
-  const renderHamburger = () => {
-    if (isSidebarOpen) return null;
-    return (
-      <TouchableOpacity style={styles.hamburgerButton} onPress={toggleSidebar}>
-        <Ionicons name="menu" size={32} color="white" />
-      </TouchableOpacity>
-    );
-  };
-
-  const renderSchedule = () => (
-    <View style={styles.content}>
-      {renderLogo()}
-      <Animated.View style={[styles.welcomeBanner, { opacity: greetingFadeAnim, transform: [{ translateY: greetingFadeAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }]}>
-        <Text style={styles.verseText}>{currentVerse.text}</Text>
-        <Text style={styles.verseRef}>{currentVerse.ref}</Text>
-      </Animated.View>
-      <View style={styles.headerRow}>
-        <Text style={styles.heading}>Sunday Schedule</Text>
-        <View style={styles.headerActions}>
-          <View style={styles.countBadge}>
-            <Text style={styles.countBadgeText}>{schedule.length}</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.headerSyncButton}
-            onPress={handleManualSync}
-            disabled={isSyncing}
-          >
-            <Ionicons
-              name={isSyncing ? "reload-circle" : "sync"}
-              size={24}
-              color="#6366f1"
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-      <FlatList
-        data={schedule}
-        keyExtractor={(item) => item.instanceId}
-        renderItem={({ item, index }) => (
-          <View style={styles.listItem}>
-            <View style={styles.itemMain}>
-              <Text style={styles.itemIndex}>{index + 1}</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
-                <Text style={styles.itemSubtitle}>{item.category} • {item.songId}</Text>
-              </View>
-            </View>
-            <TouchableOpacity onPress={() => removeFromSchedule(item.instanceId)} style={styles.deleteButton}>
-              <Text style={styles.deleteText}>🗑️</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        ListEmptyComponent={<Text style={styles.emptyText}>Schedule is empty.</Text>}
-        contentContainerStyle={{ paddingBottom: 150 }}
-      />
-      {renderFooter()}
-    </View>
-  );
-
-  const renderSearch = () => (
-    <View style={styles.content}>
-      {renderLogo()}
-      <Text style={styles.heading}>Search Songs</Text>
-      <View style={styles.searchRow}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search songs..."
-          placeholderTextColor="#666"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          onSubmitEditing={handleSearch}
-        />
-        <TouchableOpacity style={styles.goButton} onPress={handleSearch}>
-          <Ionicons name="arrow-forward" size={24} color="white" />
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={searchResults}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.listItem}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.itemTitle} numberOfLines={1}>{item.displayTitle}</Text>
-              <Text style={[styles.itemSubtitle, { fontStyle: 'italic' }]}>{item.category} • {item.id}</Text>
-            </View>
-            <View style={{ gap: 8 }}>
-              <TouchableOpacity style={styles.addButton} onPress={() => addToSchedule(item.id)}>
-                <Text style={styles.addButtonText}>Add +</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.addButton, { backgroundColor: '#4b5563' }]} onPress={() => handleEdit(item)}>
-                <Text style={styles.addButtonText}>Edit</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-        ListEmptyComponent={<Text style={styles.emptyText}>No results.</Text>}
-        contentContainerStyle={{ paddingBottom: 150 }}
-      />
-      {renderFooter()}
-    </View>
-  );
-
-
-
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: 0 }]}>
       {isAppLoading ? (
         <View style={styles.splashContainer}>
-          <Animated.View style={{
-            opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }],
-            alignItems: 'center',
-          }}>
+          <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }], alignItems: 'center' }}>
             <Image source={require('./assets/branding_logo.png')} style={styles.splashLogo} />
             <Text style={styles.splashBranding}>LYRIX</Text>
-            <Text style={styles.splashSlogan}>Worship in Harmony</Text>
           </Animated.View>
-
-          <Animated.View style={{
-            opacity: welcomeFadeAnim,
-            transform: [{ scale: welcomeScaleAnim }],
-            alignItems: 'center',
-            position: 'absolute',
-            width: '100%',
-            paddingHorizontal: 20
-          }}>
+          <Animated.View style={{ opacity: welcomeFadeAnim, transform: [{ scale: welcomeScaleAnim }], alignItems: 'center', position: 'absolute', width: '100%', paddingHorizontal: 20 }}>
             <Text style={styles.welcomeTitle}>{currentGreeting}</Text>
             <Text style={styles.welcomeName}>{userName}</Text>
           </Animated.View>
@@ -1016,71 +815,195 @@ export default function App() {
         <View style={styles.onboardingContainer}>
           <Image source={require('./assets/branding_logo.png')} style={styles.onboardingLogo} />
           <Text style={styles.onboardingTitle}>Welcome to LyriX</Text>
-          <Text style={styles.onboardingSubtitle}>Enter your name to personalize your experience</Text>
-          <TextInput
-            style={styles.onboardingInput}
-            placeholder="Your Name"
-            placeholderTextColor="#6b7280"
-            value={tempName}
-            onChangeText={setTempName}
-            autoFocus
-          />
-          <TouchableOpacity style={styles.primaryButton} onPress={handleOnboardingSubmit}>
+          <TextInput style={styles.onboardingInput} placeholder="Your Name" placeholderTextColor="#6b7280" value={tempName} onChangeText={setTempName} autoFocus />
+          <TouchableOpacity style={styles.primaryButton} onPress={() => { AsyncStorage.setItem('user_name', tempName); setUserName(tempName); setShowOnboarding(false); setIsAppLoading(true); setTimeout(()=>setIsAppLoading(false),500); }}>
             <Text style={styles.primaryButtonText}>Get Started</Text>
           </TouchableOpacity>
         </View>
+      ) : isWebRemoteActive && desktopIp ? (
+          <>
+              {Platform.OS === 'web' ? (
+                  <iframe src={desktopIp.startsWith('http') ? `${desktopIp}/?theme=dark&mobile_app=true` : `http://${desktopIp}/?theme=dark&mobile_app=true`} style={{ flex: 1, width: '100%', height: '100%', border: 'none' }} />
+              ) : (
+                  <WebView 
+                      source={{ uri: desktopIp.startsWith('http') ? `${desktopIp}/?theme=dark&mobile_app=true` : `http://${desktopIp}/?theme=dark&mobile_app=true` }} 
+                      style={{ flex: 1, backgroundColor: '#111827' }} 
+                      javaScriptEnabled={true}
+                      injectedJavaScript={`
+                          document.documentElement.style.setProperty('--bg-color', '#111827');
+                          document.documentElement.style.setProperty('--surface-color', '#1f2937');
+                          document.documentElement.style.setProperty('--text-primary', '#f8fafc');
+                          document.documentElement.style.setProperty('--text-secondary', '#9ca3af');
+                          document.documentElement.style.setProperty('--border-color', '#374151');
+                          document.documentElement.style.setProperty('color-scheme', 'dark');
+                          const header = document.querySelector('.header');
+                          if(header) header.style.display = 'none';
+                          const hamburgerBtn = document.getElementById('hamburgerBtn');
+                          if(hamburgerBtn) hamburgerBtn.style.display = 'none';
+                          const style = document.createElement('style');
+                          style.textContent = '.btn-blank:not(.active-blank) { color: #1e293b !important; }';
+                          document.head.appendChild(style);
+                          const prevBtns = document.querySelectorAll('.btn-prev');
+                          prevBtns.forEach(btn => { 
+                              btn.style.backgroundColor = '#1f2937'; 
+                              btn.style.color = '#f8fafc'; 
+                              btn.style.borderColor = '#374151';
+                          });
+                          true;
+                      `}
+                  />
+              )}
+          </>
       ) : (
         <>
-          {isAuthenticated && renderHamburger()}
+          {(!isSidebarOpen && !isWebSearchOpen) && <TouchableOpacity style={styles.hamburgerButton} onPress={toggleSidebar}><Ionicons name="menu" size={32} color="white" /></TouchableOpacity>}
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-            {activeTab === 'schedule' && renderSchedule()}
-            {activeTab === 'add' && renderAddSong()}
+            {activeTab === 'schedule' && (
+                <View style={styles.content}>
+                  <View style={styles.logoContainer}><Image source={require('./assets/branding_logo.png')} style={styles.logo} /></View>
+                  <Animated.View style={[styles.welcomeBanner, { opacity: greetingFadeAnim, transform: [{ translateY: greetingFadeAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }]}>
+                    <Text style={styles.verseText}>{currentVerse.text}</Text><Text style={styles.verseRef}>{currentVerse.ref}</Text>
+                  </Animated.View>
+                  <View style={styles.headerRow}>
+                    <Text style={styles.heading}>Local Schedule</Text>
+                    <View style={styles.headerActions}>
+                      {isSyncing ? (
+                        <ActivityIndicator size="small" color="#818cf8" style={{ marginRight: 12 }} />
+                      ) : (
+                        <TouchableOpacity onPress={syncSchedule} style={{marginRight: 12}}>
+                          <Ionicons name="sync-outline" size={24} color="#818cf8" />
+                        </TouchableOpacity>
+                      )}
+                      <View style={styles.countBadge}><Text style={styles.countBadgeText}>{schedule.length}</Text></View>
+                    </View>
+                  </View>
+                  <FlatList
+                    data={schedule}
+                    keyExtractor={(item) => item.instanceId}
+                    renderItem={({ item, index }) => (
+                      <View style={styles.listItem}>
+                        <View style={styles.itemMain}>
+                          <Text style={styles.itemIndex}>{index + 1}</Text>
+                          <View style={{ flex: 1 }}><Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text><Text style={styles.itemSubtitle}>{item.category} • {item.songId}</Text></View>
+                        </View>
+                        <TouchableOpacity onPress={() => removeFromSchedule(item.instanceId)} style={styles.deleteButton}>
+                            <Ionicons name="trash-outline" size={20} color="#9ca3af" />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                    ListEmptyComponent={<Text style={styles.emptyText}>Schedule is empty.</Text>}
+                    contentContainerStyle={{ paddingBottom: 20 }}
+                  />
+                </View>
+            )}
+            {activeTab === 'connect' && renderConnect()}
             {activeTab === 'search' && renderSearch()}
+            {renderFooter()}
           </KeyboardAvoidingView>
           {!isKeyboardVisible && BottomTabs}
-          <View style={{ height: Platform.OS === 'android' ? 25 : 0 }} />
-          {isAuthenticated && renderSidebar()}
-
-          {/* Custom Alert Modal */}
-          {customAlert && (
-            <View style={[styles.modalOverlay, { zIndex: 3000 }]}>
-              <View style={styles.customAlertContainer}>
-                <View style={styles.alertIconBg}>
-                  <Ionicons name="notifications" size={32} color="#6366f1" />
-                </View>
-                <Text style={styles.alertText}>{customAlert}</Text>
-              </View>
-            </View>
-          )}
-
-          {/* Exit Confirmation Modal */}
-          {showExitConfirm && (
-            <View style={styles.modalOverlay}>
-              <View style={styles.customAlertContainer}>
-                <View style={[styles.alertIconBg, { backgroundColor: '#fee2e2' }]}>
-                  <Ionicons name="exit" size={32} color="#f87171" />
-                </View>
-                <Text style={styles.alertText}>Wait a moment! Are you sure you want to close the application?</Text>
-                <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
-                  <TouchableOpacity style={[styles.alertButton, { backgroundColor: '#374151', flex: 1 }]} onPress={() => setShowExitConfirm(false)}>
-                    <Text style={styles.alertButtonText}>Stay</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.alertButton, { backgroundColor: '#f87171', flex: 1 }]}
-                    onPress={() => {
-                      setShowExitConfirm(false);
-                      setTimeout(() => BackHandler.exitApp(), 100);
-                    }}
-                  >
-                    <Text style={styles.alertButtonText}>Exit</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          )}
+          {renderSidebar()}
         </>
       )}
-    </SafeAreaView>
+
+      {isWebSearchOpen && (
+             <View style={[styles.modalOverlay, {backgroundColor: '#111827', zIndex: 1005, padding: 0, justifyContent: 'flex-start'}]}>
+                                   <View style={{flexDirection: 'row', alignItems: 'center', padding: 24, paddingTop: Platform.OS==='android'? 60:40, backgroundColor: '#111827'}}>
+                      <TouchableOpacity onPress={() => setIsWebSearchOpen(false)} style={{backgroundColor: 'rgba(255,255,255,0.05)', padding: 14, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)'}}>
+                          <Ionicons name="chevron-back" size={24} color="white" />
+                      </TouchableOpacity>
+                      <View style={{marginLeft: 20}}>
+                        <Text style={{color: 'white', fontSize: 32, fontWeight: '900', letterSpacing: 0.5}}>Discover</Text>
+                        <Text style={{color: '#818cf8', fontSize: 12, fontWeight: 'bold', letterSpacing: 2, marginTop: 4, textTransform: 'uppercase'}}>Web Lyrics Search</Text>
+                      </View>
+                  </View>
+                  <View style={{padding: 20, flex: 1}}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#1f2937', borderRadius: 20, padding: 8, borderWidth: 1, borderColor: '#374151', marginBottom: 24, shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.4, shadowRadius: 20, elevation: 15 }}>
+                          <View style={{paddingHorizontal: 12}}>
+                             <Ionicons name="search" size={24} color="#818cf8" />
+                          </View>
+                          <TextInput style={{flex: 1, color: 'white', fontSize: 18, fontWeight: '600', fontStyle: 'italic', paddingVertical: 10}} placeholder="Search internet for lyrics..." placeholderTextColor="#6b7280" value={webSearchQuery} onChangeText={setWebSearchQuery} onSubmitEditing={handleWebSearch} />
+                          <TouchableOpacity style={{backgroundColor: '#6366f1', padding: 16, borderRadius: 16, marginLeft: 8}} onPress={handleWebSearch}>
+                              {isScraping ? <ActivityIndicator color="white" size="small" /> : <Ionicons name="arrow-forward" size={20} color="white" />}
+                          </TouchableOpacity>
+                      </View>
+                      <FlatList
+                          data={webSearchResults}
+                          keyExtractor={(item, idx) => idx.toString()}
+                          renderItem={({ item, index }) => (
+                              <View style={{flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.03)', padding: 16, borderRadius: 20, marginBottom: 12, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)'}}>
+                                  <View style={{width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(99,102,241,0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 16}}>
+                                      <Text style={{color: '#818cf8', fontWeight: '900', fontSize: 16}}>{index + 1}</Text>
+                                  </View>
+                                  <View style={{ flex: 1, paddingRight: 12 }}>
+                                      <Text style={{color: 'white', fontWeight: 'bold', fontSize: 16, marginBottom: 4}} numberOfLines={1}>{item.title}</Text>
+                                      <Text style={{color: '#9ca3af', fontSize: 13, lineHeight: 18}} numberOfLines={2}>{item.snippet}</Text>
+                                  </View>
+                                  <TouchableOpacity style={{backgroundColor: 'rgba(16,185,129,0.15)', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(16,185,129,0.3)'}} onPress={() => saveWebSong(item.url, item.title)}>
+                                      <Text style={{color: '#34d399', fontWeight: '900', fontSize: 14, textTransform: 'uppercase'}}>Get</Text>
+                                  </TouchableOpacity>
+                              </View>
+                          )}
+                          ListEmptyComponent={
+                              <View style={{alignItems: 'center', justifyContent: 'center', marginTop: 100, opacity: 0.8}}>
+                                  <View style={{width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(99,102,241,0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 24}}>
+                                      <Ionicons name="globe-outline" size={48} color="#6366f1" />
+                                  </View>
+                                  <Text style={{color: 'white', fontSize: 24, fontWeight: '900'}}>Ready to Explore</Text>
+                                  <Text style={{color: '#9ca3af', textAlign: 'center', marginTop: 12, paddingHorizontal: 40, fontSize: 16, lineHeight: 24}}>Type a song name, lyrics, or artist to search the web and import it directly into your library.</Text>
+                              </View>
+                          }
+                      />
+                 </View>
+             </View>
+      )}
+
+      {showCategorySelect && (
+         <View style={[styles.modalOverlay, { zIndex: 2005 }]}>
+             <View style={{ backgroundColor: '#1f2937', padding: 20, borderRadius: 10, width: '80%', maxHeight: '70%' }}>
+                 <Text style={{ color: 'white', fontSize: 18, fontWeight: 'bold', marginBottom: 15 }}>Select Category</Text>
+                 <ScrollView>
+                     {['English', 'Telugu', 'Hindi', 'Sunday School', 'Worship', 'Special'].map(cat => (
+                         <TouchableOpacity key={cat} onPress={() => executeSaveWebSong(cat)} style={{ padding: 15, borderBottomWidth: 1, borderColor: '#374151' }}>
+                             <Text style={{ color: 'white', fontSize: 16 }}>{cat}</Text>
+                         </TouchableOpacity>
+                     ))}
+                 </ScrollView>
+                 <TouchableOpacity onPress={() => setShowCategorySelect(false)} style={{ marginTop: 15, alignItems: 'center', padding: 10 }}>
+                     <Text style={{ color: '#ef4444', fontWeight: 'bold' }}>Cancel</Text>
+                 </TouchableOpacity>
+             </View>
+         </View>
+      )}
+
+      {customAlert && (
+        <View style={{ position: 'absolute', top: 60, width: '100%', alignItems: 'center', zIndex: 20000, paddingHorizontal: 20 }}>
+          <View style={[styles.customAlertContainer, { flexDirection: 'row', backgroundColor: '#1f2937', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#374151', width: '100%', shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 10 }]}>
+            <Ionicons name="notifications" size={24} color="#818cf8" style={{ marginRight: 12 }} />
+            <Text style={[styles.alertText, { color: 'white', flex: 1, fontWeight: 'bold' }]}>{customAlert}</Text>
+          </View>
+        </View>
+      )}
+
+      {scraperMode && scraperUrl && (
+          <View style={{ position: 'absolute', width: 0, height: 0, opacity: 0 }}>
+              <WebView 
+                  source={{ uri: scraperUrl }}
+                  injectedJavaScript={scraperScript}
+                  onMessage={handleScraperMessage}
+                  javaScriptEnabled={true}
+              />
+          </View>
+      )}
+
+    </View>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
   );
 }
 
@@ -1203,14 +1126,12 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 22,
     fontWeight: 'bold',
-    marginBottom: 4,
-    fontStyle: 'italic'
+    marginBottom: 4
   },
   statusText: {
     color: '#9ca3af',
     fontSize: 14,
-    fontWeight: '500',
-    fontStyle: 'italic'
+    fontWeight: '500'
   },
   sidebarSyncBtn: {
     flexDirection: 'row',
@@ -1225,8 +1146,7 @@ const styles = StyleSheet.create({
   sidebarSyncText: {
     color: '#818cf8',
     fontSize: 12,
-    fontWeight: 'bold',
-    fontStyle: 'italic'
+    fontWeight: 'bold'
   },
   verseRef: {
     color: '#6366f1',
@@ -1247,30 +1167,25 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 36,
     fontWeight: '900',
-    fontStyle: 'italic',
     textAlign: 'center'
   },
-
   logoContainer: { alignItems: 'center', marginBottom: 20, paddingTop: 40 },
   logo: { width: 80, height: 80, resizeMode: 'contain', marginBottom: 12 },
   brandingText: { color: 'white', fontSize: 20, fontWeight: '900', letterSpacing: 2 },
   brandingTextItalic: { color: 'white', fontSize: 20, fontWeight: '900', letterSpacing: 2, fontStyle: 'italic' },
-
   headerLogoContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, paddingTop: 10 },
   headerLogo: { width: 32, height: 32, resizeMode: 'contain' },
-
   tabContainer: {
-    position: 'absolute',
-    bottom: 70, // Moved up even more as requested
-    left: 20,
-    right: 20,
+    paddingHorizontal: 20,
+    paddingTop: 10,
     alignItems: 'center',
+    backgroundColor: '#111827'
   },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: '#1f2937',
     borderRadius: 30,
-    height: 60, // Slightly more compact
+    height: 60,
     width: '100%',
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
@@ -1439,8 +1354,7 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 24,
     fontWeight: '900',
-    letterSpacing: 4,
-    fontStyle: 'italic'
+    letterSpacing: 1
   },
   sidebarContent: {
     flex: 1,
@@ -1529,44 +1443,20 @@ const styles = StyleSheet.create({
   alertIconBg: {
     width: 64,
     height: 64,
-    backgroundColor: '#f5f3ff',
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  alertText: {
-    color: '#1f2937',
-    fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 24,
   },
   alertButton: {
-    backgroundColor: '#6366f1',
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 16,
-    width: '100%',
-    alignItems: 'center',
-  },
-  alertButtonText: {
-    color: 'white',
     fontSize: 16,
     fontWeight: '800',
   },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  headerSyncButton: { padding: 4 },
   countBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#4b5563',
-    backgroundColor: 'rgba(75, 85, 99, 0.2)',
     minWidth: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#374151',
+    backgroundColor: '#1f2937',
     alignItems: 'center',
     justifyContent: 'center'
   },

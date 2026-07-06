@@ -44,6 +44,7 @@ function initBibleDb() {
     const insertTranslation = db.prepare('INSERT OR IGNORE INTO translations (id, name, language) VALUES (?, ?, ?)');
     insertTranslation.run('KJV', 'King James Version', 'English');
     insertTranslation.run('HINDI', 'BSI Hindi / Community', 'Hindi');
+    insertTranslation.run('TELUGU', 'Telugu / Community', 'Telugu');
 
     return db;
 }

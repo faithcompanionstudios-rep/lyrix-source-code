@@ -43,7 +43,7 @@
         #bible-container {
             display: none;
             flex-direction: column;
-            gap: 4vh;
+            gap: 6vh;
             width: 100%;
             max-width: 90vw;
             padding-bottom: 80px;
@@ -72,7 +72,7 @@
             bottom: 30px;
             left: 50%;
             transform: translateX(-50%);
-            font-size: 4vh;
+            font-size: 5vh;
             text-transform: uppercase;
             letter-spacing: 0.1em;
             color: inherit;
@@ -102,8 +102,12 @@
     </div>
 
     <div id="church-watermark"
-        style="position: absolute; bottom: 15px; right: 20px; font-size: 2.5vh; color: rgba(255,255,255,0.85); font-style: italic; font-weight: normal; letter-spacing: 0.05em; transition: opacity 0.5s ease; opacity: 0; pointer-events: none; z-index: 10; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">
-        &copy; ChurchLyriXApp<span id="church-info"></span>
+        style="position: absolute; bottom: 15px; right: 20px; font-size: 2.5vh; color: rgba(255,255,255,0.85); font-style: normal; font-weight: normal; letter-spacing: 0.05em; transition: opacity 0.5s ease; opacity: 0; pointer-events: none; z-index: 10; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">
+        &copy; Faith Companion Studios<span id="church-info"></span>
+    </div>
+
+    <div id="bible-copyright" class="hidden"
+        style="position: absolute; bottom: 15px; right: 20px; font-size: 2.2vh; color: rgba(255,255,255,0.85); font-style: normal; font-weight: normal; letter-spacing: 0.05em; transition: opacity 0.5s ease; pointer-events: none; z-index: 10; text-shadow: 0 2px 4px rgba(0,0,0,0.5); text-align: right; max-width: 40vw;">
     </div>
 
     <div id="video-container"
@@ -121,6 +125,7 @@
         const bibleRef = document.getElementById('bible-ref');
         const watermark = document.getElementById('church-watermark');
         const watermarkInfo = document.getElementById('church-info');
+        const bibleCopyright = document.getElementById('bible-copyright');
         const videoContainer = document.getElementById('video-container');
         const videoPlayer = document.getElementById('projector-video');
 
@@ -164,6 +169,7 @@
             // Go blank after video ends as per user request
             contentDiv.classList.add('hidden');
             watermark.classList.add('hidden');
+            bibleCopyright.classList.add('hidden');
             
             // Notify renderer that playback stopped
             if (window.electron && window.electron.sendPlaybackUpdate) {
@@ -187,6 +193,7 @@
             // Auto-wakeup: Ensure video is visible and any blank overlays are removed
             contentDiv.classList.remove('hidden');
             watermark.classList.remove('hidden');
+            bibleCopyright.classList.add('hidden');
         }
 
         function updateBibleContent(data) {
@@ -199,7 +206,20 @@
                 
                 biblePrimary.innerText = data.primaryText || '';
                 bibleSecondary.innerText = data.secondaryText || '';
+                bibleSecondary.style.display = data.secondaryText ? 'block' : 'none';
                 bibleRef.innerText = data.reference || '';
+                
+                let copyrightText = '';
+                const usesBSI = (data.primaryLang === 'HINDI' || data.primaryLang === 'TELUGU' || data.secondaryLang === 'HINDI' || data.secondaryLang === 'TELUGU');
+                
+                if (usesBSI) {
+                    copyrightText = '&copy; 2016 by The Bible Society of India.<br>Used by Permission. All rights reserved worldwide.';
+                }
+                
+                bibleCopyright.innerHTML = copyrightText;
+                bibleCopyright.classList.remove('hidden');
+                watermark.classList.add('hidden'); // Hide church watermark when showing bible
+
                 autoScale();
                 contentDiv.style.opacity = '1';
             }, 300);
@@ -211,6 +231,8 @@
             setTimeout(() => {
                 currentMode = 'slide';
                 bibleContainer.style.display = 'none';
+                bibleCopyright.classList.add('hidden');
+                watermark.classList.remove('hidden'); // Show church watermark when showing slide
                 slideText.style.display = 'block';
                 slideText.innerText = slide || '';
                 autoScale();
@@ -248,9 +270,13 @@
             if (isBlack) {
                 contentDiv.classList.add('hidden');
                 watermark.classList.add('hidden');
+                bibleCopyright.classList.add('hidden');
             } else {
                 contentDiv.classList.remove('hidden');
                 watermark.classList.remove('hidden');
+                if (currentMode === 'bible') {
+                    bibleCopyright.classList.remove('hidden');
+                }
             }
         });
         
@@ -282,6 +308,7 @@
             }
             if (settings.watermarkSize) {
                 watermark.style.fontSize = settings.watermarkSize + 'vh';
+                bibleCopyright.style.fontSize = (settings.watermarkSize * 0.88) + 'vh';
             }
             if (settings.isBold !== undefined) {
                 const weight = settings.isBold ? 'bold' : 'normal';
@@ -289,20 +316,23 @@
                 bibleSecondary.style.fontWeight = weight;
             }
 
-            if (settings.color) document.body.style.color = settings.color;
+            if (settings.color) {
+                document.body.style.color = settings.color;
+                // Watermark follows the user's chosen font color with slight transparency
+                watermark.style.color = settings.color;
+                watermark.style.opacity = '0.85';
+                bibleCopyright.style.color = settings.color;
+                bibleCopyright.style.opacity = '0.75';
+            }
             if (settings.backgroundColor) {
                 document.body.style.backgroundColor = settings.backgroundColor;
-                const isLight = (settings.backgroundColor.match(/^#([0-9a-f]{6})$/i) &&
-                    ((parseInt(settings.backgroundColor.substring(1, 3), 16) * 299 +
-                        parseInt(settings.backgroundColor.substring(3, 5), 16) * 587 +
-                        parseInt(settings.backgroundColor.substring(5, 7), 16) * 114) / 1000) > 125);
-                watermark.style.color = isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)';
             }
             if (settings.backgroundImage) {
                 document.body.style.backgroundImage = `url("${settings.backgroundImage}")`;
                 document.body.style.backgroundSize = 'cover';
                 document.body.style.backgroundPosition = 'center';
                 watermark.style.color = 'rgba(255,255,255,0.95)';
+                bibleCopyright.style.color = 'rgba(255,255,255,0.95)';
             } else if (settings.backgroundImage === '') {
                 document.body.style.backgroundImage = 'none';
             }
@@ -337,9 +367,13 @@
                     if (isBlack) {
                         contentDiv.classList.add('hidden');
                         watermark.classList.add('hidden');
+                        bibleCopyright.classList.add('hidden');
                     } else {
                         contentDiv.classList.remove('hidden');
                         watermark.classList.remove('hidden');
+                        if (currentMode === 'bible') {
+                            bibleCopyright.classList.remove('hidden');
+                        }
                     }
                 });
             }
