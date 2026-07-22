@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('electron', {
     onUpdateProgress: exposeListener('update-progress'),
     onAppRunningAlert: exposeListener('app-running-alert'),
     onDbStatus: exposeListener('db-status-updated'),
+    onSystemError: exposeListener('system-error'),
     onConfirmAppClose: exposeListener('confirm-app-close'),
     onBibleSetupProgress: exposeListener('bible:setup-progress'),
     onBibleVerseUpdate: exposeListener('bible-verse-update'),

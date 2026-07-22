@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { transliterate } = require('../utils/transliterator');
 
 let BUNDLED_SONGS_PATH;   // Read-only, inside app package
 let CUSTOM_SONGS_PATH;    // User-added/edited songs in userData
@@ -13,6 +14,7 @@ let OLD_SONGS_BACKUP_PATH; // Legacy path for migration
 
 let forceOfflineMode = false;
 let playstoreLink = 'https://play.google.com/store/apps/details?id=com.faithcompanionstudios.lyrix';
+let projectorDisplayId = null;
 
 const DEFAULT_CATEGORIES = [
     'English Choruses',
@@ -26,7 +28,8 @@ const DEFAULT_CATEGORIES = [
 
 const DEFAULT_ADMIN = {
     username: 'admin',
-    passwordHash: crypto.createHash('sha256').update('admin').digest('hex')
+    passwordHash: crypto.createHash('sha256').update('admin').digest('hex'),
+    isPasswordProtected: true
 };
 
 let songsCache = [];           // Merged view (bundled + custom)
@@ -106,13 +109,43 @@ function rebuildSongsCache(bundledSongs) {
     const customMap = new Map(customSongsCache.map(s => [s.id, s]));
 
     // 3. Overlay edits onto bundled songs
-    const merged = filtered.map(s => customMap.has(s.id) ? customMap.get(s.id) : s);
+    const merged = filtered.map(s => {
+        if (customMap.has(s.id)) {
+            const custom = customMap.get(s.id);
+            // Preserve new database fields that might not exist in old custom saves
+            if (s.teluguSlides && !custom.teluguSlides) custom.teluguSlides = s.teluguSlides;
+            if (s.youtubeUrl && !custom.youtubeUrl) custom.youtubeUrl = s.youtubeUrl;
+            return custom;
+        }
+        return s;
+    });
 
     // 4. Add purely new custom songs (IDs not in the bundle)
     const bundledIdSet = new Set(bundledSongs.map(s => s.id));
     const newCustom = customSongsCache.filter(s => !bundledIdSet.has(s.id));
 
-    songsCache = [...merged, ...newCustom];
+    songsCache = [...merged, ...newCustom].map(song => {
+        if (!song.romanizedTitle && /[^\u0000-\u007F]/.test(song.title || '')) {
+            song.romanizedTitle = transliterate(song.title || '');
+        }
+        if (!song.searchContent && song.slides) {
+            const fullLyrics = Array.isArray(song.slides) ? song.slides.join(' ') : (song.slides || '');
+            if (/[^\u0000-\u007F]/.test(fullLyrics)) {
+                song.searchContent = transliterate(fullLyrics);
+            }
+        }
+        
+        // Pre-compute normalized strings to drastically save CPU/memory on every keystroke
+        song._idNorm = normalize(song.id || '');
+        song._tNorm = normalize(song.title || '');
+        song._rNorm = normalize(song.romanizedTitle || '');
+        const slidesArray = Array.isArray(song.slides) ? song.slides : [song.slides || ''];
+        song._lNorm = normalize(slidesArray.join(' '));
+        song._sNorm = normalize(song.searchContent || '');
+        song._cNorm = normalize(song.category || '');
+
+        return song;
+    });
     songsCache.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
 }
 
@@ -138,6 +171,7 @@ async function initDb(userDataPath) {
             const settings = JSON.parse(fs.readFileSync(APP_SETTINGS_PATH, 'utf-8'));
             forceOfflineMode = settings.forceOffline || false;
             if (settings.playstoreLink) playstoreLink = settings.playstoreLink;
+            if (settings.projectorDisplayId) projectorDisplayId = settings.projectorDisplayId;
             if (settings.adminCredentials) {
                 adminCredentials = settings.adminCredentials;
             }
@@ -308,9 +342,9 @@ function getAdminCredentials() {
     return adminCredentials || { ...DEFAULT_ADMIN };
 }
 
-async function setAdminCredentials(username, plainPassword) {
+async function setAdminCredentials(username, plainPassword, isPasswordProtected = true) {
     const passwordHash = crypto.createHash('sha256').update(plainPassword).digest('hex');
-    const creds = { username: username.trim(), passwordHash };
+    const creds = { username: username.trim(), passwordHash, isPasswordProtected };
     adminCredentials = creds;
     saveAppSettings();
     return true;
@@ -360,11 +394,13 @@ function performRobustSearch(queryStr, source, preferredCategory = null) {
     if (tokens.length === 0) return source.slice(0, 2000);
 
     const scored = source.map(song => {
-        const titleNorm = normalize(song.title || '');
-        const idNorm = normalize(song.id || '');
-        const slidesArray = Array.isArray(song.slides) ? song.slides : [song.slides || ''];
-        const lyricsNorm = normalize(slidesArray.join(' '));
-        const catNorm = normalize(song.category || '');
+        // Use pre-computed normalized fields
+        const idNorm = song._idNorm || normalize(song.id || '');
+        const titleNorm = song._tNorm || normalize(song.title || '');
+        const romanizedTitleNorm = song._rNorm || '';
+        const lyricsNorm = song._lNorm || '';
+        const searchContentNorm = song._sNorm || '';
+        const catNorm = song._cNorm || '';
 
         let score = 0;
 
@@ -401,26 +437,26 @@ function performRobustSearch(queryStr, source, preferredCategory = null) {
         }
 
         // 4. Title Matches
-        if (titleNorm === qNorm) {
+        if (titleNorm === qNorm || (romanizedTitleNorm && romanizedTitleNorm === qNorm)) {
             score += 100;
-        } else if (titleNorm.startsWith(qNorm)) {
+        } else if (titleNorm.startsWith(qNorm) || (romanizedTitleNorm && romanizedTitleNorm.startsWith(qNorm))) {
             score += 80;
-        } else if (titleNorm.includes(qNorm)) {
+        } else if (titleNorm.includes(qNorm) || (romanizedTitleNorm && romanizedTitleNorm.includes(qNorm))) {
             // Prevent '7' matching '70' in title if query is numeric
-            if (!isQueryOnlyDigits || (titleNorm.match(new RegExp(`\\b${qNorm}\\b`)))) {
+            if (!isQueryOnlyDigits || (titleNorm.match(new RegExp(`\\b${qNorm}\\b`))) || (romanizedTitleNorm && romanizedTitleNorm.match(new RegExp(`\\b${qNorm}\\b`)))) {
                 score += 60;
             }
         }
 
         // 5. Tokenized Title Match
-        if (score < 60 && tokens.every(t => titleNorm.includes(t))) {
+        if (score < 60 && (tokens.every(t => titleNorm.includes(t)) || (romanizedTitleNorm && tokens.every(t => romanizedTitleNorm.includes(t))))) {
             score += 40;
         }
 
         // 6. Lyrics Content Match
-        if (lyricsNorm.includes(qNorm)) {
+        if (lyricsNorm.includes(qNorm) || (searchContentNorm && searchContentNorm.includes(qNorm))) {
             score += 20;
-        } else if (tokens.length > 1 && tokens.every(t => lyricsNorm.includes(t))) {
+        } else if (tokens.length > 1 && (tokens.every(t => lyricsNorm.includes(t)) || (searchContentNorm && tokens.every(t => searchContentNorm.includes(t))))) {
             score += 10;
         }
 
@@ -430,12 +466,14 @@ function performRobustSearch(queryStr, source, preferredCategory = null) {
         }
 
         // 8. Fuzzy Title Match (typo tolerance for queries 3+ chars)
-        if (score === 0 && qNorm.length >= 3 && !isQueryOnlyDigits) {
+        // Skip fuzzy if we already have a strong match to save CPU
+        if (score === 0 && qNorm.length >= 3 && !isQueryOnlyDigits && qNorm.length < 20) {
             // Split title into words and check each token against each word
-            const titleWords = titleNorm.split(/\s+/);
+            const titleWords = titleNorm.split(' ');
             for (const token of tokens) {
                 if (token.length < 3) continue;
                 for (const word of titleWords) {
+                    if (word.length < 3) continue;
                     const maxDist = token.length <= 4 ? 1 : 2; // Allow 1 typo for short words, 2 for longer
                     const dist = levenshtein(token, word.substring(0, token.length + 2));
                     if (dist <= maxDist) {
@@ -467,7 +505,21 @@ async function addSong(songData) {
     const titleNorm = normalize(title);
     if (songsCache.find(s => normalize(s.title) === titleNorm)) throw new Error(`A song titled "${title}" already exists`);
 
-    const finalSong = { ...songData, title, titleNormalized: titleNorm, updatedAt: Date.now(), isCustom: true };
+    let romanizedTitle = songData.romanizedTitle;
+    let searchContent = songData.searchContent;
+    
+    // Auto-transliterate if missing
+    if (!romanizedTitle && /[^\u0000-\u007F]/.test(title)) {
+        romanizedTitle = transliterate(title);
+    }
+    if (!searchContent && songData.slides) {
+        const fullLyrics = Array.isArray(songData.slides) ? songData.slides.join(' ') : songData.slides;
+        if (/[^\u0000-\u007F]/.test(fullLyrics)) {
+            searchContent = transliterate(fullLyrics);
+        }
+    }
+
+    const finalSong = { ...songData, title, romanizedTitle, searchContent, titleNormalized: titleNorm, updatedAt: Date.now(), isCustom: true };
 
     // Add to both caches
     customSongsCache.push(finalSong);
@@ -482,7 +534,21 @@ async function updateSong(songData) {
     const title = capitalizeFirst((songData.title || '').trim());
     if (!title) throw new Error('Title is required');
 
-    const finalSong = { ...songData, title, titleNormalized: normalize(title), updatedAt: Date.now() };
+    let romanizedTitle = songData.romanizedTitle;
+    let searchContent = songData.searchContent;
+    
+    // Auto-transliterate if missing
+    if (!romanizedTitle && /[^\u0000-\u007F]/.test(title)) {
+        romanizedTitle = transliterate(title);
+    }
+    if (!searchContent && songData.slides) {
+        const fullLyrics = Array.isArray(songData.slides) ? songData.slides.join(' ') : songData.slides;
+        if (/[^\u0000-\u007F]/.test(fullLyrics)) {
+            searchContent = transliterate(fullLyrics);
+        }
+    }
+
+    const finalSong = { ...songData, title, romanizedTitle, searchContent, titleNormalized: normalize(title), updatedAt: Date.now() };
 
     // Update in merged cache
     songsCache = songsCache.map(s => s.id === finalSong.id ? finalSong : s);
@@ -627,9 +693,9 @@ async function addToSchedule(songId) {
     const song = getSong(songId);
     if (!song) throw new Error('Song not found');
     
-    // Ensure we have a clean title, fallback to ID if completely missing
+    // Ensure we have a clean title, fallback to preview or ID if completely missing
     // mobile uses displayTitle, our desktop app uses title.
-    const displayTitle = song.displayTitle || song.title || song.titleNormalized || song.id;
+    const displayTitle = song.displayTitle || song.title || song.preview || song.titleNormalized || (song.slides && song.slides[0] ? song.slides[0].split('\n')[0] : song.id);
     
     const newItem = { 
         instanceId: Date.now().toString(), 
@@ -762,7 +828,7 @@ function clearDeletedSongs() {
 // ─── App Settings ─────────────────────────────────────────────────────────────
 
 function getAppSettings() {
-    return { forceOffline: forceOfflineMode, playstoreLink };
+    return { forceOffline: forceOfflineMode, playstoreLink, projectorDisplayId };
 }
 
 function saveAppSettings() {
@@ -771,6 +837,7 @@ function saveAppSettings() {
             fs.writeFileSync(APP_SETTINGS_PATH, JSON.stringify({ 
                 forceOffline: forceOfflineMode,
                 playstoreLink,
+                projectorDisplayId,
                 adminCredentials: adminCredentials 
             }, null, 2));
         }
@@ -785,6 +852,12 @@ function setForceOffline(isForceOffline) {
 
 function setPlaystoreLink(link) {
     playstoreLink = link;
+    saveAppSettings();
+    return { success: true };
+}
+
+function setProjectorDisplayId(id) {
+    projectorDisplayId = id;
     saveAppSettings();
     return { success: true };
 }
@@ -823,5 +896,6 @@ module.exports = {
     clearDeletedSongs,
     getAppSettings,
     setForceOffline,
-    setPlaystoreLink
+    setPlaystoreLink,
+    setProjectorDisplayId
 };

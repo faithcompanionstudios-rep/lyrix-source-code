@@ -8,6 +8,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { WebView } from 'react-native-webview';
 import * as Updates from 'expo-updates';
 import Constants from 'expo-constants';
+import * as Linking from 'expo-linking';
 
 function AppContent() {
   const insets = useSafeAreaInsets();
@@ -269,6 +270,32 @@ function AppContent() {
     };
     initApp();
   }, []);
+  // Handle incoming deep links (e.g. lyrix://connect?ip=192.168.1.5&port=3001)
+  useEffect(() => {
+    const handleDeepLink = (event) => {
+      let data = Linking.parse(event.url);
+      if (data.hostname === 'connect' || data.path === 'connect') {
+        const ip = data.queryParams?.ip;
+        const port = data.queryParams?.port || '3001';
+        if (ip) {
+          const fullIp = `http://${ip}:${port}`;
+          setDesktopIp(fullIp);
+          AsyncStorage.setItem('desktop_ip', fullIp);
+          setCustomAlert(`Connected to ${ip}`);
+        }
+      }
+    };
+
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    Linking.getInitialURL().then((url) => {
+      if (url) handleDeepLink({ url });
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
 
   useEffect(() => {
     const backAction = () => {

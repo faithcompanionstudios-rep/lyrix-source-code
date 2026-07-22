@@ -5,8 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LyriX Stage</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Outfit:wght@100..900&family=Inter:wght@400..800&family=Montserrat:wght@400..800&family=Merriweather:ital,wght@0,300..900;1,300..900&family=Noto+Sans+Telugu:wght@400..700&family=Noto+Sans+Devanagari:wght@400..700&family=Noto+Sans+Tamil:wght@400..700&family=Noto+Sans+Malayalam:wght@400..700&family=Noto+Sans+Kannada:wght@400..700&family=Ramabhadra&family=Tenali+Ramakrishna&family=Mandali&family=Mukta&family=Yatra+One&family=Arima&family=Catamaran&family=Manjari&family=Gayathri&family=Tiro+Kannada&family=Anek+Kannada&display=swap" media="print" onload="this.media='all'">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Outfit:wght@100..900&display=swap');
 
         body,
         html {
@@ -29,7 +29,9 @@
             text-align: center;
             padding: 60px;
             box-sizing: border-box;
-            transition: opacity 0.5s ease;
+            transition: opacity 0.3s ease;
+            position: relative;
+            z-index: 5;
         }
 
         #slide-text {
@@ -43,10 +45,10 @@
         #bible-container {
             display: none;
             flex-direction: column;
-            gap: 6vh;
+            gap: 3vh;
             width: 100%;
             max-width: 90vw;
-            padding-bottom: 80px;
+            padding-bottom: 40px;
         }
 
         .bible-primary {
@@ -87,6 +89,12 @@
         .hidden {
             opacity: 0 !important;
         }
+
+        /* Font loading state */
+        body.font-loading #content {
+            opacity: 0 !important;
+            transition: none !important;
+        }
     </style>
     <script src="http://localhost:3001/socket.io/socket.io.js"></script>
 </head>
@@ -100,10 +108,70 @@
             <div id="bible-ref" class="bible-ref"></div>
         </div>
     </div>
+    
+    <div id="background-image-layer" style="position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; display: none; background-size: cover; background-position: center; transition: filter 0.3s ease;"></div>
+        <video id="background-video-1" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; display: none; transition: filter 0.3s ease, opacity 1s ease; opacity: 1;" muted playsinline></video>
+    <video id="background-video-2" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; display: none; transition: filter 0.3s ease, opacity 1s ease; opacity: 0;" muted playsinline></video>
+    <script>
+        // Double-Buffered Video Looper (Ping-Pong)
+        let activeBgVideo = 1;
+        let currentBgUrl = '';
+        function updateBgVideo(url, blurAmount) {
+            const v1 = document.getElementById('background-video-1');
+            const v2 = document.getElementById('background-video-2');
+            
+            if (blurAmount !== undefined) {
+                v1.style.filter = `blur(${blurAmount}px)`;
+                v2.style.filter = `blur(${blurAmount}px)`;
+            }
+
+            if (!url) {
+                v1.style.display = 'none'; v1.pause(); v1.src = '';
+                v2.style.display = 'none'; v2.pause(); v2.src = '';
+                currentBgUrl = '';
+                return;
+            }
+
+            // Do not restart if already playing the same URL
+            if (currentBgUrl === url && v1.style.display === 'block') return;
+            
+            currentBgUrl = url;
+            v1.src = url;
+            v2.src = url;
+            v1.style.display = 'block';
+            v2.style.display = 'block';
+            v1.style.opacity = '1';
+            v2.style.opacity = '0';
+            activeBgVideo = 1;
+            
+            v1.play().catch(e => console.error(e));
+
+            // Setup crossfade ping-pong logic
+            v1.ontimeupdate = () => {
+                if (activeBgVideo === 1 && v1.duration && (v1.duration - v1.currentTime <= 1.0)) {
+                    activeBgVideo = 2;
+                    v2.currentTime = 0;
+                    v2.play().catch(e=>console.error(e));
+                    v2.style.opacity = '1';
+                    v1.style.opacity = '0';
+                }
+            };
+            v2.ontimeupdate = () => {
+                if (activeBgVideo === 2 && v2.duration && (v2.duration - v2.currentTime <= 1.0)) {
+                    activeBgVideo = 1;
+                    v1.currentTime = 0;
+                    v1.play().catch(e=>console.error(e));
+                    v1.style.opacity = '1';
+                    v2.style.opacity = '0';
+                }
+            };
+        }
+    </script>
+    <div id="blackout-overlay" style="position: absolute; inset: 0; width: 100%; height: 100%; background-color: black; z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.6s ease;"></div>
 
     <div id="church-watermark"
-        style="position: absolute; bottom: 15px; right: 20px; font-size: 2.5vh; color: rgba(255,255,255,0.85); font-style: normal; font-weight: normal; letter-spacing: 0.05em; transition: opacity 0.5s ease; opacity: 0; pointer-events: none; z-index: 10; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">
-        &copy; Faith Companion Studios<span id="church-info"></span>
+        style="position: absolute; bottom: 15px; right: 20px; font-size: 2.5vh; color: rgba(255,255,255,0.85); font-style: normal; font-weight: normal; letter-spacing: 0.05em; transition: opacity 0.5s ease; opacity: 0; pointer-events: none; z-index: 10; text-shadow: 0 2px 4px rgba(0,0,0,0.5); display: flex; align-items: center;">
+        <span id="watermark-content"></span>
     </div>
 
     <div id="bible-copyright" class="hidden"
@@ -112,11 +180,14 @@
 
     <div id="video-container"
         style="position: absolute; inset: 0; background: black; display: none; z-index: 50; align-items: center; justify-content: center;">
-        <video id="projector-video" style="width: 100%; height: 100%; object-fit: contain;"></video>
+        <video id="projector-video" preload="auto" style="width: 100%; height: 100%; object-fit: contain;"></video>
+    </div>
+    <div id="youtube-container"
+        style="position: absolute; inset: 0; background: black; display: none; z-index: 60; align-items: center; justify-content: center; pointer-events: auto;">
     </div>
 
     <script>
-        const socket = io('http://localhost:3001');
+        const socket = io('http://localhost:3001', { query: { type: 'projector' } });
         const contentDiv = document.getElementById('content');
         const slideText = document.getElementById('slide-text');
         const bibleContainer = document.getElementById('bible-container');
@@ -124,26 +195,46 @@
         const bibleSecondary = document.getElementById('bible-secondary');
         const bibleRef = document.getElementById('bible-ref');
         const watermark = document.getElementById('church-watermark');
-        const watermarkInfo = document.getElementById('church-info');
+        const watermarkContent = document.getElementById('watermark-content');
         const bibleCopyright = document.getElementById('bible-copyright');
         const videoContainer = document.getElementById('video-container');
         const videoPlayer = document.getElementById('projector-video');
+        const youtubeContainer = document.getElementById('youtube-container');
 
-        let currentMode = 'slide'; // slide or bible or video
+        let currentMode = 'slide'; // 'slide', 'bible', 'video', 'youtube'
         let playbackReportInterval = null;
+        let currentCategory = '';
+        let currentBiblePrimaryLang = '';
+        let currentBibleSecondaryLang = '';
+        let fontSettings = { default: 'sans-serif', telugu: '', hindi: '', tamil: '', malayalam: '', kannada: '' };
+        let activeWebview = null; // reference to current YouTube webview
+        let ytPaused = false; // local YouTube paused state
 
         function startPlaybackReporter() {
             stopPlaybackReporter();
-            playbackReportInterval = setInterval(() => {
-                if (videoPlayer.src && !videoPlayer.ended) {
+            playbackReportInterval = setInterval(async () => {
+                if (currentMode === 'video' && videoPlayer.src && !videoPlayer.ended) {
                     const payload = {
                         currentTime: videoPlayer.currentTime,
                         duration: videoPlayer.duration || 0,
                         paused: videoPlayer.paused
                     };
-                    if (window.electron && window.electron.sendPlaybackUpdate) {
-                        window.electron.sendPlaybackUpdate(payload);
-                    }
+                    if (window.electron && window.electron.sendPlaybackUpdate) window.electron.sendPlaybackUpdate(payload);
+                } else if (currentMode === 'youtube' && activeWebview) {
+                    try {
+                        // Poll YouTube player state via executeJavaScript
+                        const state = await activeWebview.executeJavaScript(`
+                            (function() {
+                                var v = document.querySelector('video');
+                                if (!v) return null;
+                                return { ct: v.currentTime, dur: v.duration || 0, paused: v.paused };
+                            })()
+                        `);
+                        if (state) {
+                            const payload = { currentTime: state.ct, duration: state.dur, paused: state.paused };
+                            if (window.electron && window.electron.sendPlaybackUpdate) window.electron.sendPlaybackUpdate(payload);
+                        }
+                    } catch(e) { /* webview not ready yet */ }
                 }
             }, 500);
         }
@@ -159,41 +250,109 @@
             stopVideo();
         };
 
-        function stopVideo() {
+        function stopVideo(isTransitioning = false) {
             videoPlayer.pause();
             videoPlayer.src = "";
             videoContainer.style.display = 'none';
-            if (currentMode === 'video') currentMode = 'slide';
+            stopYouTube(isTransitioning);
+        }
+
+        function stopYouTube(isTransitioning = false) {
+            youtubeContainer.style.display = 'none';
+            youtubeContainer.innerHTML = ''; // Destroy the webview to stop playback
+            activeWebview = null;
+            ytPaused = false;
+            if (currentMode === 'video' || currentMode === 'youtube') currentMode = 'slide';
             stopPlaybackReporter();
             
             // Go blank after video ends as per user request
-            contentDiv.classList.add('hidden');
-            watermark.classList.add('hidden');
-            bibleCopyright.classList.add('hidden');
-            
-            // Notify renderer that playback stopped
-            if (window.electron && window.electron.sendPlaybackUpdate) {
-                window.electron.sendPlaybackUpdate({ currentTime: 0, duration: 0, paused: true, stopped: true });
+            if (!isTransitioning) {
+                contentDiv.classList.add('hidden');
+                watermark.classList.add('hidden');
+                bibleCopyright.classList.add('hidden');
+                
+                // Notify renderer that playback stopped
+                if (window.electron && window.electron.sendPlaybackUpdate) {
+                    window.electron.sendPlaybackUpdate({ currentTime: 0, duration: 0, paused: true, stopped: true });
+                }
             }
         }
 
+        let lastPlayVideoCall = { url: '', time: 0 };
         function playVideo(url) {
             console.log("Projector: playVideo called with", url);
+            
+            // Guard against rapid duplicate calls
+            const now = Date.now();
+            if (url === lastPlayVideoCall.url && (now - lastPlayVideoCall.time) < 500) {
+                console.log("Projector: Duplicate playVideo call blocked");
+                return;
+            }
+            lastPlayVideoCall = { url, time: now };
+            
+            stopYouTube(true); // ensure youtube is stopped
             currentMode = 'video';
             videoContainer.style.display = 'flex';
             videoPlayer.src = url;
             
+            // Start the reporter immediately — don't wait for .play() promise
+            startPlaybackReporter();
+            
             videoPlayer.play().then(() => {
                 console.log("Projector: Playback started successfully");
-                startPlaybackReporter();
             }).catch(e => {
                 console.error("Projector: Playback FAILED:", e);
+                // Even if autoplay fails, try again after user gesture or metadata load
+                videoPlayer.oncanplay = () => {
+                    videoPlayer.play().catch(() => {});
+                    videoPlayer.oncanplay = null;
+                };
             });
             
             // Auto-wakeup: Ensure video is visible and any blank overlays are removed
             contentDiv.classList.remove('hidden');
             watermark.classList.remove('hidden');
             bibleCopyright.classList.add('hidden');
+        }
+
+        let lastPlayYouTubeCall = { videoId: '', time: 0 };
+        async function playYouTube(videoId) {
+            console.log("Projector: playYouTube called with", videoId);
+
+            // Guard against rapid duplicate calls
+            const now = Date.now();
+            if (videoId === lastPlayYouTubeCall.videoId && (now - lastPlayYouTubeCall.time) < 1000) {
+                console.log("Projector: Duplicate playYouTube call blocked");
+                return;
+            }
+            lastPlayYouTubeCall = { videoId, time: now };
+
+            videoPlayer.pause(); // ensure local video is stopped
+            videoPlayer.src = "";
+            videoContainer.style.display = 'none';
+            stopPlaybackReporter();
+            
+            currentMode = 'youtube';
+            youtubeContainer.style.display = 'flex';
+            youtubeContainer.innerHTML = '';
+            activeWebview = null;
+            ytPaused = false;
+
+            const webview = document.createElement('webview');
+            webview.style.width = '100%';
+            webview.style.height = '100%';
+            webview.setAttribute('httpreferrer', 'http://localhost:3001/');
+            webview.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&controls=1&rel=0&origin=http://localhost:3001`;
+            
+            youtubeContainer.appendChild(webview);
+            activeWebview = webview;
+
+            // Start polling once the webview has finished loading
+            webview.addEventListener('did-finish-load', () => {
+                console.log("Projector: YouTube webview loaded, starting sync");
+                startPlaybackReporter();
+            });
+            // Intentionally not modifying contentDiv visibility to prevent flickering
         }
 
         function updateBibleContent(data) {
@@ -208,9 +367,11 @@
                 bibleSecondary.innerText = data.secondaryText || '';
                 bibleSecondary.style.display = data.secondaryText ? 'block' : 'none';
                 bibleRef.innerText = data.reference || '';
+                currentBiblePrimaryLang = data.primaryLang || '';
+                currentBibleSecondaryLang = data.secondaryLang || '';
                 
                 let copyrightText = '';
-                const usesBSI = (data.primaryLang === 'HINDI' || data.primaryLang === 'TELUGU' || data.secondaryLang === 'HINDI' || data.secondaryLang === 'TELUGU');
+                const usesBSI = (currentBiblePrimaryLang === 'HINDI' || currentBiblePrimaryLang === 'TELUGU' || currentBibleSecondaryLang === 'HINDI' || currentBibleSecondaryLang === 'TELUGU');
                 
                 if (usesBSI) {
                     copyrightText = '&copy; 2016 by The Bible Society of India.<br>Used by Permission. All rights reserved worldwide.';
@@ -220,12 +381,20 @@
                 bibleCopyright.classList.remove('hidden');
                 watermark.classList.add('hidden'); // Hide church watermark when showing bible
 
-                autoScale();
-                contentDiv.style.opacity = '1';
+                document.body.classList.add('font-loading');
+                applyFont();
+                
+                // Wait for all fonts (including web/custom fonts) to finish loading
+                // before recalculating scale and fading in, so the user never sees a layout jump
+                document.fonts.ready.then(() => {
+                    applyFont(); // Recalculate optical heights with the actual loaded font
+                    document.body.classList.remove('font-loading');
+                    contentDiv.style.opacity = '1';
+                });
             }, 300);
         }
 
-        function updateSlideContent(slide) {
+        function updateSlideContent(data) {
             // Crossfade transition
             contentDiv.style.opacity = '0';
             setTimeout(() => {
@@ -234,33 +403,209 @@
                 bibleCopyright.classList.add('hidden');
                 watermark.classList.remove('hidden'); // Show church watermark when showing slide
                 slideText.style.display = 'block';
-                slideText.innerText = slide || '';
-                autoScale();
-                contentDiv.style.opacity = '1';
+                
+                const slideString = typeof data === 'string' ? data : (data.slide || '');
+                currentCategory = typeof data === 'string' ? '' : (data.category || '');
+                slideText.innerText = slideString;
+                
+                document.body.classList.add('font-loading');
+                applyFont();
+                
+                // Wait for all fonts (including web/custom fonts) to finish loading
+                // before recalculating scale and fading in, so the user never sees a layout jump
+                document.fonts.ready.then(() => {
+                    applyFont(); // Recalculate with the actual loaded font
+                    document.body.classList.remove('font-loading');
+                    contentDiv.style.opacity = '1';
+                });
             }, 300);
         }
         
         function autoScale() {
             // Reset to allow measurement
             document.documentElement.style.setProperty('--auto-scale', '1');
-            requestAnimationFrame(() => {
-                const inner = currentMode === 'slide' ? slideText : bibleContainer;
-                const availableHeight = window.innerHeight - 180; // Safety margin
-                
-                let scale = 1.0;
-                // Simple iterative shrink if it overflows
-                while (inner.scrollHeight > availableHeight && scale > 0.3) {
-                    scale -= 0.05;
-                    document.documentElement.style.setProperty('--auto-scale', scale);
-                }
-            });
+            
+            const inner = currentMode === 'slide' ? slideText : bibleContainer;
+            
+            // Tighter margin (120px) allows 4-line song lyrics and long bible verses to use more screen real estate
+            const margin = 120;
+            const availableHeight = window.innerHeight - margin;
+            
+            // Force initial layout
+            void inner.offsetHeight;
+            
+            let scale = 1.0;
+            // Fine steps (0.02) to avoid over-shrinking and hit the perfect optical size
+            const step = 0.02;
+            
+            while (inner.scrollHeight > availableHeight && scale > 0.3) {
+                scale -= step;
+                document.documentElement.style.setProperty('--auto-scale', scale);
+                // Force layout recalculation after changing scale
+                void inner.offsetHeight;
+            }
         }
         
         window.addEventListener('resize', autoScale);
 
         socket.on('current-slide', (data) => {
-            updateSlideContent(data.slide);
+            updateSlideContent(data);
         });
+
+        function applyFont() {
+            // Helper to get effective font (override or fallback to bundled premium font)
+            const getLangFont = (langType) => {
+                let overrideStr = fontSettings[langType === 'marathi' ? 'hindi' : langType];
+                
+                const notoFonts = {
+                    telugu: "'Noto Sans Telugu', sans-serif",
+                    hindi: "'Noto Sans Devanagari', sans-serif",
+                    marathi: "'Noto Sans Devanagari', sans-serif",
+                    tamil: "'Noto Sans Tamil', sans-serif",
+                    malayalam: "'Noto Sans Malayalam', sans-serif",
+                    kannada: "'Noto Sans Kannada', sans-serif"
+                };
+                
+                if (!overrideStr || overrideStr === 'sans-serif' || overrideStr === 'default') {
+                     return notoFonts[langType] || fontSettings.default;
+                }
+                
+                // Handle uploaded custom font files
+                if (overrideStr.startsWith('url:')) {
+                    const fontFile = overrideStr.substring(4);
+                    const fontFaceName = `CustomFont_${fontFile.replace(/[^a-zA-Z0-9]/g, '')}`;
+                    
+                    if (!document.getElementById(`style_${fontFaceName}`)) {
+                        const style = document.createElement('style');
+                        style.id = `style_${fontFaceName}`;
+                        style.innerHTML = `
+                            @font-face {
+                                font-family: '${fontFaceName}';
+                                src: url('http://${(window.location.hostname || 'localhost')}:3001/fonts/${fontFile}');
+                            }
+                        `;
+                        document.head.appendChild(style);
+                        
+                        // Wait for font to load before showing it to avoid layout shifts
+                        document.body.classList.add('font-loading');
+                        document.fonts.load(`1em "${fontFaceName}"`).then(() => {
+                            document.body.classList.remove('font-loading');
+                            applyFont(); // Re-measure and apply after font actually loads
+                        }).catch((e) => {
+                            console.error("Font failed to load:", e);
+                            document.body.classList.remove('font-loading');
+                        });
+                    }
+                    return `'${fontFaceName}', sans-serif`;
+                }
+
+                return overrideStr;
+            };
+
+            // ── Font Metrics Engine ────────────────────────────────────────────
+            // Uses Canvas API to measure the TRUE visual height (glyph height) 
+            // of a font, ignoring its line-height bounding box.
+            const TEST_SIZE = 100;
+
+            function measureTrueGlyphHeight(fontFamily, text) {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                ctx.font = `${TEST_SIZE}px ${fontFamily}`;
+                const metrics = ctx.measureText(text);
+                // Fallback to 1 if browser doesn't support advanced metrics
+                const height = (metrics.actualBoundingBoxAscent || TEST_SIZE/2) + (metrics.actualBoundingBoxDescent || 0);
+                return height > 0 ? height : TEST_SIZE;
+            }
+
+            // Get a representative character for the language to measure its natural optical height
+            function getRepChar(lang) {
+                if (lang === 'TELUGU') return 'అ';
+                if (lang === 'HINDI' || lang === 'MARATHI') return 'अ';
+                if (lang === 'TAMIL') return 'அ';
+                if (lang === 'MALAYALAM') return 'അ';
+                if (lang === 'KANNADA') return 'ಅ';
+                return 'A'; // English/Default Cap Height
+            }
+
+            // Detect native script from the actual text content, not just the category
+            function detectScriptFromText(text) {
+                if (/[\u0C00-\u0C7F]/.test(text)) return 'telugu';
+                if (/[\u0900-\u097F]/.test(text)) return 'hindi';
+                if (/[\u0B80-\u0BFF]/.test(text)) return 'tamil';
+                if (/[\u0D00-\u0D7F]/.test(text)) return 'malayalam';
+                if (/[\u0C80-\u0CFF]/.test(text)) return 'kannada';
+                return null;
+            }
+
+            if (currentMode === 'slide') {
+                let activeFont = fontSettings.default;
+                let boost = 1.0;
+                const catLower = currentCategory.toLowerCase();
+                const slideContent = slideText.innerText || '';
+                
+                // First check category, then fall back to detecting from text content
+                let detectedLang = null;
+                if (catLower.includes('telugu')) detectedLang = 'telugu';
+                else if (catLower.includes('hindi')) detectedLang = 'hindi';
+                else if (catLower.includes('marathi')) detectedLang = 'marathi';
+                else if (catLower.includes('tamil')) detectedLang = 'tamil';
+                else if (catLower.includes('malayalam')) detectedLang = 'malayalam';
+                else if (catLower.includes('kannada')) detectedLang = 'kannada';
+                else detectedLang = detectScriptFromText(slideContent);
+
+                if (detectedLang) {
+                    activeFont = getLangFont(detectedLang);
+                }
+                
+                // Match the exact same font size multiplier as English so neither dominates
+                boost = 1.0;
+                
+                slideText.style.fontFamily = activeFont;
+                slideText.style.fontSize = `calc(var(--base-font-size, 6) * 1vw * var(--auto-scale, 1) * ${boost})`;
+            } else if (currentMode === 'bible') {
+                let primaryFont = fontSettings.default; 
+                if (currentBiblePrimaryLang === 'TELUGU') primaryFont = getLangFont('telugu');
+                else if (currentBiblePrimaryLang === 'HINDI') primaryFont = getLangFont('hindi');
+                else if (currentBiblePrimaryLang === 'TAMIL') primaryFont = getLangFont('tamil');
+                else if (currentBiblePrimaryLang === 'MALAYALAM') primaryFont = getLangFont('malayalam');
+                else if (currentBiblePrimaryLang === 'KANNADA') primaryFont = getLangFont('kannada');
+
+                let secondaryFont = "'Outfit', sans-serif"; 
+                if (currentBibleSecondaryLang === 'TELUGU') secondaryFont = getLangFont('telugu');
+                else if (currentBibleSecondaryLang === 'HINDI') secondaryFont = getLangFont('hindi');
+                else if (currentBibleSecondaryLang === 'TAMIL') secondaryFont = getLangFont('tamil');
+                else if (currentBibleSecondaryLang === 'MALAYALAM') secondaryFont = getLangFont('malayalam');
+                else if (currentBibleSecondaryLang === 'KANNADA') secondaryFont = getLangFont('kannada');
+
+                biblePrimary.style.fontFamily = primaryFont;
+                bibleSecondary.style.fontFamily = secondaryFont;
+
+                // Smart Optical Boost for Bible:
+                const hasDualLang = currentBibleSecondaryLang && currentBibleSecondaryLang !== currentBiblePrimaryLang && bibleSecondary.style.display !== 'none';
+                
+                let primaryBoost = 1.0;
+                let secondaryBoost = 1.0;
+                
+                if (hasDualLang) {
+                    // Measure actual visual height of the glyphs
+                    const primaryHeight = measureTrueGlyphHeight(primaryFont, getRepChar(currentBiblePrimaryLang));
+                    const secondaryHeight = measureTrueGlyphHeight(secondaryFont, getRepChar(currentBibleSecondaryLang));
+                    
+                    if (primaryHeight > 0 && secondaryHeight > 0) {
+                        // Use the larger visual font as the reference, boost the smaller one so their visual heights match
+                        const maxHeight = Math.max(primaryHeight, secondaryHeight);
+                        primaryBoost = Math.max(0.7, Math.min(1.8, maxHeight / primaryHeight));
+                        secondaryBoost = Math.max(0.7, Math.min(1.8, maxHeight / secondaryHeight));
+                    }
+                }
+                
+                biblePrimary.style.fontSize = `calc(var(--base-font-size, 5) * 1vw * var(--auto-scale, 1) * ${primaryBoost})`;
+                bibleSecondary.style.fontSize = `calc(var(--base-font-size, 5) * 0.8vw * var(--auto-scale, 1) * ${secondaryBoost})`;
+            }
+            
+            // Recalculate auto-scale after any font adjustments
+            autoScale();
+        }
 
         socket.on('bible-verse-update', (data) => {
             updateBibleContent(data);
@@ -273,29 +618,51 @@
                 bibleCopyright.classList.add('hidden');
             } else {
                 contentDiv.classList.remove('hidden');
-                watermark.classList.remove('hidden');
                 if (currentMode === 'bible') {
                     bibleCopyright.classList.remove('hidden');
+                } else {
+                    watermark.classList.remove('hidden');
                 }
             }
         });
         
-        socket.on('media-command', (data) => {
+        socket.on('media-command', (data) => handleMediaCommand(data));
+
+        async function handleMediaCommand(data) {
             if (data.action === 'media-play') {
                 playVideo(data.url);
+            } else if (data.action === 'media-play-youtube') {
+                playYouTube(data.videoId);
             } else if (data.action === 'media-stop') {
                 stopVideo();
             } else if (data.action === 'media-pause') {
-                videoPlayer.pause();
+                if (currentMode === 'youtube' && activeWebview) {
+                    ytPaused = true;
+                    activeWebview.executeJavaScript(`document.querySelector('video') && document.querySelector('video').pause()`).catch(()=>{});
+                } else if (currentMode === 'video') {
+                    videoPlayer.pause();
+                }
             } else if (data.action === 'media-resume') {
-                videoPlayer.play();
-                startPlaybackReporter();
+                if (currentMode === 'youtube' && activeWebview) {
+                    ytPaused = false;
+                    activeWebview.executeJavaScript(`document.querySelector('video') && document.querySelector('video').play()`).catch(()=>{});
+                } else if (currentMode === 'video') {
+                    videoPlayer.play();
+                    startPlaybackReporter();
+                }
             } else if (data.action === 'media-seek') {
-                videoPlayer.currentTime = data.time;
+                if (currentMode === 'youtube' && activeWebview) {
+                    activeWebview.executeJavaScript(`var v=document.querySelector('video');if(v)v.currentTime=${data.time};`).catch(()=>{});
+                } else if (currentMode === 'video') {
+                    videoPlayer.currentTime = data.time;
+                }
             } else if (data.action === 'media-volume') {
                 videoPlayer.volume = data.volume;
+                if (currentMode === 'youtube' && activeWebview) {
+                    activeWebview.executeJavaScript(`var v=document.querySelector('video');if(v)v.volume=${data.volume};`).catch(()=>{});
+                }
             }
-        });
+        }
 
         socket.on('settings-update', (settings) => {
 
@@ -324,36 +691,70 @@
                 bibleCopyright.style.color = settings.color;
                 bibleCopyright.style.opacity = '0.75';
             }
+            const bgImage = document.getElementById('background-image-layer');
+            const blurAmount = settings.backgroundBlur || 0;
+
             if (settings.backgroundColor) {
                 document.body.style.backgroundColor = settings.backgroundColor;
             }
             if (settings.backgroundImage) {
-                document.body.style.backgroundImage = `url("${settings.backgroundImage}")`;
-                document.body.style.backgroundSize = 'cover';
-                document.body.style.backgroundPosition = 'center';
-                watermark.style.color = 'rgba(255,255,255,0.95)';
-                bibleCopyright.style.color = 'rgba(255,255,255,0.95)';
+                const bgMediaUrl = `http://${(window.location.hostname || 'localhost')}:3001/media/${settings.backgroundImage}`;
+                const isVideo = settings.backgroundImage.toLowerCase().endsWith('.mp4') || settings.backgroundImage.toLowerCase().endsWith('.webm');
+                
+                if (isVideo) {
+                    bgImage.style.display = 'none';
+                    if (typeof updateBgVideo === 'function') updateBgVideo(bgMediaUrl, blurAmount);
+                } else {
+                    if (typeof updateBgVideo === 'function') updateBgVideo('', blurAmount);
+                    bgImage.style.backgroundImage = `url("${bgMediaUrl}")`;
+                    bgImage.style.display = 'block';
+                }
             } else if (settings.backgroundImage === '') {
-                document.body.style.backgroundImage = 'none';
+                bgImage.style.display = 'none';
+                if (typeof updateBgVideo === 'function') updateBgVideo('', blurAmount);
             }
+
+            // Apply blur to image layer
+            if (bgImage) bgImage.style.filter = `blur(${blurAmount}px)`;
 
             if (settings.textAlign) {
                 contentDiv.style.textAlign = settings.textAlign;
                 contentDiv.style.justifyContent = settings.textAlign === 'center' ? 'center' : (settings.textAlign === 'left' ? 'flex-start' : 'flex-end');
             }
-            if (settings.fontFamily) {
-                slideText.style.fontFamily = settings.fontFamily;
-                biblePrimary.style.fontFamily = settings.fontFamily;
+            if (settings.fontFamily) fontSettings.default = settings.fontFamily;
+            if (settings.songFonts) {
+                fontSettings = { ...fontSettings, ...settings.songFonts };
             }
+            
+            applyFont();
 
-            if (settings.churchName || settings.churchPlace) {
-                let infoText = '';
-                if (settings.churchName) infoText += ` | ${settings.churchName}`;
-                if (settings.churchPlace) infoText += ` | ${settings.churchPlace}`;
-                watermarkInfo.innerText = infoText;
-                watermark.style.opacity = '1';
+            if (settings.watermarkType === 'none') {
+                watermark.style.display = 'none';
             } else {
-                watermarkInfo.innerText = '';
+                watermark.style.display = 'flex';
+                
+                if (settings.watermarkType === 'church-details') {
+                    let infoText = '';
+                    if (settings.churchName) infoText += settings.churchName;
+                    if (settings.churchPlace) {
+                        if (infoText) infoText += ` | `;
+                        infoText += settings.churchPlace;
+                    }
+                    watermarkContent.innerHTML = infoText;
+                } else if (settings.watermarkType === 'logo') {
+                    if (settings.watermarkLogoBase64) {
+                        watermarkContent.innerHTML = `<img src="${settings.watermarkLogoBase64}" style="max-height: 8vh; object-fit: contain; opacity: 0.9;" />`;
+                    } else {
+                        watermarkContent.innerHTML = '';
+                    }
+                } else {
+                    // Default behavior
+                    let infoText = '&copy; Faith Companion Studios';
+                    if (settings.churchName) infoText += ` | ${settings.churchName}`;
+                    if (settings.churchPlace) infoText += ` | ${settings.churchPlace}`;
+                    watermarkContent.innerHTML = infoText;
+                }
+                
                 watermark.style.opacity = '1';
             }
         }
@@ -370,9 +771,10 @@
                         bibleCopyright.classList.add('hidden');
                     } else {
                         contentDiv.classList.remove('hidden');
-                        watermark.classList.remove('hidden');
                         if (currentMode === 'bible') {
                             bibleCopyright.classList.remove('hidden');
+                        } else {
+                            watermark.classList.remove('hidden');
                         }
                     }
                 });
@@ -384,22 +786,7 @@
                 window.electron.onBibleVerseUpdate((event, data) => updateBibleContent(data));
             }
             if (window.electron.onMediaCommand) {
-                window.electron.onMediaCommand((event, data) => {
-                    if (data.action === 'media-play') {
-                        playVideo(data.url);
-                    } else if (data.action === 'media-stop') {
-                        stopVideo();
-                    } else if (data.action === 'media-pause') {
-                        videoPlayer.pause();
-                    } else if (data.action === 'media-resume') {
-                        videoPlayer.play();
-                        startPlaybackReporter();
-                    } else if (data.action === 'media-seek') {
-                        videoPlayer.currentTime = data.time;
-                    } else if (data.action === 'media-volume') {
-                        videoPlayer.volume = data.volume;
-                    }
-                });
+                window.electron.onMediaCommand((event, data) => handleMediaCommand(data));
             }
         }
     </script>

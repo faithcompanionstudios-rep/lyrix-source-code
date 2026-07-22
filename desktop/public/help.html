@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LyriX Stage - Official User Manual</title>
+    <link href="tailwind-help.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        h1, h2, h3, h4, h5, h6 { font-family: 'Outfit', sans-serif; }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        html { scroll-behavior: smooth; }
+
+        .prose p { margin-bottom: 1rem; line-height: 1.6; color: #475569; font-size: 0.95rem;}
+        .prose ul { margin-bottom: 1.5rem; padding-left: 1.5rem; list-style-type: disc; color: #475569; font-size: 0.95rem; }
+        .prose li { margin-bottom: 0.5rem; }
+        .prose h3 { font-size: 1.25rem; font-weight: 700; color: #1e293b; margin-top: 2rem; margin-bottom: 1rem; }
+        .prose strong { color: #0f172a; font-weight: 600; }
+        
+        .nav-link.active {
+            background-color: #eef2ff;
+            color: #4f46e5;
+            font-weight: 600;
+            border-right: 3px solid #4f46e5;
+        }
+
+        .path-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #475569;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .path-arrow {
+            color: #94a3b8;
+            font-size: 0.8rem;
+            margin: 0 4px;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased h-screen overflow-hidden flex">
+
+    <!-- Sidebar Navigation -->
+    <aside class="w-72 bg-white border-r border-slate-200 h-full overflow-y-auto flex-shrink-0 z-10 shadow-sm flex flex-col">
+        <div class="p-6 border-b border-slate-100 bg-slate-50/50 sticky top-0 z-20">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-md shadow-indigo-200">
+                    <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                </div>
+                <h1 class="font-extrabold text-lg text-slate-900 tracking-tight">LyriX Manual</h1>
+            </div>
+            <p class="text-[11px] font-medium text-slate-400 mt-2 uppercase tracking-widest">Official User Guide</p>
+        </div>
+
+        <nav class="p-4 space-y-1" id="nav-menu">
+            <a href="#introduction" class="nav-link block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">Introduction</a>
+            <div class="pt-4 pb-2 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Core Features</div>
+            <a href="#library-management" class="nav-link block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">1. Library & Songs</a>
+            <a href="#command-center" class="nav-link block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">2. Command Center</a>
+            <a href="#projector-system" class="nav-link block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">3. Projector System</a>
+            <a href="#media-player" class="nav-link block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">4. Media & Presentations</a>
+            <a href="#sunday-service" class="nav-link block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">5. Sunday Service</a>
+            <a href="#holy-bible" class="nav-link block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">6. Holy Bible</a>
+            
+            <div class="pt-4 pb-2 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Advanced</div>
+            <a href="#multilingual" class="nav-link block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">7. Multilingual & Fonts</a>
+            <a href="#phonetic-typing" class="nav-link block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">8. Phonetic Typing</a>
+            <a href="#remote-control" class="nav-link block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">9. Remote & Stage Viewer</a>
+            <a href="#admin-tools" class="nav-link block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">10. Advanced Settings & Maintenance</a>
+            
+            <div class="pt-4 pb-2 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Reference</div>
+            <a href="#shortcuts" class="nav-link block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">11. Keyboard Shortcuts</a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 h-full overflow-y-auto bg-slate-50 relative scroll-smooth" id="main-content">
+        <div class="max-w-4xl mx-auto px-8 lg:px-12 py-12 pb-32 space-y-20">
+            
+            <!-- Header Section -->
+            <div id="introduction" class="scroll-mt-12">
+                <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-4">LyriX Stage Documentation</h1>
+                <p class="text-xl text-slate-500 font-medium leading-relaxed">Welcome to the complete user manual for LyriX Stage. This guide is interactive—look for the blue callout boxes to find exactly where to click in the app to access each feature.</p>
+            </div>
+
+            <!-- 1. Library -->
+            <section id="library-management" class="scroll-mt-12 bg-white p-8 md:p-10 rounded-[2rem] shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-[100px] -z-0 opacity-50"></div>
+                <div class="relative z-10">
+                    <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+                        <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shrink-0">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-3xl font-bold text-slate-900">1. Library & Song Management</h2>
+                            <p class="text-slate-500 font-medium">Build, organize, and format your church's song database.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="prose">
+                        <h3>Adding Songs Manually</h3>
+                        <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-blue-900 m-0">How to find it:</h4>
+                                <p class="text-sm text-blue-800 mt-1 mb-0">Open the <span class="path-pill">Song Library</span> tab &rarr; Click the blue floating <span class="path-pill text-blue-600 border-blue-200"><svg class="w-3 h-3 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg> NEW SONG</span> button at the bottom of the list.</p>
+                            </div>
+                        </div>
+                        <p>You can type or paste lyrics directly into the editor. If you paste a block of text, ensure <strong>Auto-Format Lyrics</strong> is enabled in Settings to let LyriX intelligently break the text into properly formatted slides.</p>
+
+                        <h3>Sorting the Library</h3>
+                        <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-blue-900 m-0">How to sort:</h4>
+                                <p class="text-sm text-blue-800 mt-1 mb-0">Look for the <span class="path-pill"><svg class="w-3 h-3 text-blue-600 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>Sort</span> icon on the far right of the <strong>SHOWING TOP RESULTS</strong> banner above the song list.</p>
+                            </div>
+                        </div>
+                        <p>Click the sort icon to open a beautiful dropdown menu where you can choose between:</p>
+                        <ul class="list-disc pl-5 space-y-2 mb-4 text-[0.95rem] text-slate-600">
+                            <li><strong>Relevance (Search):</strong> The default behavior. Shows closest matches first.</li>
+                            <li><strong>Number (Asc/Desc):</strong> Sorts your library by the unique song ID (e.g., C1, C2) with clear Up/Down arrows.</li>
+                            <li><strong>Title (A-Z/Z-A):</strong> Standard alphabetical sorting with clear Up/Down arrows.</li>
+                            <li><strong>Recently Added:</strong> Instantly bubbles up the newest additions to the top of your library.</li>
+                        </ul>
+                        <div class="border border-slate-200 rounded-xl overflow-hidden shadow-sm my-6 bg-slate-100 flex items-center justify-center">
+                            <img src="./assets/sort-menu-preview.png" alt="Library Sort Menu Preview" class="w-full h-80 object-cover object-[28%_45%]" onerror="this.outerHTML='<div class=\'text-xs text-slate-500 text-center py-8 font-medium italic\'>Screenshot Placeholder: Please save your screenshot as assets/sort-menu-preview.png</div>'">
+                        </div>
+
+                        <h3>Customizing Slide Labels</h3>
+                        <p>LyriX automatically numbers your slides (e.g., Verse 1, Verse 2). To give a slide a custom name (like "Chorus", "Bridge", or "Vamp"), you have two easy options:</p>
+                        <ul class="list-disc pl-5 space-y-2 mb-6 text-[0.95rem] text-slate-600">
+                            <li><strong>Inline Editing (Fastest):</strong> On the main preview pane, simply click the text that says "VERSE 1" above a slide. Type your custom name (e.g., "Bridge") and press Enter. It automatically saves instantly!</li>
+                            <li><strong>Editor Tags:</strong> When adding a song manually in the editor, simply type your custom name inside square brackets at the very beginning of a verse block (e.g., <code>[Bridge]</code> or <code>[Pre-Chorus]</code>). The system will automatically hide the brackets from the projector but update the sequence name!</li>
+                        </ul>
+
+                        <h3>Quick Edit Lyrics (On the Fly)</h3>
+                        <p>Need to fix a typo immediately during a live service? Instead of opening the full song editor:</p>
+                        <ul class="list-disc pl-5 space-y-2 mb-6 text-[0.95rem] text-slate-600">
+                            <li>Hold <strong>Alt</strong> (or <strong>Option</strong> on Mac) and <strong>Click</strong> on the lyric text of any slide in the preview grid.</li>
+                            <li>The text will instantly become an editable textbox. Make your corrections directly on the slide.</li>
+                            <li>Press <strong>Escape</strong> or click anywhere else to save. Your changes will automatically update the master slide, fix any sequences, and update the live projector on the fly!</li>
+                        </ul>
+
+                        <h3>Favourites</h3>
+                        <p>Have songs you sing every single week? Click the <span class="path-pill text-slate-500 border-slate-200"><svg class="w-3 h-3 inline text-slate-400 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg> Favourite</span> button located beneath any song in the main preview pane. You can then quickly access all your favorite songs via the dedicated <strong>Favourites</strong> tab in the left sidebar.</p>
+
+
+                        <h3>PowerPoint & OpenLyrics XML Import (Drag & Drop)</h3>
+                        <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-blue-900 m-0">How to use it:</h4>
+                                <p class="text-sm text-blue-800 mt-1 mb-0">Simply drag and drop a <code>.pptx</code>, <code>.ppt</code>, <code>.ppsx</code>, or <code>.xml</code> file from your computer directly into the LyriX window anywhere!</p>
+                            </div>
+                        </div>
+                        <p>Have legacy presentations? LyriX will automatically extract the text from your presentation slides and generate a formatted song in your database.</p>
+
+                        <h3>Smart Chorus Tagging</h3>
+                        <p>To make choruses visually distinct (they will render in italics with a rounded background on the projector):</p>
+                        <ol class="list-decimal pl-5 space-y-2 mb-6">
+                            <li>Open any song for editing.</li>
+                            <li>Toggle the <strong>Tag Choruses</strong> switch on.</li>
+                            <li>Click on any stanza. It will highlight in blue, indicating it is now tagged as a chorus.</li>
+                        </ol>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. Command Center -->
+            <section id="command-center" class="scroll-mt-12 bg-white p-8 md:p-10 rounded-[2rem] shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-bl-[100px] -z-0 opacity-50"></div>
+                <div class="relative z-10">
+                    <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+                        <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shrink-0">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-3xl font-bold text-slate-900">2. Command Center</h2>
+                            <p class="text-slate-500 font-medium">Global Spotlight search for instant access to any song, scripture, or action.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="prose">
+                        <p>The Command Center is the fastest way to control LyriX Stage during a live event. It is an intelligent floating search bar that can instantly locate any song in your database or directly query the Holy Bible without needing to navigate through different tabs.</p>
+
+                        <div class="border border-slate-200 rounded-xl overflow-hidden shadow-sm my-6 bg-slate-100 flex items-center justify-center">
+                            <img src="./assets/command-center-preview.png" alt="Command Center Preview" class="w-full h-80 object-cover object-center" onerror="this.outerHTML='<div class=\'text-xs text-slate-500 text-center py-8 font-medium italic\'>Screenshot Placeholder: Please save your screenshot as assets/command-center-preview.png</div>'">
+                        </div>
+
+                        <div class="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-indigo-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-indigo-900 m-0">How to open it:</h4>
+                                <p class="text-sm text-indigo-800 mt-1 mb-0">From <strong>anywhere</strong> in the application, press <kbd class="px-2 py-1 bg-white border border-indigo-200 rounded shadow-sm text-xs font-mono">Ctrl + K</kbd> (or Cmd+K on Mac).</p>
+                            </div>
+                        </div>
+
+                        <h3>Pure Keyboard Navigation</h3>
+                        <p>Once the Command Center is open, start typing a song name. Use the <strong>Up and Down Arrow keys</strong> to highlight a song, and press <strong>Enter</strong> to instantly select it and throw it to the preview panel without ever touching your mouse.</p>
+
+                        <h3>Smart Bible Search</h3>
+                        <p>The Command Center automatically recognizes scripture references! Type a book and chapter (e.g., <code>John 3</code>, <code>Psalms 23</code>, or <code>1 Peter 2:4</code>) and an option to "Open Bible to..." will instantly appear. Press Enter, and LyriX will automatically switch to the Holy Bible tab and have the exact verse selected and ready for projection.</p>
+
+                        <h3>The "Blank" Action Keyword</h3>
+                        <p>Need to quickly blackout the projector screen? If you type the word <code>blank</code> into the Command Center and press Enter, it acts exactly like pressing the <code>B</code> shortcut—instantly blacking out the screen. Type it again to restore the projection.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. Projector System -->
+            <section id="projector-system" class="scroll-mt-12 bg-white p-8 md:p-10 rounded-[2rem] shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-bl-[100px] -z-0 opacity-50"></div>
+                <div class="relative z-10">
+                    <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+                        <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shrink-0">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-3xl font-bold text-slate-900">3. Projector System & Aesthetics</h2>
+                            <p class="text-slate-500 font-medium">Configure dual-displays and customize your presentation styling.</p>
+                        </div>
+                    </div>
+
+                    <div class="prose">
+                        <h3>Setting Up External Displays</h3>
+                        <div class="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-indigo-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-indigo-900 m-0">Where to find it:</h4>
+                                <p class="text-sm text-indigo-800 mt-1 mb-0">Sidebar <span class="path-arrow">&rarr;</span> <span class="path-pill">⚙️ Settings</span> <span class="path-arrow">&rarr;</span> Scroll to the <strong>Projector Display Setup</strong> card.</p>
+                            </div>
+                        </div>
+                        <p>LyriX uses a frameless secondary window for projection. By default, it targets your "First External Display". If you have multiple screens, use the <strong>Target Display Monitor</strong> dropdown to explicitly select the target monitor.</p>
+
+                        <h3>Visual Themes: Media vs. Solid Modes</h3>
+                        <div class="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-indigo-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-indigo-900 m-0">Where to find it:</h4>
+                                <p class="text-sm text-indigo-800 mt-1 mb-0">Sidebar <span class="path-arrow">&rarr;</span> <span class="path-pill">⚙️ Settings</span> <span class="path-arrow">&rarr;</span> Scroll to the <strong>Projector Styling</strong> card.</p>
+                            </div>
+                        </div>
+                        <ul>
+                            <li><strong>Solid Colors Mode:</strong> The classic approach. Ideal for older, dimmer projectors. You have independent control over the background color and text color.</li>
+                            <li><strong>Media Background Mode:</strong> Create highly immersive worship experiences. Click "Upload Media" to add looping video backgrounds (<code>.mp4</code>, <code>.webm</code>) or high-resolution images. In Media Mode, LyriX automatically applies a drop-shadow to all text to ensure readability over complex backgrounds. Adjust the <strong>Background Blur</strong> slider to soften busy videos.</li>
+                        </ul>
+
+                        <h3>Live Projector Preview (Confidence Monitor)</h3>
+                        <p>Curious what is currently showing on the big screen without craning your neck? The <strong>Live Preview</strong> tab in the left sidebar creates an exact, miniaturized replica of the live projector output right on your desktop. It updates instantly in real-time, complete with backgrounds, fonts, and animations!</p>
+
+                        <h3>Watermarking (Church Logos)</h3>
+                        <p>In the <strong>Projector Display Setup</strong> card, look for "Projector Watermark". You can choose to display the LyriX logo, simple Church Name text, or upload a <strong>Custom Logo</strong> (a transparent PNG/SVG) that will sit unobtrusively in the corner of the screen.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. Media Player -->
+            <section id="media-player" class="scroll-mt-12 bg-white p-8 md:p-10 rounded-[2rem] shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-pink-50 rounded-bl-[100px] -z-0 opacity-50"></div>
+                <div class="relative z-10">
+                    <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+                        <div class="w-12 h-12 bg-pink-50 text-pink-600 rounded-2xl flex items-center justify-center shrink-0">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-3xl font-bold text-slate-900">4. Media & Presentations</h2>
+                            <p class="text-slate-500 font-medium">Play YouTube URLs, local videos, and PowerPoint presentations directly.</p>
+                        </div>
+                    </div>
+
+                    <div class="prose">
+                        <div class="bg-pink-50/50 border border-pink-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-pink-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-pink-900 m-0">How to find it:</h4>
+                                <p class="text-sm text-pink-800 mt-1 mb-0">Look at the left sidebar <span class="path-arrow">&rarr;</span> Click <span class="path-pill">🎥 Media & Video</span>.</p>
+                            </div>
+                        </div>
+                        
+                        <h3>Playing Videos</h3>
+                        <p>You can paste any YouTube URL (or YouTube Short URL) directly into the top bar to stream it live to the projector. Alternatively, drop local <code>.mp4</code> videos into your <strong>Playlist Folder</strong> to have them appear natively in the sidebar for easy, offline playback with volume controls.</p>
+                        
+                        <h3>Launching PowerPoint (.pptx)</h3>
+                        <p>If you have Microsoft PowerPoint (or a compatible viewer like LibreOffice) installed on your computer, you can launch presentations seamlessly! Just select a <code>.pptx</code> file from your Media Folder or by clicking "Browse Media". LyriX will automatically launch the presentation in full-screen Slideshow mode over your projector screen.</p>
+
+                        <h3>Built-in Web Browser</h3>
+                        <p>The <strong>Search Web</strong> tab in the left sidebar provides a fully functional web browser natively inside LyriX. This is perfect for quickly looking up a last-minute song lyric, finding a specific YouTube video, or downloading media without ever needing to minimize the application and interrupt your workflow.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 4. Sunday Service -->
+            <section id="sunday-service" class="scroll-mt-12 bg-white p-8 md:p-10 rounded-[2rem] shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-bl-[100px] -z-0 opacity-50"></div>
+                <div class="relative z-10">
+                    <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+                        <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shrink-0">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-3xl font-bold text-slate-900">5. Sunday Service Schedule</h2>
+                            <p class="text-slate-500 font-medium">Plan and execute your service seamlessly.</p>
+                        </div>
+                    </div>
+
+                    <div class="prose">
+                        <div class="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-emerald-900 m-0">How to add items:</h4>
+                                <p class="text-sm text-emerald-800 mt-1 mb-0">In the Library or Holy Bible tabs, hover over any song or verse. Click the <span class="path-pill"><svg class="w-3 h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg></span> icon that appears to instantly queue it into your Sunday Schedule.</p>
+                            </div>
+                        </div>
+                        <p>The Sunday Service tab (accessible from the sidebar) acts as your live run-sheet for the event. Inside this tab, you can click and drag items to reorder them based on your service flow. Click an item to start presenting it!</p>
+
+                        <h3>Service Templates</h3>
+                        <p>You can save your current schedule as a template for future use. Click the <strong>Templates</strong> button at the top of the Event Schedule column. Even if your schedule is entirely empty, this top menu remains accessible so you can quickly load past templates!</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 4. Holy Bible -->
+            <section id="holy-bible" class="scroll-mt-12 bg-white p-8 md:p-10 rounded-[2rem] shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-amber-50 rounded-bl-[100px] -z-0 opacity-50"></div>
+                <div class="relative z-10">
+                    <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+                        <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center shrink-0">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-3xl font-bold text-slate-900">6. Holy Bible Integration</h2>
+                            <p class="text-slate-500 font-medium">Lightning-fast scripture lookup and dual-language projection.</p>
+                        </div>
+                    </div>
+
+                    <div class="prose">
+                        <p>LyriX comes pre-loaded with multiple Bible versions, currently supporting English (KJV), Hindi (BSI), and Telugu.</p>
+                        
+                        <h3>Dual-Language Projection</h3>
+                        <div class="bg-amber-50/50 border border-amber-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-amber-900 m-0">How to set it up:</h4>
+                                <p class="text-sm text-amber-800 mt-1 mb-0">Sidebar <span class="path-arrow">&rarr;</span> <span class="path-pill">⚙️ Settings</span> <span class="path-arrow">&rarr;</span> Scroll to the <strong>Application Behavior</strong> card <span class="path-arrow">&rarr;</span> Use the <strong>Primary / Secondary Bible Language</strong> dropdowns.</p>
+                            </div>
+                        </div>
+                        <p>When you select a verse in the Bible tab, the projector will automatically split the screen, displaying the Primary language on the left and the Secondary language on the right. If you only need one language, set the Secondary language to "None".</p>
+
+                        <h3>Auto-Project Mode</h3>
+                        <div class="bg-amber-50/50 border border-amber-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-amber-900 m-0">How to find it:</h4>
+                                <p class="text-sm text-amber-800 mt-1 mb-0">Sidebar <span class="path-arrow">&rarr;</span> <span class="path-pill">📖 Holy Bible</span> <span class="path-arrow">&rarr;</span> Look for the <strong>"Auto-Project Verses"</strong> toggle switch at the top.</p>
+                            </div>
+                        </div>
+                        <p>If you need to rapidly follow a preaching pastor, toggle this switch ON. Once enabled, clicking any verse will instantly push it to the live projector screen, bypassing the preview step entirely.</p>
+
+                        <h3>Reporting Typos & Issues</h3>
+                        <p>If you spot a typo or a missing verse while using LyriX, you can easily report it directly to the developers for a future update:</p>
+                        <ul class="list-disc pl-5 space-y-2 mt-2">
+                            <li><strong>Report it in-app:</strong> Simply hover over any verse in the Bible tab preview area. A <span class="path-pill text-rose-500 border-rose-200">Report Issue</span> button will appear on the right side. Clicking it will open a reporting window where you can submit the exact book, chapter, verse, and correction directly to our support team at <strong>faithcompanionstudios@gmail.com</strong>.</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 5. Multilingual -->
+            <section id="multilingual" class="scroll-mt-12 bg-white p-8 md:p-10 rounded-[2rem] shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-rose-50 rounded-bl-[100px] -z-0 opacity-50"></div>
+                <div class="relative z-10">
+                    <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+                        <div class="w-12 h-12 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center shrink-0">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-3xl font-bold text-slate-900">7. Multilingual & Custom Fonts</h2>
+                            <p class="text-slate-500 font-medium">Built for global congregations and complex scripts.</p>
+                        </div>
+                    </div>
+
+                    <div class="prose">
+                        <h3>Smart Indic Script Sizing</h3>
+                        <p>Because regional scripts (like Telugu, Hindi, Tamil) often appear smaller on screens than Latin characters, LyriX utilizes an intelligent script detection engine. When the projector detects Indic characters, it automatically <strong>boosts the font size by 50%</strong>, ensuring maximum readability without manual slider adjustments.</p>
+                        
+                        <h3>Uploading & Managing Custom Fonts</h3>
+                        <div class="bg-rose-50/50 border border-rose-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-rose-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-rose-900 m-0">Where to manage fonts:</h4>
+                                <p class="text-sm text-rose-800 mt-1 mb-0">Sidebar <span class="path-arrow">&rarr;</span> <span class="path-pill">⚙️ Settings</span> <span class="path-arrow">&rarr;</span> Click <span class="path-pill text-indigo-600 border-indigo-200">Advanced Settings</span> (top right corner) <span class="path-arrow">&rarr;</span> Go to the <strong>Language Fonts</strong> tab.</p>
+                            </div>
+                        </div>
+                        <p>If your church uses specific fonts for regional languages, you can upload a <code>.ttf</code> file using the <strong>Upload Custom .ttf File</strong> button inside any language dropdown. Once uploaded, the font is permanently stored in your database and automatically assigned to that language.</p>
+                        
+                        <ul class="list-disc pl-5 space-y-2 mt-4 text-[0.95rem] text-slate-600">
+                            <li><strong>Live Native Previews:</strong> When selecting a font, LyriX automatically renders a live preview of the native script directly inside the dropdown menu, so you can see exactly what the font looks like before applying it.</li>
+                            <li><strong>Seamless Projector Loading:</strong> Custom fonts and web fonts are fully integrated with the projector engine. The projector uses an advanced <em>Hide-and-Fade</em> technique: it keeps the text completely invisible while the font downloads in the background, only fading the lyrics in once the perfect layout and sizing have been calculated. This guarantees zero visual jumping or resizing.</li>
+                            <li><strong>Deleting Fonts:</strong> To remove a custom font, open the language dropdown and click the small <strong>red trash can icon</strong> next to the font name. If the font was currently active, the system will gracefully reset your language to the System Default.</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 6. Phonetic Typing -->
+            <section id="phonetic-typing" class="scroll-mt-12 bg-white p-8 md:p-10 rounded-[2rem] shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-[100px] -z-0 opacity-50"></div>
+                <div class="relative z-10">
+                    <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+                        <div class="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center shrink-0">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-3xl font-bold text-slate-900">8. Intelligent Phonetic Typing</h2>
+                            <p class="text-slate-500 font-medium">Type effortlessly in regional scripts without system keyboards.</p>
+                        </div>
+                    </div>
+
+                    <div class="prose">
+                        <p>LyriX features an incredibly powerful built-in phonetic typing engine for Indic languages. You do not need to install complex system keyboards or switch your computer's language settings.</p>
+                        
+                        <h3>How Phonetic Typing Works</h3>
+                        <p>When you edit or add a song, simply select a regional category (e.g., "Telugu Songs", "Hindi Songs"). The system will automatically detect the appropriate native script and enable phonetic typing.</p>
+                        
+                        <div class="bg-purple-50/50 border border-purple-100 rounded-xl p-6 my-4">
+                            <h4 class="text-sm font-bold text-purple-900 mb-3 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
+                                Inside the Edit Modal:
+                            </h4>
+                            <div class="bg-white border border-slate-200 rounded-lg p-3 flex flex-col gap-2 max-w-sm mx-auto shadow-sm">
+                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Song Title</span>
+                                <div class="relative w-full border border-slate-200 rounded-xl bg-white h-11 flex items-center justify-between px-3 shadow-inner">
+                                    <span class="text-sm font-medium text-slate-800">stotram<span class="border-r-2 border-indigo-500 animate-pulse pr-0.5"></span></span>
+                                    <button class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-lg text-indigo-600 bg-indigo-50 border border-indigo-100 shadow-sm pointer-events-none">
+                                        ⌨️ ON
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-sm text-purple-800 mt-4 mb-0 text-center">Just type English phonetics (e.g., <strong>"stotram"</strong>) and press the <kbd class="px-2 py-1 bg-white border border-purple-200 rounded shadow-sm text-xs font-mono">Spacebar</kbd>. It will instantly convert into native script (e.g., <strong>స్తోత్రం</strong>) right before your eyes!</p>
+                        </div>
+                        
+                        <h3>Toggling Phonetic Mode</h3>
+                        <p>Need to type an actual English word inside a regional song? You can temporarily pause the engine using the toggle inside the input field.</p>
+                        <ul class="list-none pl-0 space-y-3 mt-4">
+                            <li class="flex items-center gap-3">
+                                <button class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-lg text-indigo-600 bg-indigo-50 border border-indigo-100 shadow-sm w-16 justify-center">⌨️ ON</button>
+                                <span><strong>Active:</strong> Converts English to Native script.</span>
+                            </li>
+                            <li class="flex items-center gap-3">
+                                <button class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-lg text-slate-400 bg-slate-50 border border-slate-200 shadow-sm w-16 justify-center">⌨️ OFF</button>
+                                <span><strong>Paused:</strong> Types standard English text.</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 6. Remote Control -->
+            <section id="remote-control" class="scroll-mt-12 bg-white p-8 md:p-10 rounded-[2rem] shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-cyan-50 rounded-bl-[100px] -z-0 opacity-50"></div>
+                <div class="relative z-10">
+                    <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+                        <div class="w-12 h-12 bg-cyan-50 text-cyan-600 rounded-2xl flex items-center justify-center shrink-0">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-3xl font-bold text-slate-900">9. Web Remote & Stage Viewer</h2>
+                            <p class="text-slate-500 font-medium">Control the presentation from your phone or tablet.</p>
+                        </div>
+                    </div>
+
+                    <div class="prose">
+                        <p>LyriX Stage acts as a local server on your Wi-Fi network. This means any device connected to the same Wi-Fi router can interface with the software without needing internet access.</p>
+                        
+                        <div class="bg-cyan-50/50 border border-cyan-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-cyan-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-cyan-900 m-0">How to connect:</h4>
+                                <p class="text-sm text-cyan-800 mt-1 mb-0">Sidebar <span class="path-arrow">&rarr;</span> <span class="path-pill">⚙️ Settings</span> <span class="path-arrow">&rarr;</span> Look at the <strong>Mobile Remote Control</strong> card.</p>
+                            </div>
+                        </div>
+
+                        <h3>The Mobile Remote Control</h3>
+                        <p>You will see a large QR code and a Connection Address (e.g., <code>http://192.168.1.5:3001</code>). Scan the QR code with your smartphone camera, or type the address into your phone's browser. This opens the LyriX Web Remote, allowing you to cycle slides, trigger blackout, and navigate the Sunday schedule wirelessly.</p>
+
+                        <h3>The Stage Viewer & Anti-Sleep</h3>
+                        <p>In the same Settings card, click <strong>Show QR Code</strong> under the Stage Viewer section. Opening this link on an iPad or stage monitor displays a high-contrast live feed of the lyrics, keeping the worship team perfectly in sync.</p>
+                        <ul class="list-disc pl-5 space-y-2 mt-2 text-[0.95rem] text-slate-600">
+                            <li><strong>Anti-Sleep Mode:</strong> The Stage Viewer automatically engages your device's Wake Lock to prevent the screen from dimming or sleeping mid-service.</li>
+                            <li><strong>Stage Messages:</strong> From the Desktop app, you can send custom "Stage Messages" (e.g., "Pastor is ready") that will elegantly animate down from the top of the Stage Viewer screen as a sleek popup notification without interrupting the lyrics.</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 7. Admin & Maintenance -->
+            <section id="admin-tools" class="scroll-mt-12 bg-white p-8 md:p-10 rounded-[2rem] shadow-sm border border-slate-200 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-red-50 rounded-bl-[100px] -z-0 opacity-50"></div>
+                <div class="relative z-10">
+                    <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+                        <div class="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center shrink-0">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-3xl font-bold text-slate-900">10. Advanced Settings & Maintenance</h2>
+                            <p class="text-slate-500 font-medium">Protect and manage your data.</p>
+                        </div>
+                    </div>
+
+                    <div class="prose">
+                        <div class="bg-red-50/50 border border-red-100 rounded-xl p-4 my-4 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <div>
+                                <h4 class="text-sm font-bold text-red-900 m-0">How to access these tools:</h4>
+                                <p class="text-sm text-red-800 mt-1 mb-0">Sidebar <span class="path-arrow">&rarr;</span> <span class="path-pill">⚙️ Settings</span> <span class="path-arrow">&rarr;</span> Click the <span class="path-pill text-indigo-600 border-indigo-200">Advanced Settings</span> button in the very top right corner. <em>(Requires password authentication)</em></p>
+                            </div>
+                        </div>
+
+                        <h3>Database Backup & Bulk Import</h3>
+                        <ul>
+                            <li><strong>Export Database:</strong> Instantly download a complete JSON backup of every song in your library. Highly recommended before major software updates. Found in the <strong>Maintenance</strong> tab.</li>
+                            <li><strong>Security (Password Protection):</strong> By default, Advanced Settings is protected by a password. In the <span class="path-pill">Security</span> tab, you can disable this requirement altogether by toggling off <strong>"Require Password"</strong>. Once disabled, you can access Advanced Settings or execute critical actions instantly without entering a password.</li>
+                            <li><strong>Bulk Import (XML, PPTX, JSON & More):</strong> Want to import multiple files at once? Use the <strong>Import Songs</strong> button in the Admin Maintenance tab (<span class="path-pill">Advanced Settings</span> <span class="path-arrow">&rarr;</span> <span class="path-pill">Maintenance</span> <span class="path-arrow">&rarr;</span> <span class="path-pill">Import Songs</span>). LyriX supports bulk importing from a massive variety of formats including OpenLyrics XML, OpenLP SQLite databases, CSV, and legacy LyriX JSON files. LyriX uses a sophisticated Preview Modal so you can review the songs, select specific items, and choose a target category before confirming. The system will automatically prevent duplicates!</li>
+                        </ul>
+
+                        <h3>The Recycle Bin</h3>
+                        <p>Deleted a song by mistake? LyriX moves deleted items to a recycle bin. Navigate to the <strong>Restore Songs</strong> tab in the Advanced Settings panel to view deleted songs and recover them instantly.</p>
+
+                        <h3>Factory Wipe (Danger Zone)</h3>
+                        <p>Located in the <strong>Danger Zone</strong> tab, the Factory Wipe option performs a complete system reset. It will delete all custom songs, custom fonts, media backgrounds, and return LyriX to its original installed state. <strong>This action cannot be undone.</strong></p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 8. Shortcuts -->
+            <section id="shortcuts" class="scroll-mt-12 bg-white p-8 md:p-10 rounded-[2rem] shadow-sm border border-slate-200">
+                <div class="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+                    <div class="w-12 h-12 bg-slate-100 text-slate-600 rounded-2xl flex items-center justify-center shrink-0">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"></path></svg>
+                    </div>
+                    <div>
+                        <h2 class="text-3xl font-bold text-slate-900">11. Keyboard Shortcuts</h2>
+                        <p class="text-slate-500 font-medium">Navigate LyriX like a pro.</p>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto rounded-xl border border-slate-200">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600 border-b border-slate-200">
+                            <tr>
+                                <th class="py-4 px-6 font-bold uppercase tracking-wider text-xs">Action</th>
+                                <th class="py-4 px-6 font-bold uppercase tracking-wider text-xs">Shortcut Key</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                            <tr>
+                                <td class="py-4 px-6 text-slate-800 font-medium">Next Slide</td>
+                                <td class="py-4 px-6"><kbd class="px-2.5 py-1.5 bg-slate-100 border border-slate-300 rounded-md text-slate-700 text-xs font-mono shadow-sm">Right Arrow</kbd> or <kbd class="px-2.5 py-1.5 bg-slate-100 border border-slate-300 rounded-md text-slate-700 text-xs font-mono shadow-sm">Down Arrow</kbd></td>
+                            </tr>
+                            <tr>
+                                <td class="py-4 px-6 text-slate-800 font-medium">Previous Slide</td>
+                                <td class="py-4 px-6"><kbd class="px-2.5 py-1.5 bg-slate-100 border border-slate-300 rounded-md text-slate-700 text-xs font-mono shadow-sm">Left Arrow</kbd> or <kbd class="px-2.5 py-1.5 bg-slate-100 border border-slate-300 rounded-md text-slate-700 text-xs font-mono shadow-sm">Up Arrow</kbd></td>
+                            </tr>
+                            <tr>
+                                <td class="py-4 px-6 text-slate-800 font-medium">Toggle Blank Screen (Blackout)</td>
+                                <td class="py-4 px-6"><kbd class="px-2.5 py-1.5 bg-slate-100 border border-slate-300 rounded-md text-slate-700 text-xs font-mono shadow-sm">B</kbd></td>
+                            </tr>
+                            <tr>
+                                <td class="py-4 px-6 text-slate-800 font-medium">Global Search</td>
+                                <td class="py-4 px-6"><kbd class="px-2.5 py-1.5 bg-slate-100 border border-slate-300 rounded-md text-slate-700 text-xs font-mono shadow-sm">Ctrl</kbd> + <kbd class="px-2.5 py-1.5 bg-slate-100 border border-slate-300 rounded-md text-slate-700 text-xs font-mono shadow-sm">K</kbd></td>
+                            </tr>
+                            <tr>
+                                <td class="py-4 px-6 text-slate-800 font-medium">Delete Selected Song</td>
+                                <td class="py-4 px-6"><kbd class="px-2.5 py-1.5 bg-slate-100 border border-slate-300 rounded-md text-slate-700 text-xs font-mono shadow-sm">Delete</kbd></td>
+                            </tr>
+                            <tr>
+                                <td class="py-4 px-6 text-slate-800 font-medium">Close Projector Window</td>
+                                <td class="py-4 px-6"><kbd class="px-2.5 py-1.5 bg-slate-100 border border-slate-300 rounded-md text-slate-700 text-xs font-mono shadow-sm">ESC</kbd></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            
+            <div class="pt-8 border-t border-slate-200 text-center pb-8">
+                <p class="text-sm font-medium text-slate-400">&copy; LyriX Stage by Faith Companion Studios. All rights reserved.</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Simple scroll spy to highlight active nav link
+        document.addEventListener('DOMContentLoaded', () => {
+            const sections = document.querySelectorAll('section, div[id="introduction"]');
+            const navLinks = document.querySelectorAll('.nav-link');
+            const mainContent = document.getElementById('main-content');
+
+            mainContent.addEventListener('scroll', () => {
+                let current = '';
+                sections.forEach(section => {
+                    const sectionTop = section.offsetTop;
+                    // Adjust offset for trigger point
+                    if (mainContent.scrollTop >= sectionTop - 100) {
+                        current = section.getAttribute('id');
+                    }
+                });
+
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    if (link.getAttribute('href').includes(current) && current !== '') {
+                        link.classList.add('active');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

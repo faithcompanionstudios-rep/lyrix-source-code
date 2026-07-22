@@ -1,20 +1,44 @@
-const { app, BrowserWindow, ipcMain, dialog, screen, globalShortcut, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, screen, globalShortcut, nativeTheme, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 const { startServer } = require('./server/index.js');
-const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, addBibleToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork, getDeletedSongs, restoreSong, clearDeletedSongs, getAppSettings, setForceOffline, setPlaystoreLink } = require('./database/db.js');
+const { initDb, searchSongs, addSong, updateSong, deleteSong, bulkDeleteSongs, recategorizeSong, getNextId, getSong, getCategories, addCategory, updateCategory, deleteCategory, getUncategorizedSongs, getAdminCredentials, setAdminCredentials, verifyAdminCredentials, getSchedule, addToSchedule, addBibleToSchedule, removeFromSchedule, reorderSchedule, clearSchedule, getDbStatus, syncSongs, checkNetwork, getDeletedSongs, restoreSong, clearDeletedSongs, getAppSettings, setForceOffline, setPlaystoreLink, setProjectorDisplayId } = require('./database/db.js');
 const axios = require('axios');
 const { spawn } = require('child_process');
 const bibleDb = require('./database/bible_db.js');
 const { setupBible } = require('./database/bible_setup.js');
 const { searchLyrics, fetchLyricsContent } = require('./utils/scraper.js');
+const { transliterateToNative } = require('./utils/transliterator.js');
+
+// Global Error Handlers to prevent native Electron crash dialogs
+process.on('uncaughtException', (error) => {
+    console.error('Unhandled Exception:', error);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('system-error', { 
+            title: 'System Error',
+            message: error.message
+        });
+    }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('system-error', { 
+            title: 'Background Process Error',
+            message: msg
+        });
+    }
+});
 
 const gotTheLock = app.requestSingleInstanceLock();
 
 let mainWindow;
 let io; // Declare io in module scope
 let projectorWindow = null;
+let helpWindow = null;
 let lastBibleVerse = null; // Store last Bible verse for projector sync
 let lastIsBlack = false;
 let lastSlide = null;
@@ -47,6 +71,7 @@ if (!gotTheLock) {
                 preload: path.join(__dirname, 'preload.js'),
                 nodeIntegration: false,
                 contextIsolation: true,
+                backgroundThrottling: false
             },
             icon: path.join(__dirname, '../public/icon.png')
         });
@@ -98,6 +123,18 @@ if (!gotTheLock) {
             if (mainWindow) mainWindow.close();
         });
         ipcMain.handle('window-is-maximized', () => mainWindow ? mainWindow.isMaximized() : false);
+
+        // When the main window closes (crash, force-close, or normal exit),
+        // ensure the projector and help windows are also destroyed
+        mainWindow.on('closed', () => {
+            if (projectorWindow && !projectorWindow.isDestroyed()) {
+                projectorWindow.destroy();
+            }
+            if (helpWindow && !helpWindow.isDestroyed()) {
+                helpWindow.destroy();
+            }
+            mainWindow = null;
+        });
     }
 
     // Global hook for DB to convert updates
@@ -130,6 +167,24 @@ if (!gotTheLock) {
         }
         nativeTheme.themeSource = 'light';
 
+        // Spoof headers removed - using native webview httpreferrer instead
+
+        session.defaultSession.webRequest.onHeadersReceived(
+            { urls: ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*'] },
+            (details, callback) => {
+                const responseHeaders = Object.assign({}, details.responseHeaders);
+
+                // Strip headers that prevent embedding
+                const headersToRemove = ['x-frame-options', 'X-Frame-Options', 'content-security-policy', 'Content-Security-Policy'];
+                headersToRemove.forEach(header => {
+                    if (responseHeaders[header]) {
+                        delete responseHeaders[header];
+                    }
+                });
+
+                callback({ cancel: false, responseHeaders: responseHeaders });
+            }
+        );
         // Data Migration (src/database -> userData/data) — only schedule & categories need legacy migration
         // Songs are now split: bundled songs read from package, custom songs in userData
         const userDataPath = app.getPath('userData');
@@ -154,6 +209,24 @@ if (!gotTheLock) {
         });
 
         initDb(userDataPath);
+
+        // Setup dynamic Bible modules directory
+        const biblesDir = path.join(userDataPath, 'bibles');
+        if (!fs.existsSync(biblesDir)) {
+            fs.mkdirSync(biblesDir, { recursive: true });
+        }
+        
+        // Copy bundled KJV as default if no bibles exist in the user's data folder
+        const defaultKjvPath = path.join(__dirname, 'database', 'bibles', 'kjv.json');
+        const userKjvPath = path.join(biblesDir, 'kjv.json');
+        if (fs.existsSync(defaultKjvPath) && !fs.existsSync(userKjvPath)) {
+            try {
+                fs.copyFileSync(defaultKjvPath, userKjvPath);
+                console.log(`Copied default KJV Bible to persistent storage`);
+            } catch (e) {
+                console.error(`Failed to copy default KJV:`, e);
+            }
+        }
 
         // Start periodic network check
         setInterval(() => {
@@ -181,6 +254,10 @@ if (!gotTheLock) {
 
         ipcMain.handle('get-next-id', async (event, category) => {
             return getNextId(category);
+        });
+
+        ipcMain.handle('transliterate-typing', async (event, { text, targetLanguage }) => {
+            return transliterateToNative(text, targetLanguage);
         });
 
         ipcMain.handle('add-song', async (event, songData) => {
@@ -214,10 +291,10 @@ if (!gotTheLock) {
         // Admin Handlers
         ipcMain.handle('get-admin-credentials', async () => {
             const creds = getAdminCredentials();
-            return { username: creds.username }; // Never send hash to renderer
+            return { username: creds.username, isPasswordProtected: creds.isPasswordProtected !== false }; // Never send hash to renderer
         });
         ipcMain.handle('verify-admin', async (event, username, password) => verifyAdminCredentials(username, password));
-        ipcMain.handle('set-admin-credentials', async (event, username, password) => setAdminCredentials(username, password));
+        ipcMain.handle('set-admin-credentials', async (event, username, password, isPasswordProtected) => setAdminCredentials(username, password, isPasswordProtected));
 
         // Bulk & Recategorize Handlers
         ipcMain.handle('bulk-delete-songs', async (event, ids) => bulkDeleteSongs(ids));
@@ -227,10 +304,64 @@ if (!gotTheLock) {
         ipcMain.handle('get-deleted-songs', async () => getDeletedSongs());
         ipcMain.handle('restore-song', async (event, id) => restoreSong(id));
         ipcMain.handle('clear-deleted-songs', async () => clearDeletedSongs());
-
         // Offline Mode Settings Handlers
         ipcMain.handle('get-app-settings', async () => getAppSettings());
         ipcMain.handle('set-playstore-link', async (event, link) => setPlaystoreLink(link));
+        ipcMain.handle('set-projector-display', async (event, id) => {
+            setProjectorDisplayId(id);
+            if (projectorWindow && !projectorWindow.isDestroyed()) {
+                const displays = screen.getAllDisplays();
+                let targetDisplay = displays.find(d => String(d.id) === String(id));
+
+                if (!targetDisplay) {
+                    // Fallback to first external display or primary display if "Default" is selected
+                    targetDisplay = displays.find(display => display.bounds.x !== 0 || display.bounds.y !== 0) || screen.getPrimaryDisplay();
+                }
+
+                if (targetDisplay) {
+                    // Check if projector is already on the target display — skip if so
+                    const currentBounds = projectorWindow.getBounds();
+                    const isAlreadyOnTarget =
+                        currentBounds.x >= targetDisplay.bounds.x &&
+                        currentBounds.x < targetDisplay.bounds.x + targetDisplay.bounds.width &&
+                        currentBounds.y >= targetDisplay.bounds.y &&
+                        currentBounds.y < targetDisplay.bounds.y + targetDisplay.bounds.height;
+
+                    if (isAlreadyOnTarget) {
+                        // Already on the right display, just ensure it's fullscreen and focused
+                        if (!projectorWindow.isFullScreen()) projectorWindow.setFullScreen(true);
+                        setTimeout(() => {
+                            if (projectorWindow && !projectorWindow.isDestroyed()) {
+                                projectorWindow.setAlwaysOnTop(true, 'screen-saver');
+                                projectorWindow.focus();
+                            }
+                        }, 300);
+                        return;
+                    }
+
+                    // Most reliable approach: close and reopen on the target display.
+                    // All projector state (slides, settings, background) is synced 
+                    // server-side and restores automatically on reconnect.
+                    projectorWindow.close();
+                    // projectorWindow is set to null in the 'closed' event handler.
+                    // Wait for close to fully process, then reopen on the new display.
+                    setTimeout(() => {
+                        openProjectorWindow();
+                    }, 300);
+                }
+            }
+        });
+
+        ipcMain.handle('system:get-displays', async () => {
+            const displays = screen.getAllDisplays();
+            return displays.map((d, index) => ({
+                id: d.id,
+                bounds: d.bounds,
+                scaleFactor: d.scaleFactor,
+                isPrimary: d.bounds.x === 0 && d.bounds.y === 0,
+                label: `Display ${index + 1} ${d.bounds.x === 0 && d.bounds.y === 0 ? '(Primary)' : ''} - ${d.bounds.width}x${d.bounds.height}`
+            }));
+        });
 
         // Bible Module Handlers
         ipcMain.handle('bible:get-books', async () => {
@@ -256,7 +387,56 @@ if (!gotTheLock) {
             bibleDb.initBibleDb ? bibleDb.initBibleDb() : null;
             return { success: true };
         });
-        
+
+        // ─── Dynamic Bible Modules Handlers ─────────────────────────────────────
+        ipcMain.handle('bible:get-local-modules', async () => {
+            const biblesDir = path.join(app.getPath('userData'), 'bibles');
+            if (!fs.existsSync(biblesDir)) return [];
+            try {
+                const files = fs.readdirSync(biblesDir).filter(f => f.toLowerCase().endsWith('.json'));
+                return files.map(f => {
+                    const id = f.replace('.json', '');
+                    const stat = fs.statSync(path.join(biblesDir, f));
+                    return { id: id.toLowerCase(), fileName: f, size: stat.size, mtime: stat.mtimeMs };
+                });
+            } catch (e) {
+                console.error("Failed to read local bibles:", e);
+                return [];
+            }
+        });
+
+        ipcMain.handle('bible:download-module', async (event, url, id) => {
+            const biblesDir = path.join(app.getPath('userData'), 'bibles');
+            const targetPath = path.join(biblesDir, `${id}.json`);
+            try {
+                const axios = require('axios');
+                const response = await axios.get(url, { responseType: 'arraybuffer' });
+                fs.writeFileSync(targetPath, response.data);
+                return { success: true };
+            } catch (error) {
+                console.error(`Failed to download bible ${id}:`, error);
+                return { success: false, error: error.message };
+            }
+        });
+
+        ipcMain.handle('bible:delete-module', async (event, id) => {
+            const biblesDir = path.join(app.getPath('userData'), 'bibles');
+            const targetPath = path.join(biblesDir, `${id}.json`);
+            try {
+                if (fs.existsSync(targetPath)) {
+                    if (id.toLowerCase() === 'kjv') {
+                        return { success: false, error: "Cannot delete the core KJV translation." };
+                    }
+                    fs.unlinkSync(targetPath);
+                    return { success: true };
+                }
+                return { success: false, error: "File not found." };
+            } catch (e) {
+                return { success: false, error: e.message };
+            }
+        });
+        // ────────────────────────────────────────────────────────────────────────
+
         ipcMain.handle('system:factory-reset', async () => {
             try {
                 // Delete data directory containing settings, custom songs, etc.
@@ -264,13 +444,10 @@ if (!gotTheLock) {
                 if (fs.existsSync(dataDir)) {
                     fs.rmSync(dataDir, { recursive: true, force: true });
                 }
-                
-                // Delete bible database
-                const bibleDbPath = path.join(app.getPath('userData'), 'bible.db');
-                if (fs.existsSync(bibleDbPath)) {
-                    fs.unlinkSync(bibleDbPath);
-                }
-                
+
+                // Delete bible database (using reset method to ensure SQLite connection is closed first)
+                bibleDb.resetBibleDb();
+
                 // Relaunch application to apply fresh state
                 app.relaunch();
                 app.exit(0);
@@ -326,10 +503,235 @@ if (!gotTheLock) {
             return result.filePaths[0];
         });
 
+        // ─── Import: Step 1 — Preview (parse files, return song list for verification) ───
+        ipcMain.handle('dialog:preview-import', async () => {
+            const { dialog } = require('electron');
+            const result = await dialog.showOpenDialog(mainWindow, {
+                title: 'Select Files to Import',
+                filters: [
+                    { name: 'Supported Formats', extensions: ['sqlite', 'xml', 'txt', 'json', 'csv', 'lyrx', 'osz', 'vvl', 'pptx', 'docx', 'rtf', 'html', 'pdf'] },
+                    { name: 'Plain Text', extensions: ['txt'] },
+                    { name: 'OpenSong', extensions: ['xml'] },
+                    { name: 'JSON', extensions: ['json'] },
+                    { name: 'CSV', extensions: ['csv'] },
+                    { name: 'LyriX Cast', extensions: ['lyrx'] },
+                    { name: 'OpenLP Song Export', extensions: ['osz'] },
+                    { name: 'OpenLP Database', extensions: ['sqlite'] },
+                    { name: 'VerseVIEW', extensions: ['vvl'] },
+                    { name: 'PowerPoint', extensions: ['pptx'] },
+                    { name: 'Word Document', extensions: ['docx'] },
+                    { name: 'Rich Text', extensions: ['rtf'] },
+                    { name: 'HTML', extensions: ['html'] },
+                    { name: 'PDF (import text only)', extensions: ['pdf'] }
+                ],
+                properties: ['openFile', 'multiSelections']
+            });
+            if (result.canceled || result.filePaths.length === 0) return { success: false, error: 'Cancelled' };
+
+            const { parseFiles } = require('./utils/importers.js');
+            const { previews, errors } = await parseFiles(result.filePaths);
+
+            return { success: true, previews, errors, fileCount: result.filePaths.length };
+        });
+
+        // ─── Import: Step 2 — Confirm (import selected songs into DB) ────────────
+        ipcMain.handle('dialog:confirm-import', async (event, selectedSongs, category) => {
+            const { importSelectedSongs } = require('./utils/importers.js');
+            return await importSelectedSongs(selectedSongs, category);
+        });
+
+        // ─── Legacy import handler (kept for backward compat) ────────────────────
+        ipcMain.handle('dialog:import-songs-db', async (event, category) => {
+            const { dialog } = require('electron');
+            const result = await dialog.showOpenDialog(mainWindow, {
+                title: 'Import Songs Database',
+                filters: [
+                    { name: 'Supported Formats', extensions: ['sqlite', 'xml', 'txt', 'json', 'csv', 'lyrx', 'osz', 'vvl', 'pptx', 'docx', 'rtf', 'html', 'pdf'] },
+                    { name: 'Plain Text', extensions: ['txt'] },
+                    { name: 'OpenSong', extensions: ['xml'] },
+                    { name: 'JSON', extensions: ['json'] },
+                    { name: 'CSV', extensions: ['csv'] },
+                    { name: 'LyriX Cast', extensions: ['lyrx'] },
+                    { name: 'OpenLP Song Export', extensions: ['osz'] },
+                    { name: 'OpenLP Database', extensions: ['sqlite'] },
+                    { name: 'VerseVIEW', extensions: ['vvl'] },
+                    { name: 'PowerPoint', extensions: ['pptx'] },
+                    { name: 'Word Document', extensions: ['docx'] },
+                    { name: 'Rich Text', extensions: ['rtf'] },
+                    { name: 'HTML', extensions: ['html'] },
+                    { name: 'PDF (import text only)', extensions: ['pdf'] }
+                ],
+                properties: ['openFile', 'multiSelections']
+            });
+            if (result.canceled || result.filePaths.length === 0) return { success: false, error: 'Cancelled' };
+
+            const { importOpenLyricsXml, importOpenLPSqlite, importLyrixJson, importPptx } = require('./utils/importers.js');
+
+            let totalImported = 0;
+            let totalErrors = [];
+
+            for (const filePath of result.filePaths) {
+                const ext = filePath.split('.').pop().toLowerCase();
+                try {
+                    if (ext === 'xml') {
+                        const res = await importOpenLyricsXml(filePath, category);
+                        if (res.success) totalImported++;
+                        else totalErrors.push(res.error);
+                    } else if (ext === 'sqlite') {
+                        const res = await importOpenLPSqlite(filePath, category);
+                        if (res.success) {
+                            totalImported += res.count;
+                            totalErrors.push(...res.errors);
+                        } else {
+                            totalErrors.push(res.error);
+                        }
+                    } else if (ext === 'lyrx' || ext === 'json') {
+                        const res = await importLyrixJson(filePath, category);
+                        if (res.success) {
+                            totalImported += res.count;
+                            totalErrors.push(...res.errors);
+                        } else {
+                            totalErrors.push(res.error);
+                        }
+                    } else if (ext === 'pptx' || ext === 'ppt' || ext === 'ppsx') {
+                        const res = await importPptx(filePath, category);
+                        if (res.success) {
+                            totalImported += res.count;
+                            totalErrors.push(...res.errors);
+                        } else {
+                            totalErrors.push(res.error);
+                        }
+                    } else {
+                        totalErrors.push(`Format .${ext} is not supported for song import.`);
+                    }
+                } catch (e) {
+                    totalErrors.push(`Failed to import ${require('path').basename(filePath)}: ${e.message}`);
+                }
+            }
+
+            return { success: true, count: totalImported, errors: totalErrors };
+        });
+
+        // ─── Export: Get songs by category for export selection ───────────────────
+        ipcMain.handle('get-songs-for-export', async () => {
+            const categories = getCategories();
+            const allSongs = searchSongs('', 'All');
+
+            // Group songs by category with counts
+            const grouped = {};
+            for (const cat of categories) {
+                grouped[cat] = allSongs.filter(s => s.category === cat).map(s => ({
+                    id: s.id,
+                    title: s.title || s.displayTitle || 'Untitled',
+                    category: s.category,
+                    slides: s.slides,
+                    slideCount: Array.isArray(s.slides) ? s.slides.length : 0
+                }));
+            }
+            // Also add any uncategorized
+            const uncategorized = allSongs.filter(s => !categories.includes(s.category));
+            if (uncategorized.length > 0) {
+                for (const s of uncategorized) {
+                    const cat = s.category || 'Uncategorized';
+                    if (!grouped[cat]) grouped[cat] = [];
+                    grouped[cat].push({
+                        id: s.id,
+                        title: s.title || s.displayTitle || 'Untitled',
+                        category: s.category,
+                        slides: s.slides,
+                        slideCount: Array.isArray(s.slides) ? s.slides.length : 0
+                    });
+                }
+            }
+
+            return grouped;
+        });
+
+        // ─── Export: Save selected songs to file ─────────────────────────────────
+        ipcMain.handle('dialog:export-selected-songs', async (event, { songs, format = 'lyrx' }) => {
+            const { dialog } = require('electron');
+            const songCount = songs.length;
+            const ext = format === 'json' ? 'json' : 'lyrx';
+            const typeName = format === 'json' ? 'JSON File' : 'LyriX Cast';
+
+            const defaultName = songCount === 1
+                ? `${songs[0].title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_')}.${ext}`
+                : `LyriX_Export_${songCount}_Songs.${ext}`;
+
+            const result = await dialog.showSaveDialog(mainWindow, {
+                title: `Export ${songCount} Song${songCount > 1 ? 's' : ''}`,
+                defaultPath: defaultName,
+                filters: [{ name: typeName, extensions: [ext] }]
+            });
+            if (result.canceled || !result.filePath) return { success: false, error: 'Cancelled' };
+
+            try {
+                const exportData = songs.map(s => ({
+                    title: s.title,
+                    category: s.category,
+                    slides: s.slides
+                }));
+                fs.writeFileSync(result.filePath, JSON.stringify(exportData, null, 2));
+                return { success: true, count: songCount };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        });
+
+        // ─── Legacy export handler (kept for backward compat) ────────────────────
+        ipcMain.handle('dialog:export-songs-db', async () => {
+            const { dialog } = require('electron');
+            const result = await dialog.showSaveDialog(mainWindow, {
+                title: 'Export Custom Songs',
+                defaultPath: 'LyriX_Custom_Songs_Backup.lyrx',
+                filters: [{ name: 'LyriX Cast', extensions: ['lyrx'] }]
+            });
+            if (result.canceled || !result.filePath) return { success: false, error: 'Cancelled' };
+
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                const userDataPath = app.getPath('userData');
+                const sourceDb = path.join(userDataPath, 'data', 'custom_songs.json');
+
+                if (fs.existsSync(sourceDb)) {
+                    fs.copyFileSync(sourceDb, result.filePath);
+                    return { success: true };
+                } else {
+                    return { success: false, error: 'No custom songs found to export.' };
+                }
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        });
+
+        ipcMain.handle('dialog:open-image', async () => {
+            const { dialog } = require('electron');
+            const result = await dialog.showOpenDialog(mainWindow, {
+                title: 'Select Watermark Logo',
+                filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'svg', 'webp'] }],
+                properties: ['openFile']
+            });
+            if (result.canceled || result.filePaths.length === 0) return null;
+            const path = result.filePaths[0];
+            const ext = path.split('.').pop().toLowerCase();
+            let mime = 'image/png';
+            if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+            else if (ext === 'svg') mime = 'image/svg+xml';
+            else if (ext === 'webp') mime = 'image/webp';
+
+            const fs = require('fs');
+            const b64 = fs.readFileSync(path).toString('base64');
+            return `data:${mime};base64,${b64}`;
+        });
+
         ipcMain.handle('bible:import-custom', async (event, name, filePath) => {
             try {
                 const fs = require('fs');
-                const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                let fileData = fs.readFileSync(filePath, 'utf8');
+                // Strip BOM (Byte Order Mark) and any leading whitespace that can break JSON.parse
+                fileData = fileData.replace(/^\uFEFF/, '').trim();
+                const data = JSON.parse(fileData);
                 const { normalizeKJV, normalizeHindi } = require('./database/bible_setup.js');
                 let normalized;
                 if (Array.isArray(data)) {
@@ -395,6 +797,28 @@ if (!gotTheLock) {
             return false;
         });
 
+        ipcMain.handle('open-help-window', () => {
+            if (helpWindow) {
+                if (helpWindow.isMinimized()) helpWindow.restore();
+                helpWindow.focus();
+                return true;
+            }
+            helpWindow = new BrowserWindow({
+                width: 900,
+                height: 800,
+                autoHideMenuBar: true,
+                title: 'LyriX Stage - Help & Guide',
+                icon: path.join(__dirname, '../public/icon.png'),
+                webPreferences: {
+                    nodeIntegration: false,
+                    contextIsolation: true
+                }
+            });
+            helpWindow.loadFile(path.join(__dirname, '../public/help.html'));
+            helpWindow.on('closed', () => { helpWindow = null; });
+            return true;
+        });
+
         ipcMain.handle('open-projector-window', () => {
             if (projectorWindow) {
                 // Already open — just return true, do NOT close
@@ -412,9 +836,15 @@ if (!gotTheLock) {
             if (io) io.emit('projector-status', true);
 
             const displays = screen.getAllDisplays();
-            const externalDisplay = displays.find((display) => {
-                return display.bounds.x !== 0 || display.bounds.y !== 0;
-            });
+            const appSettings = getAppSettings();
+            let selectedDisplayId = appSettings.projectorDisplayId;
+
+            // Default to first external display if no preference saved or saved display not found
+            let targetDisplay = displays.find(d => d.id === selectedDisplayId);
+
+            if (!targetDisplay) {
+                targetDisplay = displays.find(display => display.bounds.x !== 0 || display.bounds.y !== 0);
+            }
 
             let winOptions = {
                 width: 800,
@@ -427,32 +857,41 @@ if (!gotTheLock) {
                     preload: path.join(__dirname, 'preload.js'),
                     contextIsolation: true,
                     nodeIntegration: false,
-                    webSecurity: false
+                    webSecurity: false,
+                    backgroundThrottling: false,
+                    webviewTag: true
                 }
             };
 
-            if (externalDisplay) {
-                winOptions.x = externalDisplay.bounds.x + 50;
-                winOptions.y = externalDisplay.bounds.y + 50;
+            if (targetDisplay) {
+                winOptions.x = targetDisplay.bounds.x + 50;
+                winOptions.y = targetDisplay.bounds.y + 50;
                 winOptions.fullscreen = true;
                 winOptions.alwaysOnTop = true;
             }
 
             projectorWindow = new BrowserWindow(winOptions);
 
-            if (externalDisplay) {
+            if (targetDisplay) {
                 projectorWindow.setFullScreen(true);
                 projectorWindow.setAlwaysOnTop(true, 'screen-saver');
             }
 
             if (process.env.NODE_ENV === 'development') {
-                projectorWindow.loadURL('http://localhost:5173/projector.html');
+                // Always load projector from file:// so it can access local file:// video URLs
+                // (http:// origin cannot load file:// resources in Chromium)
+                projectorWindow.loadFile(path.join(__dirname, '../public/projector.html'));
             } else {
                 projectorWindow.loadFile(path.join(__dirname, '../public/projector.html'));
             }
 
+            projectorWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+                console.log(`[Projector Log] ${message} (${sourceId}:${line})`);
+            });
+
             // Handle Native Keys on Projector Window
             projectorWindow.webContents.on('before-input-event', (event, input) => {
+                if (input.type !== 'keyDown') return;
                 if (input.key === 'Escape' && projectorWindow) {
                     projectorWindow.close();
                     event.preventDefault();
@@ -477,13 +916,20 @@ if (!gotTheLock) {
                 });
             });
 
+            // Notify all renderer windows that projector is now open
+            BrowserWindow.getAllWindows().forEach(win => {
+                if (!win.isDestroyed() && win !== projectorWindow) {
+                    win.webContents.send('projector-state-changed', true);
+                }
+            });
+
             // When projector finishes loading, resend the current state
             projectorWindow.webContents.on('did-finish-load', () => {
                 // Send the correct content type — Bible verse OR song slide (mutually exclusive)
                 if (lastBibleVerse) {
                     projectorWindow.webContents.send('bible-verse-update', lastBibleVerse);
                 } else if (lastSlide) {
-                    projectorWindow.webContents.send('current-slide', { slide: lastSlide });
+                    projectorWindow.webContents.send('current-slide', typeof lastSlide === 'string' ? { slide: lastSlide } : lastSlide);
                 }
                 // Also resend black/blank state
                 if (lastIsBlack) {
@@ -514,12 +960,29 @@ if (!gotTheLock) {
         // Pass db and scraper to server
         const dbMethods = { searchSongs, getSchedule, clearSchedule, addToSchedule, addSong };
         io = startServer((data) => {
-            console.log("Server Status:", data);
-            currentServerStatus = data;
+            currentServerStatus = { ...currentServerStatus, ...data };
+            if (currentServerStatus.ip === 'Unknown' || !currentServerStatus.ip) {
+                const { getAllLocalIPs } = require('./server/index.js');
+                currentServerStatus.ip = getAllLocalIPs()[0] || 'Unknown';
+            }
             BrowserWindow.getAllWindows().forEach(win => {
-                win.webContents.send('status-update', data);
+                if (!win.isDestroyed()) win.webContents.send('status-update', currentServerStatus);
             });
-        }, { db: dbMethods, scraper: { searchLyrics, fetchLyricsContent } });
+        }, { db: dbMethods, scraper: { searchLyrics, fetchLyricsContent }, userDataPath: app.getPath('userData') });
+
+        // Auto-refresh IP when network changes
+        setInterval(() => {
+            if (currentServerStatus.status !== 'Running') return;
+            const { getAllLocalIPs } = require('./server/index.js');
+            const currentIps = getAllLocalIPs();
+            // If the currently selected IP is no longer valid, automatically switch to a valid one
+            if (currentIps.length > 0 && !currentIps.includes(currentServerStatus.ip)) {
+                currentServerStatus.ip = currentIps[0];
+                BrowserWindow.getAllWindows().forEach(win => {
+                    if (!win.isDestroyed()) win.webContents.send('status-update', currentServerStatus);
+                });
+            }
+        }, 5000);
 
         ipcMain.handle('get-server-status', () => currentServerStatus);
 
@@ -551,7 +1014,7 @@ if (!gotTheLock) {
                 socket.emit('projector-status', !!projectorWindow);
                 socket.emit('blank-screen', lastIsBlack);
                 if (lastBibleVerse) socket.emit('bible-verse-update', lastBibleVerse);
-                else if (lastSlide) socket.emit('current-slide', { slide: lastSlide });
+                else if (lastSlide) socket.emit('current-slide', typeof lastSlide === 'string' ? { slide: lastSlide } : lastSlide);
                 // Send cached projector settings so new connections get correct font/colors
                 if (lastProjectorSettings) socket.emit('settings-update', lastProjectorSettings);
 
@@ -630,13 +1093,34 @@ if (!gotTheLock) {
             });
         }
 
+        ipcMain.handle('open-url', (event, url) => {
+            shell.openExternal(url);
+        });
+
+        ipcMain.handle('media-play-youtube', (event, videoId) => {
+            const data = { action: 'media-play-youtube', videoId: videoId };
+            if (!projectorWindow || projectorWindow.isDestroyed()) {
+                // Auto-open projector window, then play once loaded
+                openProjectorWindow();
+                projectorWindow.webContents.once('did-finish-load', () => {
+                    setTimeout(() => {
+                        if (io) io.emit('media-command', data);
+                        if (projectorWindow && !projectorWindow.isDestroyed()) projectorWindow.webContents.send('media-command', data);
+                    }, 1500); // small delay to let socket.io connect
+                });
+            } else {
+                if (io) io.emit('media-command', data);
+                projectorWindow.webContents.send('media-command', data);
+            }
+        });
+
         ipcMain.handle('projector-sync', (event, data) => {
             if (io) {
                 if (data.type === 'slide') {
                     lastBibleVerse = null; // Clear Bible verse when switching to song slides
-                    lastSlide = data.content;
-                    io.emit('current-slide', { slide: data.content });
-                    if (projectorWindow && !projectorWindow.isDestroyed()) projectorWindow.webContents.send('current-slide', { slide: data.content });
+                    lastSlide = { slide: data.content, category: data.category };
+                    io.emit('current-slide', lastSlide);
+                    if (projectorWindow && !projectorWindow.isDestroyed()) projectorWindow.webContents.send('current-slide', lastSlide);
                 } else if (data.type === 'black') {
                     lastIsBlack = data.isBlack;
                     io.emit('blank-screen', data.isBlack);
@@ -647,6 +1131,12 @@ if (!gotTheLock) {
                     io.emit('bible-verse-update', data.content);
                     if (projectorWindow && !projectorWindow.isDestroyed()) projectorWindow.webContents.send('bible-verse-update', data.content);
                 }
+            }
+        });
+
+        ipcMain.handle('send-stage-message', (event, message) => {
+            if (io) {
+                io.emit('stage-message', message);
             }
         });
 
@@ -812,6 +1302,30 @@ $ppt.Quit()
             }
         });
 
+        // ─── XML Import via Drag & Drop (receives file path directly) ────────────
+        ipcMain.handle('import-xml-path', async (event, filePath) => {
+            try {
+                if (!filePath || !fs.existsSync(filePath)) {
+                    return { success: false, error: "File not found." };
+                }
+                const ext = path.extname(filePath).toLowerCase();
+                if (ext !== '.xml') {
+                    return { success: false, error: "Unsupported file type. Please drop an .xml file." };
+                }
+                const { parseFiles } = require('./utils/importers.js');
+                const result = parseFiles([filePath]);
+                if (result.previews && result.previews.length > 0) {
+                    const song = result.previews[0];
+                    return { success: true, filename: song.title, slides: song.slides };
+                } else {
+                    return { success: false, error: result.errors[0] || "Could not parse XML file" };
+                }
+            } catch (e) {
+                console.error("XML Drag Import Error:", e);
+                return { success: false, error: e.message };
+            }
+        });
+
 
 
         // --- Media Player Handlers ---
@@ -841,15 +1355,16 @@ $ppt.Quit()
             if (!fs.existsSync(videosDir)) return { videos: [], next: null };
 
             const files = fs.readdirSync(videosDir);
-            const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.webm'];
+            const mediaExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.pptx', '.ppt', '.ppsx'];
             const history = getMediaHistory();
 
             const videos = files
-                .filter(f => videoExtensions.includes(path.extname(f).toLowerCase()))
+                .filter(f => mediaExtensions.includes(path.extname(f).toLowerCase()))
                 .map(f => ({
                     name: f,
                     path: path.join(videosDir, f),
-                    played: history.played.includes(f)
+                    played: history.played.includes(f),
+                    isPpt: ['.pptx', '.ppt', '.ppsx'].includes(path.extname(f).toLowerCase())
                 }))
                 .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
@@ -875,25 +1390,9 @@ $ppt.Quit()
         });
 
         ipcMain.handle('media:play', async (event, fileName) => {
-            const { pathToFileURL } = require('url');
-            const videoPath = pathToFileURL(path.join(videosDir, fileName)).href;
-            console.log(`[Media] Playing: ${videoPath}`);
-            const data = { action: 'media-play', url: videoPath, fileName };
-
-            // Auto-open projector if closed
-            let win = projectorWindow;
-            if (!win || win.isDestroyed()) {
-                win = openProjectorWindow();
-                // Wait for it to load before sending command
-                await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
-            }
-
-            if (io) io.emit('media-command', data);
-            if (win && !win.isDestroyed()) {
-                console.log(`[Media] Sending IPC to projector: ${fileName}`);
-                win.webContents.send('media-command', data);
-            }
-
+            const ext = path.extname(fileName).toLowerCase();
+            const absPath = path.join(videosDir, fileName);
+            
             // Mark as played automatically
             const history = getMediaHistory();
             if (!history.played.includes(fileName)) {
@@ -901,12 +1400,110 @@ $ppt.Quit()
                 saveMediaHistory(history);
             }
 
+            if (['.pptx', '.ppt', '.ppsx'].includes(ext)) {
+                console.log(`[Media] Launching PPT: ${absPath}`);
+                require('child_process').exec(`start "" powerpnt /S "${absPath}"`, (err) => {
+                    if (err) {
+                        require('electron').shell.openPath(absPath);
+                    }
+                });
+                return true;
+            }
+
+            const { pathToFileURL } = require('url');
+            const videoPath = pathToFileURL(absPath).href;
+            console.log(`[Media] Playing: ${videoPath}`);
+            lastSlide = null;
+            lastBibleVerse = null;
+            const data = { action: 'media-play', url: videoPath, fileName };
+
+            // Auto-open projector if closed
+            let win = projectorWindow;
+            if (!win || win.isDestroyed()) {
+                win = openProjectorWindow();
+                // dom-ready fires earlier than did-finish-load (doesn't wait for fonts/CSS)
+                await new Promise(resolve => win.webContents.once('dom-ready', resolve));
+            }
+
+            if (win && !win.isDestroyed()) {
+                console.log(`[Media] Sending IPC to projector: ${fileName}`);
+                win.webContents.send('media-command', data);
+            }
+
+            return true;
+        });
+
+        ipcMain.handle('media:browse-video', async () => {
+            const { dialog } = require('electron');
+            const result = await dialog.showOpenDialog({
+                title: 'Select Media/Presentation to Play',
+                properties: ['openFile'],
+                filters: [
+                    { name: 'Media & Presentations', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'pptx', 'ppt', 'ppsx'] }
+                ]
+            });
+            if (!result.canceled && result.filePaths.length > 0) {
+                return result.filePaths[0];
+            }
+            return null;
+        });
+
+        ipcMain.handle('media:play-absolute', async (event, absolutePath) => {
+            const ext = path.extname(absolutePath).toLowerCase();
+            const fileName = path.basename(absolutePath);
+
+            if (['.pptx', '.ppt', '.ppsx'].includes(ext)) {
+                console.log(`[Media] Launching Absolute PPT: ${absolutePath}`);
+                require('child_process').exec(`start "" powerpnt /S "${absolutePath}"`, (err) => {
+                    if (err) {
+                        require('electron').shell.openPath(absolutePath);
+                    }
+                });
+                return fileName;
+            }
+
+            const { pathToFileURL } = require('url');
+            const videoPath = pathToFileURL(absolutePath).href;
+            console.log(`[Media] Playing Absolute: ${videoPath}`);
+            lastSlide = null;
+            lastBibleVerse = null;
+            const data = { action: 'media-play', url: videoPath, fileName };
+
+            let win = projectorWindow;
+            if (!win || win.isDestroyed()) {
+                win = openProjectorWindow();
+                await new Promise(resolve => win.webContents.once('dom-ready', resolve));
+            }
+
+            if (win && !win.isDestroyed()) {
+                win.webContents.send('media-command', data);
+            }
+
+            return fileName;
+        });
+
+        ipcMain.handle('media:play-youtube', async (event, videoId) => {
+            console.log(`[Media] Playing YouTube: ${videoId}`);
+            lastSlide = null;
+            lastBibleVerse = null;
+            const data = { action: 'media-play-youtube', videoId };
+
+            // Auto-open projector if closed
+            let win = projectorWindow;
+            if (!win || win.isDestroyed()) {
+                win = openProjectorWindow();
+                await new Promise(resolve => win.webContents.once('dom-ready', resolve));
+            }
+
+            if (win && !win.isDestroyed()) {
+                win.webContents.send('media-command', data);
+            }
+
             return true;
         });
 
         ipcMain.handle('media:stop', () => {
             const data = { action: 'media-stop' };
-            if (io) io.emit('media-command', data);
             if (projectorWindow && !projectorWindow.isDestroyed()) {
                 projectorWindow.webContents.send('media-command', data);
             }
@@ -915,7 +1512,6 @@ $ppt.Quit()
 
         ipcMain.handle('media:pause', () => {
             const data = { action: 'media-pause' };
-            if (io) io.emit('media-command', data);
             if (projectorWindow && !projectorWindow.isDestroyed()) {
                 projectorWindow.webContents.send('media-command', data);
             }
@@ -924,7 +1520,6 @@ $ppt.Quit()
 
         ipcMain.handle('media:resume', () => {
             const data = { action: 'media-resume' };
-            if (io) io.emit('media-command', data);
             if (projectorWindow && !projectorWindow.isDestroyed()) {
                 projectorWindow.webContents.send('media-command', data);
             }
@@ -933,7 +1528,6 @@ $ppt.Quit()
 
         ipcMain.handle('media:seek', (event, time) => {
             const data = { action: 'media-seek', time };
-            if (io) io.emit('media-command', data);
             if (projectorWindow && !projectorWindow.isDestroyed()) {
                 projectorWindow.webContents.send('media-command', data);
             }
@@ -942,6 +1536,7 @@ $ppt.Quit()
 
         // Forward playback updates from projector to all renderer windows
         ipcMain.on('media:playback-update', (event, payload) => {
+            console.log('[Media Debug] Playback update received:', JSON.stringify(payload));
             BrowserWindow.getAllWindows().forEach(win => {
                 if (!win.isDestroyed() && win.webContents !== event.sender) {
                     win.webContents.send('media:playback-update', payload);
@@ -963,12 +1558,16 @@ $ppt.Quit()
         });
 
         // Background poller for physical volume keys
+        let lastSystemMute = false;
         setInterval(async () => {
             try {
                 const currentVol = await loudness.getVolume();
-                const normalizedVol = currentVol / 100;
-                if (Math.abs(normalizedVol - lastSystemVolume) > 0.001) {
+                const isMuted = await loudness.getMuted();
+                const normalizedVol = isMuted ? 0 : (currentVol / 100);
+
+                if (Math.abs(normalizedVol - lastSystemVolume) > 0.001 || isMuted !== lastSystemMute) {
                     lastSystemVolume = normalizedVol;
+                    lastSystemMute = isMuted;
                     BrowserWindow.getAllWindows().forEach(win => {
                         if (!win.isDestroyed()) {
                             win.webContents.send('media:system-volume-changed', normalizedVol);
@@ -1002,10 +1601,135 @@ $ppt.Quit()
             shell.openPath(videosDir);
         });
 
+        ipcMain.handle('import-custom-font', async (event, language) => {
+            if (!language) return { success: false, error: 'Language must be specified' };
+            const { dialog } = require('electron');
+            const result = await dialog.showOpenDialog(mainWindow, {
+                title: `Import Custom Font for ${language}`,
+                filters: [
+                    { name: 'Fonts', extensions: ['ttf', 'otf', 'woff', 'woff2'] }
+                ],
+                properties: ['openFile']
+            });
+
+            if (result.canceled || result.filePaths.length === 0) return { success: false };
+
+            const sourcePath = result.filePaths[0];
+            const fileName = require('path').basename(sourcePath);
+            const safeLang = language.replace(/[^a-zA-Z0-9_-]/g, '_');
+            const fontsDir = require('path').join(app.getPath('userData'), 'fonts', safeLang);
+            const fs = require('fs');
+            if (!fs.existsSync(fontsDir)) fs.mkdirSync(fontsDir, { recursive: true });
+
+            const safeName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+            const destPath = require('path').join(fontsDir, safeName);
+            try {
+                fs.copyFileSync(sourcePath, destPath);
+                return { success: true, fileName: safeLang + '/' + safeName, language: language };
+            } catch (err) {
+                return { success: false, error: err.message };
+            }
+        });
+
+        // Returns an object containing all fonts categorized by language: { "Telugu": ["Ramabhadra.ttf"], ... }
+        ipcMain.handle('get-custom-fonts', () => {
+            const baseFontsDir = require('path').join(app.getPath('userData'), 'fonts');
+            const fs = require('fs');
+            if (!fs.existsSync(baseFontsDir)) return {};
+            
+            const fontMap = {};
+            // If there are legacy fonts in the root of /fonts, map them to "legacy"
+            const rootFiles = fs.readdirSync(baseFontsDir, { withFileTypes: true });
+            const legacyFonts = rootFiles.filter(f => f.isFile() && f.name.match(/\.(ttf|otf|woff|woff2)$/i)).map(f => f.name);
+            if (legacyFonts.length > 0) fontMap['legacy'] = legacyFonts;
+
+            // Read language subdirectories
+            const dirs = rootFiles.filter(f => f.isDirectory());
+            for (const dir of dirs) {
+                const langPath = require('path').join(baseFontsDir, dir.name);
+                const fonts = fs.readdirSync(langPath).filter(f => f.match(/\.(ttf|otf|woff|woff2)$/i));
+                fontMap[dir.name.toLowerCase()] = fonts.map(f => dir.name + '/' + f);
+            }
+            return fontMap;
+        });
+
+        ipcMain.handle('delete-custom-font', (event, language, fileName) => {
+            const baseFontsDir = require('path').join(app.getPath('userData'), 'fonts');
+            const fs = require('fs');
+            // fileName may include language subfolder (e.g. "Telugu/font.ttf") or be a plain filename for legacy fonts
+            const fontPath = require('path').join(baseFontsDir, fileName);
+            try {
+                if (fs.existsSync(fontPath)) {
+                    fs.unlinkSync(fontPath);
+                    return { success: true };
+                }
+                return { success: false, error: 'Font file not found' };
+            } catch (err) {
+                return { success: false, error: err.message };
+            }
+        });
+
+        ipcMain.handle('import-background-media', async (event) => {
+            const { dialog } = require('electron');
+            const result = await dialog.showOpenDialog(mainWindow, {
+                title: 'Import Background Media',
+                filters: [
+                    { name: 'Media', extensions: ['jpg', 'jpeg', 'png', 'mp4', 'webm', 'gif'] }
+                ],
+                properties: ['openFile']
+            });
+
+            if (result.canceled || result.filePaths.length === 0) return { success: false };
+
+            const sourcePath = result.filePaths[0];
+            const fileName = require('path').basename(sourcePath);
+            const mediaDir = require('path').join(app.getPath('userData'), 'media');
+            const fs = require('fs');
+            if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
+
+            const safeName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+            const destPath = require('path').join(mediaDir, safeName);
+            try {
+                fs.copyFileSync(sourcePath, destPath);
+                return { success: true, fileName: safeName };
+            } catch (err) {
+                return { success: false, error: err.message };
+            }
+        });
+
+        ipcMain.handle('get-background-media', () => {
+            const mediaDir = require('path').join(app.getPath('userData'), 'media');
+            const fs = require('fs');
+            if (!fs.existsSync(mediaDir)) return [];
+            return fs.readdirSync(mediaDir).filter(f => f.match(/\.(jpg|jpeg|png|mp4|webm|gif)$/i));
+        });
+
+        ipcMain.handle('delete-background-media', (event, fileName) => {
+            const mediaDir = require('path').join(app.getPath('userData'), 'media');
+            const fs = require('fs');
+            const mediaPath = require('path').join(mediaDir, fileName);
+            try {
+                if (fs.existsSync(mediaPath)) {
+                    fs.unlinkSync(mediaPath);
+                    return { success: true };
+                }
+                return { success: false, error: 'Media file not found' };
+            } catch (err) {
+                return { success: false, error: err.message };
+            }
+        });
+
         app.on('activate', function () {
 
             if (BrowserWindow.getAllWindows().length === 0) createWindow();
         });
+    });
+
+    // Safety net: if the app is quitting, forcefully destroy all child windows
+    app.on('before-quit', () => {
+        if (projectorWindow && !projectorWindow.isDestroyed()) {
+            projectorWindow.destroy();
+        }
     });
 
     app.on('window-all-closed', function () {

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Stage Display</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Telugu&family=Noto+Sans+Devanagari&family=Noto+Sans+Tamil&family=Noto+Sans+Malayalam&family=Noto+Sans+Kannada&family=Ramabhadra&family=Mukta&family=Manjari&family=Gayathri&family=Inter:wght@400;700;800&family=Montserrat:wght@400;700;800&family=Lora:wght@400;700&family=Merriweather:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-color: #000000;
@@ -79,6 +79,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: font-family 0.3s ease;
         }
         #connectionStatus {
             font-size: 0.8rem;
@@ -115,18 +116,30 @@
         .tap-zone:active {
             background: rgba(255,255,255,0.03);
         }
+
+        /* Font loading animation */
+        @keyframes fontPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .font-loading {
+            animation: fontPulse 1s ease-in-out infinite;
+        }
     </style>
 </head>
 <body>
 
     <div id="appContainer">
-        <div id="header">
+        <div id="header" style="z-index: 60; position: relative;">
             <div id="branding">LyriX<span>Stage</span></div>
-            <div id="connectionStatus">Offline</div>
+            <div style="display: flex; gap: 15px; align-items: center;">
+                <button id="touchToggleBtn" style="background: rgba(79, 70, 229, 0.15); border: 1px solid #4f46e5; color: #818cf8; border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; font-weight: bold; cursor: pointer; transition: all 0.2s; outline: none; font-family: inherit;">TOUCH: ON</button>
+                <div id="connectionStatus">Offline</div>
+            </div>
         </div>
         
         <div id="contentWrapper">
-            <div id="slideContent">Waiting for lyrics...</div>
+            <div id="slideContent">Waiting for signal...</div>
         </div>
 
         <!-- Hidden Tap Zones for Two-Way Musician Sync -->
@@ -141,8 +154,12 @@
         const slideContent = document.getElementById('slideContent');
         const connectionStatus = document.getElementById('connectionStatus');
         
+        // Font settings received from desktop
+        let fontSettings = {};
+        let currentCategory = '';
+
         // Connect to the WebSocket server running on the main app
-        const socket = io({ query: { type: 'viewer' } });
+        const socket = io('/', { query: { type: 'viewer' } });
 
         socket.on('connect', () => {
             connectionStatus.style.display = 'none';
@@ -154,12 +171,122 @@
             connectionStatus.style.color = '#ef4444';
         });
 
+        // Receive font settings from desktop
+        socket.on('settings-update', (settings) => {
+            if (settings) {
+                fontSettings = { ...fontSettings, ...settings };
+            }
+        });
+
+        // Helper: get the right font for a category or language
+        function getFontForCategory(category) {
+            if (!category) return fontSettings.fontFamily || "'Outfit', sans-serif";
+            const cat = category.toLowerCase();
+            if (cat.includes('telugu')) return fontSettings.fontTelugu || "'Noto Sans Telugu', sans-serif";
+            if (cat.includes('hindi') || cat.includes('marathi')) return fontSettings.fontHindi || "'Noto Sans Devanagari', sans-serif";
+            if (cat.includes('tamil')) return fontSettings.fontTamil || "'Noto Sans Tamil', sans-serif";
+            if (cat.includes('malayalam')) return fontSettings.fontMalayalam || "'Noto Sans Malayalam', sans-serif";
+            if (cat.includes('kannada')) return fontSettings.fontKannada || "'Noto Sans Kannada', sans-serif";
+            return fontSettings.fontFamily || "'Outfit', sans-serif";
+        }
+
+        function getFontForLang(lang) {
+            if (!lang) return "'Outfit', sans-serif";
+            if (lang === 'TELUGU') return fontSettings.fontTelugu || "'Noto Sans Telugu', sans-serif";
+            if (lang === 'HINDI') return fontSettings.fontHindi || "'Noto Sans Devanagari', sans-serif";
+            if (lang === 'TAMIL') return fontSettings.fontTamil || "'Noto Sans Tamil', sans-serif";
+            if (lang === 'MALAYALAM') return fontSettings.fontMalayalam || "'Noto Sans Malayalam', sans-serif";
+            if (lang === 'KANNADA') return fontSettings.fontKannada || "'Noto Sans Kannada', sans-serif";
+            return fontSettings.fontFamily || "'Outfit', sans-serif";
+        }
+
+        // Handle custom font loading via @font-face
+        function loadCustomFont(fontValue) {
+            if (!fontValue || !fontValue.startsWith('url:')) return fontValue;
+            const fontFile = fontValue.substring(4);
+            const fontFaceName = 'CustomFont_' + fontFile.replace(/[^a-zA-Z0-9]/g, '_');
+            if (!document.getElementById('style_' + fontFaceName)) {
+                const style = document.createElement('style');
+                style.id = 'style_' + fontFaceName;
+                style.innerHTML = `@font-face { font-family: '${fontFaceName}'; src: url('/fonts/${fontFile}'); }`;
+                document.head.appendChild(style);
+                
+                // Wait for font to load before showing it to avoid layout shifts
+                document.body.classList.add('font-loading');
+                document.fonts.load(`1em "${fontFaceName}"`).then(() => {
+                    document.body.classList.remove('font-loading');
+                    autoScale(); // Recalculate scale after font loads
+                });
+            }
+            return `'${fontFaceName}', sans-serif`;
+        }
+
+        const wrapper = document.getElementById('contentWrapper');
+        
+        function autoScale() {
+            // Reset to base font size
+            slideContent.style.fontSize = 'clamp(1.2rem, min(6vh, 6.5vw), 5rem)';
+            
+            // Force layout recalculation
+            void slideContent.offsetHeight;
+            
+            let currentVh = 6;
+            
+            // Iteratively shrink if text overflows the wrapper (with a small safety margin)
+            while ((slideContent.scrollHeight > wrapper.clientHeight - 20) && currentVh > 1) {
+                currentVh -= 0.2;
+                slideContent.style.fontSize = `min(${currentVh}vh, ${currentVh * 1.1}vw)`;
+                // Force layout recalculation
+                void slideContent.offsetHeight;
+            }
+        }
+
+        window.addEventListener('resize', autoScale);
+
+        // Handle projector status changes
+        socket.on('projector-status', (isOpen) => {
+            if (!isOpen) {
+                slideContent.style.fontFamily = "'Outfit', sans-serif";
+                slideContent.textContent = 'Waiting for signal...';
+                document.body.classList.remove('is-black');
+                autoScale();
+            }
+        });
+
         // Update lyrics on screen
         socket.on('current-slide', (data) => {
             if (data && data.slide) {
+                currentCategory = data.category || '';
+                let font = getFontForCategory(currentCategory);
+                font = loadCustomFont(font) || font;
+                slideContent.style.fontFamily = font;
                 slideContent.textContent = data.slide;
+                autoScale();
             } else {
-                slideContent.textContent = '';
+                slideContent.style.fontFamily = "'Outfit', sans-serif";
+                slideContent.textContent = 'Waiting for signal...';
+                autoScale();
+            }
+        });
+
+        // Update bible verses on screen
+        socket.on('bible-verse-update', (data) => {
+            if (data) {
+                // Apply font based on the primary language of the Bible verse
+                let font = getFontForLang(data.primaryLang);
+                font = loadCustomFont(font) || font;
+                slideContent.style.fontFamily = font;
+
+                let verseText = '';
+                if (data.primaryText) verseText += data.primaryText + '\n\n';
+                if (data.secondaryText && data.secondaryText !== data.primaryText) verseText += data.secondaryText + '\n\n';
+                if (data.reference) verseText += data.reference;
+                slideContent.textContent = verseText.trim();
+                autoScale();
+            } else {
+                slideContent.style.fontFamily = "'Outfit', sans-serif";
+                slideContent.textContent = 'Waiting for signal...';
+                autoScale();
             }
         });
 
@@ -172,19 +299,112 @@
             }
         });
 
+        // Handle stage messages
+        let stageMessageTimeout;
+        socket.on('stage-message', (message) => {
+            let toast = document.getElementById('stageMessageToast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'stageMessageToast';
+                toast.style.cssText = 'position: absolute; top: clamp(1rem, 4vmin, 3rem); left: 50%; transform: translate(-50%, -150%); opacity: 0; padding: clamp(0.75rem, 2vmin, 1.25rem) clamp(1.5rem, 4vmin, 2.5rem); background: rgba(220, 38, 38, 0.95); color: white; font-size: clamp(1rem, 2.5vw, 1.5rem); font-weight: 800; text-align: center; z-index: 100; transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 10px 30px rgba(220, 38, 38, 0.4), 0 0 0 1px rgba(255,255,255,0.2) inset; font-family: "Inter", sans-serif; border-radius: 100px; max-width: 90%; backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+                
+                toast.innerHTML = `<svg style="width: clamp(1.2rem, 3vw, 1.8rem); height: clamp(1.2rem, 3vw, 1.8rem); margin-right: 12px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><span id="stageMessageTextNode"></span>`;
+                document.body.appendChild(toast);
+            }
+            
+            const textNode = document.getElementById('stageMessageTextNode');
+            
+            if (message) {
+                textNode.textContent = message;
+                // Force reflow
+                void toast.offsetWidth;
+                toast.style.transform = 'translate(-50%, 0)';
+                toast.style.opacity = '1';
+                
+                clearTimeout(stageMessageTimeout);
+                // Auto hide after 15 seconds
+                stageMessageTimeout = setTimeout(() => {
+                    toast.style.transform = 'translate(-50%, -150%)';
+                    toast.style.opacity = '0';
+                }, 15000);
+            } else {
+                toast.style.transform = 'translate(-50%, -150%)';
+                toast.style.opacity = '0';
+            }
+        });
+
         // Two-Way Musician Control (Leader Mode)
         const prevZone = document.getElementById('prevZone');
         const nextZone = document.getElementById('nextZone');
+        const touchToggleBtn = document.getElementById('touchToggleBtn');
+        const controlsLayer = document.getElementById('controlsLayer');
         
-        prevZone.addEventListener('click', () => {
-            if (navigator.vibrate) navigator.vibrate(50);
-            socket.emit('command', { action: 'prev-slide', cmdId: Date.now().toString() });
+        let touchEnabled = true;
+
+        if (touchToggleBtn) {
+            touchToggleBtn.addEventListener('click', () => {
+                touchEnabled = !touchEnabled;
+                if (touchEnabled) {
+                    controlsLayer.style.display = 'flex';
+                    touchToggleBtn.textContent = 'TOUCH: ON';
+                    touchToggleBtn.style.background = 'rgba(79, 70, 229, 0.15)';
+                    touchToggleBtn.style.borderColor = '#4f46e5';
+                    touchToggleBtn.style.color = '#818cf8';
+                } else {
+                    controlsLayer.style.display = 'none';
+                    touchToggleBtn.textContent = 'TOUCH: OFF';
+                    touchToggleBtn.style.background = 'rgba(239, 68, 68, 0.15)';
+                    touchToggleBtn.style.borderColor = '#ef4444';
+                    touchToggleBtn.style.color = '#f87171';
+                }
+            });
+        }
+        
+        if (prevZone && nextZone) {
+            prevZone.addEventListener('click', () => {
+                if (navigator.vibrate) navigator.vibrate(50);
+                socket.emit('command', { action: 'prev-slide', cmdId: Date.now().toString() });
+            });
+            
+            nextZone.addEventListener('click', () => {
+                if (navigator.vibrate) navigator.vibrate(50);
+                socket.emit('command', { action: 'next-slide', cmdId: Date.now().toString() });
+            });
+        }
+        
+        // --- Screen Wake Lock API ---
+        let wakeLock = null;
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeLock.addEventListener('release', () => {
+                        console.log('Screen Wake Lock released');
+                    });
+                    console.log('Screen Wake Lock acquired');
+                }
+            } catch (err) {
+                console.error(`${err.name}, ${err.message}`);
+            }
+        }
+
+        // Request on load and visibility change
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
         });
         
-        nextZone.addEventListener('click', () => {
-            if (navigator.vibrate) navigator.vibrate(50);
-            socket.emit('command', { action: 'next-slide', cmdId: Date.now().toString() });
-        });
+        // Initial request (may require user interaction depending on browser)
+        requestWakeLock();
+        
+        // Fallback: request on first interaction anywhere on the screen
+        document.addEventListener('click', () => {
+            if (!wakeLock) requestWakeLock();
+        }, { once: true });
+        document.addEventListener('touchstart', () => {
+            if (!wakeLock) requestWakeLock();
+        }, { once: true });
     </script>
 </body>
 </html>

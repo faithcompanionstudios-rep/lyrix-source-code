@@ -5,7 +5,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>LyriX Remote Control</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="LyriX">
+    <link rel="apple-touch-icon" href="/icon.png">
     <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const isAndroid = /Android/.test(navigator.userAgent);
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        if (isAndroid && !urlParams.has('stay')) {
+            window.history.replaceState(null, '', '?stay=1');
+            window.location.href = "lyrix://connect?ip=" + window.location.hostname + "&port=" + window.location.port;
+            
+            setTimeout(() => {
+                // If the app opened, the page becomes hidden. If not, we are still here, so go to Play Store.
+                if (!document.hidden) {
+                    window.location.href = "https://play.google.com/store/apps/details?id=com.lyrix.mobile";
+                }
+            }, 1000);
+        }
+    </script>
     <style>
         :root {
             --bg-color: #f8fafc;
@@ -782,6 +803,168 @@
                     closeFab();
                 }
             } else if (e.key === 'Escape') {
+
+        // Connect to the WebSocket server running on the main app
+        const socket = io({ query: { type: 'remote' } });
+
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+
+        const previewContainer = document.getElementById('previewContainer');
+        const blankBtn = document.getElementById('blankBtn');
+        const blankIcon = document.getElementById('blankIcon');
+        const blankText = document.getElementById('blankText');
+        const previewText = document.getElementById('previewText');
+
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebarOverlay');
+        const scheduleList = document.getElementById('scheduleList');
+
+        let currentSchedule = [];
+
+        function toggleSidebar(show) {
+            if (show) {
+                sidebar.classList.add('active');
+                sidebarOverlay.classList.add('active');
+            } else {
+                sidebar.classList.remove('active');
+                sidebarOverlay.classList.remove('active');
+            }
+        }
+
+        function projectSongFromSchedule(songId) {
+            sendCommand('set-song-by-id', { id: songId });
+            toggleSidebar(false);
+        }
+
+        socket.on('connect', () => {
+            statusDot.classList.add('connected');
+            statusText.textContent = 'Connected (Live)';
+            socket.emit('fetch-schedule');
+        });
+
+        socket.on('disconnect', (reason) => {
+            statusDot.classList.remove('connected');
+            if (reason === 'io server disconnect') {
+                statusText.textContent = 'Disconnected (Server Limit Reached)';
+            } else {
+                statusText.textContent = 'Disconnected';
+            }
+        });
+
+        socket.on('connection-rejected', (data) => {
+            statusDot.classList.remove('connected');
+            statusText.textContent = `Rejected: ${data.reason}`;
+            socket.disconnect();
+        });
+
+        let isProjectorOpen = false;
+        let isScreenBlack = false;
+
+        function updateLiveBadge() {
+            if (!isProjectorOpen) {
+                previewContainer.classList.remove('is-live');
+                blankBtn.classList.remove('active-blank');
+                blankIcon.textContent = '⚪';
+                blankText.textContent = 'OFFLINE';
+            } else if (isScreenBlack) {
+                previewContainer.classList.remove('is-live');
+                blankBtn.classList.add('active-blank');
+                blankIcon.textContent = '🔴';
+                blankText.textContent = 'OFF AIR';
+            } else {
+                previewContainer.classList.add('is-live');
+                blankBtn.classList.remove('active-blank');
+                blankIcon.textContent = '🟢';
+                blankText.textContent = 'LIVE';
+            }
+        }
+
+        socket.on('projector-status', (isOpen) => {
+            isProjectorOpen = isOpen;
+            updateLiveBadge();
+        });
+
+        // Listen for true state changes from the Desktop App
+        socket.on('blank-screen', (serverIsBlack) => {
+            isScreenBlack = serverIsBlack;
+            updateLiveBadge();
+        });
+
+        socket.on('current-slide', (data) => {
+            if (data !== undefined && data.slide !== undefined) {
+                previewText.textContent = data.slide || '';
+            }
+        });
+
+        socket.on('schedule-updated', (schedule) => {
+            currentSchedule = schedule || [];
+            if (currentSchedule.length === 0) {
+                scheduleList.innerHTML = '<li class="empty-schedule">Schedule is empty</li>';
+            } else {
+                scheduleList.innerHTML = currentSchedule.map(item => `
+                    <li class="schedule-item" onclick="projectSongFromSchedule('${item.songId}')">
+                        <div class="schedule-title">${item.title}</div>
+                        <div class="schedule-cat">${item.category}</div>
+                    </li>
+                `).join('');
+            }
+        });
+
+        function sendCommand(action, extraPayload = {}) {
+            // Provide immediate haptic feedback if supported on mobile
+            if (navigator.vibrate) navigator.vibrate(50);
+
+            const cmdId = Date.now().toString() + Math.random().toString();
+
+            // Just emit the command, and let the Desktop App's state echo back to update our UI
+            socket.emit('command', { action, cmdId, ...extraPayload });
+        }
+
+        // --- Smart Jump FAB ---
+        const fabBtn = document.getElementById('fabBtn');
+        const fabInputWrapper = document.getElementById('fabInputWrapper');
+        const fabInput = document.getElementById('fabInput');
+        let fabExpanded = false;
+
+        function toggleFab() {
+            if (fabExpanded) {
+                // If there's text, send it; otherwise just close
+                const query = fabInput.value.trim();
+                if (query) {
+                    sendCommand('smart-jump', { query });
+                    fabInput.value = '';
+                }
+                closeFab();
+            } else {
+                openFab();
+            }
+        }
+
+        function openFab() {
+            fabExpanded = true;
+            fabBtn.classList.add('expanded');
+            fabInputWrapper.classList.add('expanded');
+            setTimeout(() => fabInput.focus(), 350);
+        }
+
+        function closeFab() {
+            fabExpanded = false;
+            fabBtn.classList.remove('expanded');
+            fabInputWrapper.classList.remove('expanded');
+            fabInput.blur();
+        }
+
+        fabInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const query = fabInput.value.trim();
+                if (query) {
+                    sendCommand('smart-jump', { query });
+                    fabInput.value = '';
+                    closeFab();
+                }
+            } else if (e.key === 'Escape') {
                 fabInput.value = '';
                 closeFab();
             }
@@ -793,6 +976,15 @@
                 closeFab();
             }
         });
+
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(err => {
+                    console.log('Service Worker registration failed: ', err);
+                });
+            });
+        }
     </script>
 </body>
 

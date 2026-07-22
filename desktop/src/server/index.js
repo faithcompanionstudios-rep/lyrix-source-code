@@ -140,11 +140,21 @@ function startServer(onStatusChange, deps = {}) {
     // Serve static files for the stage display viewer
     const viewerPath = path.join(__dirname, '../../public/viewer');
     app.use('/viewer', express.static(viewerPath));
+
+    // Serve custom fonts and media
+    if (deps.userDataPath) {
+        const fs = require('fs');
+        
+        const fontsPath = path.join(deps.userDataPath, 'fonts');
+        if (!fs.existsSync(fontsPath)) fs.mkdirSync(fontsPath, { recursive: true });
+        app.use('/fonts', express.static(fontsPath));
+
+        const mediaPath = path.join(deps.userDataPath, 'media');
+        if (!fs.existsSync(mediaPath)) fs.mkdirSync(mediaPath, { recursive: true });
+        app.use('/media', express.static(mediaPath));
+    }
     
-    // Fallback for capitalized /Viewer typo
-    app.get('/Viewer', (req, res) => {
-        res.redirect('/viewer/');
-    });
+    
 
     // Explicit fallback for root
     app.get('/', (req, res) => {
@@ -166,14 +176,26 @@ function startServer(onStatusChange, deps = {}) {
     });
 
     io.on('connection', (socket) => {
-        console.log('Client connected:', socket.id);
-        const count = io.engine.clientsCount;
-        if (onStatusChange) onStatusChange({ status: 'Running', ip: getLocalIP(), connections: count });
+        console.log('Client connected:', socket.id, 'Type:', socket.handshake.query.type);
+        
+        const countConnections = () => {
+            let remotes = 0;
+            let viewers = 0;
+            io.sockets.sockets.forEach(s => {
+                const type = s.handshake.query.type;
+                if (type === 'viewer') viewers++;
+                else if (type === 'remote' || !type) remotes++;
+            });
+            return { remotes, viewers };
+        };
+
+        const counts = countConnections();
+        if (onStatusChange) onStatusChange({ status: 'Running', connections: counts.remotes, viewers: counts.viewers });
 
         socket.on('disconnect', () => {
-            console.log('Client disconnected');
-            const count = io.engine.clientsCount;
-            if (onStatusChange) onStatusChange({ status: 'Running', ip: getLocalIP(), connections: count });
+            console.log('Client disconnected:', socket.id);
+            const counts = countConnections();
+            if (onStatusChange) onStatusChange({ status: 'Running', connections: counts.remotes, viewers: counts.viewers });
         });
 
         socket.on('command', (data) => {

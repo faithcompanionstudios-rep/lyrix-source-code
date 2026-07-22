@@ -2,6 +2,7 @@
   "expo": {
     "name": "LyriX Remote",
     "slug": "mobile",
+    "scheme": "lyrix",
     "version": "1.7.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
