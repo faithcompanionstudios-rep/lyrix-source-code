@@ -472,11 +472,11 @@ const AdvancedFontsPanel = ({
         <div className="space-y-8 animate-fade-in pb-48">
             <div className="bg-white rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 p-8">
                 <div className="flex items-center gap-4 mb-8">
-                    <div className="w-12 h-12 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-center shadow-inner">
-                        <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
+                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner shrink-0">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
                     </div>
                     <div>
-                        <h3 className="text-xl font-bold text-slate-800">Advanced Font Management</h3>
+                        <h3 className="text-xl font-bold text-slate-800 font-display">Advanced Font Management</h3>
                         <p className="text-xs font-medium text-slate-500 mt-1">Configure language-specific fonts to ensure flawless rendering across all international scripts.</p>
                     </div>
                 </div>
@@ -2135,8 +2135,16 @@ function App() {
                                     </div>
                                     <div className="pt-2">
                                         {adminTab === 'categories' && (
-                                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-                                                <h3 className="text-lg font-bold text-slate-800 mb-4 font-display">Category Management</h3>
+                                            <div className="bg-white rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 p-8">
+                                                <div className="flex items-center gap-4 mb-6">
+                                                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner shrink-0">
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="text-xl font-bold text-slate-800 font-display">Category Management</h3>
+                                                        <p className="text-xs font-medium text-slate-500 mt-1">Organize and manage your library tags and categories.</p>
+                                                    </div>
+                                                </div>
                                                 <div className="flex gap-2 mb-4">
                                                     <input
                                                         type="text"
@@ -2250,11 +2258,16 @@ function App() {
 
                                         {adminTab === 'restore' && (
                                             <div className="animate-fade-in-up">
-                                                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl shadow-slate-200/40">
-                                                    <div className="flex items-center justify-between mb-6">
-                                                        <div>
-                                                            <h3 className="text-lg font-bold text-slate-800 mb-1 font-display">Restore Deleted Songs</h3>
-                                                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Last {deletedSongs.length} deleted songs (max 50)</p>
+                                                <div className="bg-white rounded-[2rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/40">
+                                                    <div className="flex items-center justify-between mb-8">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner shrink-0">
+                                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+                                                            </div>
+                                                            <div>
+                                                                <h3 className="text-xl font-bold text-slate-800 font-display">Restore Deleted Songs</h3>
+                                                                <p className="text-xs font-medium text-slate-500 mt-1">Last {deletedSongs.length} deleted songs (max 50)</p>
+                                                            </div>
                                                         </div>
                                                         <div className="flex gap-2">
                                                             <button
@@ -2642,11 +2655,11 @@ function App() {
                                                 <div className="bg-white rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 overflow-hidden">
                                                     <div className="p-8 border-b border-slate-100 bg-slate-50/50">
                                                         <div className="flex items-center gap-4">
-                                                            <div className="w-12 h-12 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-center shadow-inner">
-                                                                <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
+                                                            <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner shrink-0">
+                                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
                                                             </div>
                                                             <div>
-                                                                <h3 className="text-xl font-bold text-slate-800">Data Maintenance</h3>
+                                                                <h3 className="text-xl font-bold text-slate-800 font-display">Data Maintenance</h3>
                                                                 <p className="text-xs font-medium text-slate-500 mt-1">Manage databases, import/export content, or wipe the application.</p>
                                                             </div>
                                                         </div>
