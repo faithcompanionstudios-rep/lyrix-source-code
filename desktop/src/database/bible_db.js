@@ -84,10 +84,14 @@ const bibleDb = {
     // Used by the setup utility
     importTranslation: (translationId, booksData) => {
         const db = initBibleDb();
+        const insertTrans = db.prepare('INSERT OR IGNORE INTO translations (id, name, language) VALUES (?, ?, ?)');
         const insertVerse = db.prepare('INSERT INTO verses (translation_id, book_id, chapter, verse, text) VALUES (?, ?, ?, ?, ?)');
         const insertBook = db.prepare('INSERT OR REPLACE INTO books (id, name, testament, chapters_count) VALUES (?, ?, ?, ?)');
 
         const transaction = db.transaction((books) => {
+            // Ensure translation exists in translations table
+            insertTrans.run(translationId, translationId, 'Unknown');
+            
             // Delete existing for this translation if any (to avoid duplicates)
             db.prepare('DELETE FROM verses WHERE translation_id = ?').run(translationId);
             
