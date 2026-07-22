@@ -203,7 +203,7 @@ const CustomFontCombo = ({ value, onChange, options, onUpload, onDelete, placeho
     return (
         <div className="relative w-full" ref={selectRef}>
             <div
-                className={clsx("flex items-center justify-between cursor-text bg-white border rounded-xl px-4 py-3 transition-all group shadow-sm", isOpen ? "border-indigo-400 ring-4 ring-indigo-500/10" : "border-slate-200")}
+                className={clsx("flex items-center justify-between cursor-text bg-white border rounded-xl px-4 py-2.5 transition-all group shadow-sm", isOpen ? "border-indigo-400 ring-4 ring-indigo-500/10" : "border-slate-200")}
             >
                 <input 
                     type="text" 
@@ -224,7 +224,7 @@ const CustomFontCombo = ({ value, onChange, options, onUpload, onDelete, placeho
                         }
                     }}
                     placeholder={placeholder}
-                    className="w-full bg-transparent outline-none text-sm font-semibold text-slate-700"
+                    className="w-full bg-transparent outline-none text-xs font-semibold text-slate-700"
                 />
                 <div 
                     onMouseDown={(e) => { 
