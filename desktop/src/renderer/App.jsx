@@ -2390,18 +2390,38 @@ function App() {
                                                             if (selectedBibleCountry === 'All') return true;
                                                             
                                                             const lang = (mod.language || '').toLowerCase();
-                                                            const isIndia = ['hindi', 'telugu', 'tamil', 'malayalam', 'kannada', 'marathi', 'gujarati', 'bengali', 'punjabi', 'odia'].some(l => lang.includes(l));
+                                                            const sel = selectedBibleCountry.toLowerCase();
+                                                            
+                                                            // Direct match: manifest language field equals the selected region
+                                                            if (lang === sel) return true;
+                                                            
+                                                            // Heuristic match: infer region from language name
+                                                            const isIndia = ['hindi', 'telugu', 'tamil', 'malayalam', 'kannada', 'marathi', 'gujarati', 'bengali', 'punjabi', 'odia', 'oriya', 'nepali'].some(l => lang.includes(l));
                                                             const isEnglish = lang.includes('english');
-                                                            const isEurope = ['german', 'french', 'spanish', 'italian', 'russian', 'greek', 'portuguese', 'dutch'].some(l => lang.includes(l));
+                                                            const isEurope = ['german', 'french', 'spanish', 'italian', 'russian', 'greek', 'portuguese', 'dutch', 'czech', 'hungarian', 'romanian', 'polish', 'swedish', 'norwegian', 'danish', 'finnish', 'bavarian', 'bulgarian', 'albanian', 'croatian', 'lithuanian', 'afrikaans'].some(l => lang.includes(l));
+                                                            const isAsia = ['chinese', 'japanese', 'korean', 'tagalog', 'thai', 'vietnamese', 'indonesian', 'malay', 'burmese', 'khmer'].some(l => lang.includes(l));
+                                                            const isMiddleEast = ['arabic', 'hebrew', 'farsi', 'persian', 'turkish', 'urdu'].some(l => lang.includes(l));
+                                                            const isAfrica = ['swahili', 'xhosa', 'zulu', 'somali', 'yoruba', 'amharic', 'hausa', 'igbo'].some(l => lang.includes(l));
+                                                            const isSouthAmerica = ['portuguese', 'quechua'].some(l => lang.includes(l));
                                                             
                                                             let region = 'Other';
                                                             if (isIndia) region = 'India';
                                                             else if (isEnglish) region = 'Global / English';
+                                                            else if (isMiddleEast) region = 'Middle East';
+                                                            else if (isAsia) region = 'Asia';
+                                                            else if (isAfrica) region = 'Africa';
                                                             else if (isEurope) region = 'Europe';
+                                                            else if (isSouthAmerica) region = 'South America';
                                                             
                                                             return region === selectedBibleCountry;
                                                         }).map(mod => {
-                                                            const isInstalled = localBibleModules.some(l => l.id.toLowerCase() === mod.id.toLowerCase());
+                                                            const isInstalled = localBibleModules.some(l => {
+                                                                const localId = l.id.toLowerCase();
+                                                                const modId = mod.id.toLowerCase();
+                                                                // Extract filename from URL (e.g. 'bibles/hindi.json' -> 'hindi')
+                                                                const urlBase = mod.url ? mod.url.split('/').pop().replace('.json', '').toLowerCase() : '';
+                                                                return localId === modId || localId === urlBase;
+                                                            });
                                                             const isCore = mod.id.toLowerCase() === 'kjv';
                                                             return (
                                                                 <div key={mod.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-200 transition-all group">

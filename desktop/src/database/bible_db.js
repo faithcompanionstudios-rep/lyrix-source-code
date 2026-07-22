@@ -106,6 +106,15 @@ const bibleDb = {
         transaction(booksData);
     },
 
+    deleteTranslation: (translationId) => {
+        const db = initBibleDb();
+        const transaction = db.transaction(() => {
+            db.prepare('DELETE FROM verses WHERE translation_id = ?').run(translationId);
+            db.prepare('DELETE FROM translations WHERE id = ?').run(translationId);
+        });
+        transaction();
+    },
+
     resetBibleDb: () => {
         if (db) {
             db.close();

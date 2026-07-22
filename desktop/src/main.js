@@ -423,14 +423,20 @@ if (!gotTheLock) {
             const biblesDir = path.join(app.getPath('userData'), 'bibles');
             const targetPath = path.join(biblesDir, `${id}.json`);
             try {
-                if (fs.existsSync(targetPath)) {
-                    if (id.toLowerCase() === 'kjv') {
-                        return { success: false, error: "Cannot delete the core KJV translation." };
-                    }
-                    fs.unlinkSync(targetPath);
-                    return { success: true };
+                if (id.toLowerCase() === 'kjv') {
+                    return { success: false, error: "Cannot delete the core KJV translation." };
                 }
-                return { success: false, error: "File not found." };
+                // First, clean up the SQLite database
+                try {
+                    bibleDb.deleteTranslation(id.toUpperCase());
+                } catch (dbErr) {
+                    console.warn(`Could not clean DB for ${id}:`, dbErr.message);
+                }
+                // Then delete the file
+                if (fs.existsSync(targetPath)) {
+                    fs.unlinkSync(targetPath);
+                }
+                return { success: true };
             } catch (e) {
                 return { success: false, error: e.message };
             }
