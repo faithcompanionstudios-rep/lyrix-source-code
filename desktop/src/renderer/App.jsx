@@ -1411,7 +1411,7 @@ function App() {
         if (adminTab === 'bibles') {
             setBibleModulesLoading(true);
             window.electron.invoke('bible:get-local-modules').then(modules => setLocalBibleModules(modules));
-            fetch('https://cdn.jsdelivr.net/gh/faithcompanionstudios-rep/lyrix-bible-database@master/manifest.json')
+            fetch(`https://raw.githubusercontent.com/faithcompanionstudios-rep/lyrix-bible-database/master/manifest.json?t=${Date.now()}`)
                 .then(res => res.json())
                 .then(data => {
                     setCloudBibleModules(data.versions || []);
@@ -2354,7 +2354,7 @@ function App() {
                                                             <div className="relative z-10 w-40 shrink-0">
                                                                 <CustomSelect 
                                                                     value={selectedBibleCountry}
-                                                                    onChange={setSelectedBibleCountry}
+                                                                    onChange={(e) => setSelectedBibleCountry(e.target.value)}
                                                                     className="bg-white border border-slate-200 hover:border-indigo-200 text-slate-600 text-[10px] font-bold uppercase tracking-widest rounded-xl px-4 py-2 transition-all shadow-sm"
                                                                     options={[
                                                                         { value: 'All', label: 'All Regions' },
@@ -2374,7 +2374,7 @@ function App() {
                                                             <button
                                                                 onClick={() => {
                                                                     setBibleModulesLoading(true);
-                                                                    fetch('https://cdn.jsdelivr.net/gh/faithcompanionstudios-rep/lyrix-bible-database@master/manifest.json')
+                                                                    fetch(`https://raw.githubusercontent.com/faithcompanionstudios-rep/lyrix-bible-database/master/manifest.json?t=${Date.now()}`)
                                                                         .then(res => res.json())
                                                                         .then(data => { setCloudBibleModules(data.versions || []); setBibleModulesLoading(false); });
                                                                 }}
